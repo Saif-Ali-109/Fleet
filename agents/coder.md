@@ -4,6 +4,8 @@ description: >-
   the assigned worktree).
 mode: all
 model: opencode/laguna-s-2.1-free
+claude_model: sonnet
+codex_model: gpt-5.1-codex
 steps: 12
 tools:
   read: true

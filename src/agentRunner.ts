@@ -1,9 +1,15 @@
 import { spawn } from "node:child_process";
-import { closeSync, copyFileSync, fstatSync, mkdirSync, openSync, readSync, readFileSync } from "node:fs";
+import { closeSync, fstatSync, mkdirSync, openSync, readSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { AgentResult, Role, RolePolicy, RunContext } from "./types.js";
+import {
+  backendDef,
+  buildBackendArgs,
+  buildBackendEnv,
+  parseBackendTrace,
+  resolveRolePrompt,
+} from "./runner/backends.js";
+import type { AgentResult, Backend, Role, RolePolicy, RunContext } from "./types.js";
 
 export interface RunWorkerOpts {
   /** Reasoning-effort variant override (else policy.variant). */
@@ -23,9 +29,7 @@ interface ParsedStream {
   errorMsg?: string;
 }
 
-const OPENCODE_BIN = process.env.OPENCODE_BIN ?? "opencode";
-
-/** Run one opencode worker for `role`, trying `policy.model` then each fallback in order. */
+/** Run one worker for `role` on the ctx backend (default opencode), trying `policy.model` then each fallback. */
 export async function runWorker(
   role: Role,
   task: string,
@@ -33,6 +37,7 @@ export async function runWorker(
   policy: RolePolicy,
   opts: RunWorkerOpts = {},
 ): Promise<AgentResult> {
+  const backend: Backend = ctx.backend ?? "opencode";
   const tracePath = join(ctx.tracesDir, `${role}.jsonl`);
   await mkdir(dirname(tracePath), { recursive: true });
   const startedAt = Date.now();
@@ -41,7 +46,8 @@ export async function runWorker(
     return stubResult(role, policy.model, tracePath, startedAt);
   }
 
-  const env = buildEnv(ctx);
+  const env = buildBackendEnv(backend, ctx);
+  const rolePrompt = resolveRolePrompt(backend, role, ctx);
   const models = [policy.model, ...policy.fallbacks];
   let last: ParsedStream | null = null;
   let lastModel = policy.model;
@@ -49,7 +55,7 @@ export async function runWorker(
 
   for (const model of models) {
     lastModel = model;
-    const parsed = await spawnOnce(role, task, ctx, model, policy, tracePath, opts, env);
+    const parsed = await spawnOnce(backend, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt);
     last = parsed;
     const ok = !parsed.sawError && parsed.text.trim().length > 0;
     attempts.push({ model, ok, error: parsed.errorMsg });
@@ -78,15 +84,13 @@ export function buildArgs(
   model: string,
   policy: RolePolicy,
   opts: RunWorkerOpts,
+  backend: Backend = "opencode",
 ): string[] {
-  const args = ["run", "--agent", role, "-m", model, "--dir", ctx.worktreeDir, "--format", "json"];
-  const variant = opts.variant ?? policy.variant;
-  if (variant) args.push("--variant", variant);
-  args.push(task); // positional message; passed as argv so the shell never parses it
-  return args;
+  return buildBackendArgs(backend, role, task, ctx, model, policy, opts, "").args;
 }
 
 function spawnOnce(
+  backend: Backend,
   role: Role,
   task: string,
   ctx: RunContext,
@@ -95,9 +99,11 @@ function spawnOnce(
   tracePath: string,
   opts: RunWorkerOpts,
   env: NodeJS.ProcessEnv,
+  rolePrompt: string,
 ): Promise<ParsedStream> {
   return new Promise((resolve) => {
-    const args = buildArgs(role, task, ctx, model, policy, opts);
+    const { args, cwd } = buildBackendArgs(backend, role, task, ctx, model, policy, opts, rolePrompt);
+    const binary = backendDef(backend).binary;
     const traceDir = dirname(tracePath);
     mkdirSync(traceDir, { recursive: true });
     const stderrPath = join(traceDir, `${role}.stderr.log`);
@@ -125,8 +131,8 @@ function spawnOnce(
     };
 
     try {
-      const child = spawn(OPENCODE_BIN, args, {
-        cwd: ctx.rootDir,
+      const child = spawn(binary, args, {
+        cwd: cwd ?? ctx.rootDir,
         env,
         stdio: ["ignore", fdOut, fdErr],
       });
@@ -144,7 +150,7 @@ function spawnOnce(
       });
 
       child.on("close", (code) => {
-        const parsed = parseTrace(tracePath, opts, startOffset);
+        const parsed = parseTrace(tracePath, opts, startOffset, backend);
         if (code !== 0 && !parsed.sawError) {
           parsed.sawError = true;
           parsed.errorMsg = `exit ${code}: ${readStderrTail(stderrPath)}`;
@@ -164,61 +170,29 @@ function spawnOnce(
   });
 }
 
-/** Per-run opencode env: isolated data dir (fresh SQLite DB per run) + seeded auth. */
-function buildEnv(ctx: RunContext): NodeJS.ProcessEnv {
-  const dataHome = join(ctx.runDir, ".opencode-data");
-  try {
-    mkdirSync(join(dataHome, "opencode"), { recursive: true });
-    copyFileSync(
-      join(homedir(), ".local", "share", "opencode", "auth.json"),
-      join(dataHome, "opencode", "auth.json"),
-    );
-  } catch {
-    // non-fatal: continue without a seeded auth file
-  }
-  return {
-    ...process.env,
-    OPENCODE_CONFIG: join(ctx.rootDir, "opencode.json"),
-    XDG_DATA_HOME: dataHome,
-  };
-}
-
-/** Read back this attempt's NDJSON from the trace file and build the parsed shape. */
-export function parseTrace(tracePath: string, opts: RunWorkerOpts, startOffset: number): ParsedStream {
-  const acc: ParsedStream = { text: "", sessionID: null, tokens: zeroTokens(), costUsd: 0, sawError: false };
+/** Read back this attempt's trace from the trace file and build the parsed shape for `backend`. */
+export function parseTrace(
+  tracePath: string,
+  opts: RunWorkerOpts,
+  startOffset: number,
+  backend: Backend = "opencode",
+): ParsedStream {
   let raw: string;
   try {
     raw = readFileSync(tracePath, "utf8");
   } catch {
-    return acc;
+    return { text: "", sessionID: null, tokens: zeroTokens(), costUsd: 0, sawError: false };
   }
-  const body = startOffset > 0 ? raw.slice(startOffset) : raw;
-  for (const line of body.split("\n")) {
-    if (!line.trim()) continue;
-    let ev: any;
-    try {
-      ev = JSON.parse(line);
-    } catch {
-      continue; // non-JSON noise that leaked into the trace
-    }
-    if (ev.sessionID && !acc.sessionID) acc.sessionID = ev.sessionID;
-    const part = ev.part ?? {};
-    if (ev.type === "text" && typeof part.text === "string") {
-      acc.text += part.text;
-    } else if (ev.type === "step_finish") {
-      if (part.tokens) {
-        acc.tokens.input += part.tokens.input ?? 0;
-        acc.tokens.output += part.tokens.output ?? 0;
-        acc.tokens.reasoning += part.tokens.reasoning ?? 0;
-        acc.tokens.total += part.tokens.total ?? 0;
-      }
-      acc.costUsd += part.cost ?? 0;
-    } else if (ev.type === "error" || part.type === "error") {
-      acc.sawError = true;
-      acc.errorMsg = part.error ?? ev.error ?? "opencode error event";
-    }
-  }
-  return acc;
+  const lastmsgPath = backend === "codex" ? tracePath.replace(/\.jsonl$/, ".lastmsg") : undefined;
+  const t = parseBackendTrace(backend, raw, startOffset, { lastmsgPath });
+  return {
+    text: t.text,
+    sessionID: t.sessionID,
+    tokens: t.tokens,
+    costUsd: t.costUsd,
+    sawError: t.sawError,
+    errorMsg: t.errorMsg,
+  };
 }
 
 /** Last 400 chars of the per-attempt stderr log file, trimmed. */

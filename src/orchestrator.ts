@@ -13,7 +13,7 @@ import { policyFor } from "./models/modelPolicy.js";
 import { MAX_IMPL_ITERATIONS, planRoute } from "./router.js";
 import type { DashboardState } from "./tui/dashboard.js";
 import { newDashboardState, renderDashboard } from "./tui/dashboard.js";
-import type { AgentResult, FixSpec, Plan, Role, RolePolicy, RunContext } from "./types.js";
+import type { AgentResult, Backend, FixSpec, Plan, Role, RolePolicy, RunContext } from "./types.js";
 
 export type RunStatus = "completed" | "aborted" | "failed";
 
@@ -31,6 +31,7 @@ export interface RunSummary {
   status: RunStatus;
   prUrl?: string;
   failure?: string;
+  backend: Backend;
   agents: Record<Role, AgentResult>;
   totalCostUsd: number;
   iterationsUsed: number;
@@ -97,7 +98,7 @@ export async function runOrchestrator(
 ): Promise<RunSummary> {
   const startedAt = Date.now();
   const web = opts.web;
-  const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number);
+  const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.backend);
   const agents = {} as Record<Role, AgentResult>;
   let prUrl: string | undefined;
   let iterationsUsed = 0;
@@ -125,6 +126,7 @@ export async function runOrchestrator(
     status,
     prUrl,
     failure,
+    backend: ctx.backend ?? "opencode",
     agents,
     totalCostUsd: totalCostUsd(),
     iterationsUsed,
@@ -215,7 +217,7 @@ export async function runOrchestrator(
       `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
       `{"summary": "...", "rootCause": "...", "suspectFiles": ["..."], "affectedSymbols": ["..."], "reproduction": "...", "testStrategy": "...", "risks": ["..."], "confidence": "low" | "medium" | "high"}`,
     ].join("\n");
-    const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer"));
+    const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer", ctx.backend));
     if (!a.ok) {
       setPhase("failed");
       pushState();
@@ -258,7 +260,7 @@ export async function runOrchestrator(
       `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
       `{"approach": "...", "steps": ["..."], "filesToChange": ["..."], "testsToAddOrUpdate": ["..."], "acceptanceCriteria": ["..."], "outOfScope": ["..."]}`,
     ].join("\n");
-    const p = await runAgent("planner", "plan", plannerTask, policyFor("planner"));
+    const p = await runAgent("planner", "plan", plannerTask, policyFor("planner", ctx.backend));
     if (!p.ok) {
       setPhase("failed");
       pushState();
@@ -364,7 +366,7 @@ export async function runOrchestrator(
           role,
           "implement",
           implTask(feedback),
-          policyFor(role),
+          policyFor(role, ctx.backend),
         );
         if (!res.ok) {
           setPhase("failed");
@@ -443,7 +445,7 @@ export async function runOrchestrator(
         "reviewer",
         "review",
         reviewerTask,
-        policyFor("reviewer"),
+        policyFor("reviewer", ctx.backend),
       );
       if (!r.ok) {
         setPhase("failed");
@@ -519,7 +521,7 @@ export async function runOrchestrator(
       `PR body must start with: Closes #${ctx.issue.number}`,
       `Managed run: ${ctx.runId}.`,
     ].join("\n");
-    const pr = await runAgent("pr", "pr", prTask, policyFor("pr"));
+    const pr = await runAgent("pr", "pr", prTask, policyFor("pr", ctx.backend));
     const extractPrUrl = (text: string): string | undefined =>
       /https?:\/\/[^\s)"']+\/pull\/\d+/.exec(text)?.[0];
     if (pr.ok) {

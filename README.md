@@ -1,10 +1,10 @@
 # Multi Orchestration
 
-TypeScript Manager drives a fleet of 6 headless opencode workers to take a GitHub issue to a real PR, with 3 human approval gates.
+TypeScript Manager drives a fleet of 6 headless workers to take a GitHub issue to a real PR, with 3 human approval gates. The fleet can run on **opencode**, **Claude Code**, or **Codex** — chosen once per run (`--backend` flag or a dashboard toggle).
 
 ## Architecture
 
-The **Manager** is plain TypeScript — not an LLM. It owns routing, the 3 gates, git worktrees, `gh`, memory, and logging. Each of the 6 workers is a separate headless `opencode run` process with its own least-privilege config, spawned via `node:child_process.spawn` (no SDK, no shell). Agent discovery is wired through the `OPENCODE_CONFIG` env var pointing at the project's `opencode.json`, because workers run with `--dir` inside a foreign worktree.
+The **Manager** is plain TypeScript — not an LLM. It owns routing, the 3 gates, git worktrees, `gh`, memory, and logging. Each of the 6 workers is a separate headless CLI process with its own least-privilege config, spawned via `node:child_process.spawn` (no SDK, no shell). The runner is backend-agnostic: `src/runner/backends.ts` maps each backend to its binary, argv, env, and stream parser, and `src/agentRunner.ts` dispatches on the run's `backend`. Agent discovery is wired through `OPENCODE_CONFIG` for opencode; Claude Code and Codex read their agents from `.claude/agents/` and `.codex/agents/` respectively (regenerated from `agents/*.md`).
 
 ```
 GitHub issue ──▶ TS MANAGER (orchestrator, not an LLM)
@@ -22,7 +22,7 @@ GitHub issue ──▶ TS MANAGER (orchestrator, not an LLM)
                PR worker ─▶ git push + gh pr create ─▶ real PR
 ```
 
-Workers are spawned with `opencode run --agent <role> -m opencode/<model> --dir <worktree> --format json "<task>"` (plus `--variant <n>` where a variant is set) and stream NDJSON (text + tokens + cost) into `.runs/<id>/traces/*.jsonl`. Free-tier failures (5xx/quota/empty output) fall through an ordered fallback pool.
+Workers are spawned per backend — e.g. `opencode run --agent <role> -m opencode/<model> --dir <worktree> --format json "<task>"`, `claude -p <task> --output-format stream-json --model <m> --append-system-prompt "<role prompt>" --permission-mode plan|acceptEdits`, or `codex exec --cd <worktree> -m <m> -s <sandbox> --json "<role prompt>\n\n<task>"` — and stream JSON events (text + tokens + cost) into `.runs/<id>/traces/*.jsonl`. Free-tier failures (5xx/quota/empty output) fall through an ordered fallback pool.
 
 ## The 6 workers
 
@@ -48,8 +48,10 @@ Reasoning-heavy roles (analyzer/planner/reviewer) use `opencode/deepseek-v4-flas
 - **Node ≥ 22** and **npm ≥ 10** (tested on v22.22.2 / 10.9.7)
 - **git ≥ 2.43** (linked worktrees)
 - **`gh` CLI** authenticated — `gh auth login`, then verify with `gh auth status` (PR creation requires real credentials). If `gh` is not signed in the app does not fail — it waits and auto-starts once you log in (see Web Dashboard).
-- **opencode CLI ≥ v1.18.7** on PATH — verify with `opencode --version` (flags were verified on v1.18.7)
-- **No `ANTHROPIC_API_KEY` needed** — the free OpenCode Zen models (`opencode/*`) are served via the `opencode` CLI's own auth.
+- **opencode CLI ≥ v1.18.7** on PATH — verify with `opencode --version` (flags were verified on v1.18.7). Required for the default `--backend opencode`.
+- **Claude Code** (`claude`) on PATH — required only for `--backend claude`. Auth via its own login/API key.
+- **Codex CLI** on PATH — required only for `--backend codex`. Auth via its own login/API key.
+- **No `ANTHROPIC_API_KEY` needed** for opencode — the free OpenCode Zen models (`opencode/*`) are served via the `opencode` CLI's own auth.
 
 ## Install
 
@@ -62,10 +64,10 @@ npm install
 Run a single issue to a PR:
 
 ```
-npm start -- --repo <url> --issue <n> [--dry-run] [--interactive=false] [--branch <name>] [--port <n>] [--no-web]
+npm start -- --repo <url> --issue <n> [--dry-run] [--interactive=false] [--branch <name>] [--port <n>] [--no-web] [--backend <name>]
 ```
 
-Run the dashboard-driven **repo queue** (fix every open issue in a repo, one by one) by calling `npm start` with **no arguments** and pasting a repo URL in the dashboard's "Start a repo queue" panel.
+Run the dashboard-driven **repo queue** (fix every open issue in a repo, one by one) by calling `npm start` with **no arguments** and pasting a repo URL in the dashboard's "Start a repo queue" panel (use the **Backend** toggle to choose opencode / Claude / Codex first).
 
 Run `npm start -- --help` for the full flag summary.
 
@@ -84,6 +86,17 @@ Flags:
 - `--branch <name>` — override the fix branch name (defaults are generated per run).
 - `--port <n>` — dashboard port (default `3456`).
 - `--no-web` — disables the dashboard in both single-issue and queue mode.
+- `--backend <name>` — which headless CLI runs the fleet workers: `opencode` | `claude` | `codex` (default `opencode`, or `ORCHESTRATOR_BACKEND` env). Applies to single-issue runs; in queue mode the dashboard's Backend toggle overrides it.
+
+### Backends
+
+Each backend runs the same 6 roles via its own CLI. `src/runner/backends.ts` owns the binary/argv/env and stream parsing for each.
+
+- **opencode** (default) — free OpenCode Zen models. `opencode run --agent <role> -m opencode/<model> --dir <worktree> --format json [--variant <n>] "<task>"`. Uses the fallback pool and the `modelPolicy` overrides (`models.json`).
+- **claude** — `claude -p "<task>" --output-format stream-json --model <m> --append-system-prompt "<role prompt>" --permission-mode plan|acceptEdits` (cwd = worktree). The role prompt is read from `agents/<role>.md` (frontmatter stripped). Reads the `.claude/agents/*.md` configs (model default `sonnet`).
+- **codex** — `codex exec --cd <worktree> -m <m> -s <sandbox> --json -- [--approve-for-me] "<role prompt>\n\n<task>"`. The role prompt is embedded in the message (codex 0.147 has no `--agent` flag). Sandbox is `read-only` for analyzer/planner/reviewer, `workspace-write` for coder/tester, and `danger-full-access` for the pr role (it must `git push` + `gh pr create`, which need network). `--json` output is parsed tolerantly; the `-o <traceDir>/<role>.lastmsg` file is a fallback text source. Reads the `.codex/agents/*.toml` configs (model default `gpt-5.1-codex`).
+
+Per-backend model defaults live in `src/models/modelPolicy.ts`; override them per role per backend in the dashboard Models panel or directly in `models.json` (nested per-backend object). The dashboard Model picker offers a curated catalog per backend plus **free-text entry**, so you can type any model id your subscription supports.
 
 ## Web Dashboard
 
@@ -122,6 +135,8 @@ The dashboard exposes a small JSON/SSE API used by its own UI:
 | `/api/session-log` | SESSION_LOG.md contents (dashboard tab) |
 | `/api/login` | Device-flow login + token polling (the "Log in" button) |
 | `/api/start` | Start a repo queue run from the dashboard |
+| `/api/backend` | Get/set the run backend (`opencode` | `claude` | `codex`) |
+| `/api/models` | Per-backend model catalog + overrides (GET `?backend=…`, POST to save) |
 
 ## Fleet skills & subagents
 
@@ -133,17 +148,20 @@ The dashboard exposes a small JSON/SSE API used by its own UI:
 ## Config
 
 - **`opencode.json`** — all 6 fleet agents. Per-agent schema: `description`, `mode` (`"all"`), `model`, `steps` (per-agent step cap: analyzer 12, planner 10, scout 30, coder 12, tester 10, reviewer 8, pr 5), `tools` (`read`/`grep`/`glob`/`bash`/`list`/`write`/`edit`/`patch`/`task`/`skill`/`webfetch` booleans), `permission` (`bash`/`edit`/`webfetch`/`task`: allow|deny, plus `external_directory` allow-list for `.runs/**` and `**/.git/worktrees/**`), `prompt`. `permission` deny is what actually restricts a worker's *tools*; higher-level behavioral guarantees (no-push, no-merge) are prompt-enforced. No `$comment` key allowed.
-- **`src/models/modelPolicy.ts`** — model tiers (reasoning vs build roles), the free fallback pool, and per-role `variant` (reasoning effort). Authoritative for the `-m` passed at spawn (overrides `opencode.json`).
+- **`src/models/modelPolicy.ts`** — per-backend model tiers (reasoning vs build roles), the fallback pool, per-role `variant` (reasoning effort, opencode only), and curated model catalogs for claude/codex. Authoritative for the `-m`/`--model` passed at spawn (overrides the agent configs). `models.json` stores per-role, per-backend overrides.
 - **`OPENCODE_CONFIG`** — set by the Manager to `<project>/opencode.json` when spawning each worker, so the roster is found even though workers run with `--dir` inside the worktree.
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OPENCODE_BIN` | `opencode` | Override the opencode binary path if it is not on PATH (see `src/agentRunner.ts`). |
+| `OPENCODE_BIN` | `opencode` | Override the opencode binary path if it is not on PATH (see `src/runner/backends.ts`). |
+| `CLAUDE_BIN` | `claude` | Override the Claude Code binary path. |
+| `CODEX_BIN` | `codex` | Override the Codex binary path. |
+| `ORCHESTRATOR_BACKEND` | `opencode` | Default backend when `--backend` is not passed. |
 | `OPENROUTER_API_KEY` | — | Optional; only if you configure OpenRouter as a provider in `opencode`. |
 
-GitHub auth is done through the `gh` CLI login (`gh auth login`), not environment variables. The free OpenCode Zen models need no key at all.
+GitHub auth is done through the `gh` CLI login (`gh auth login`), not environment variables. The free OpenCode Zen models need no key at all; Claude Code uses its own auth (`claude auth` / `ANTHROPIC_API_KEY`) and Codex its own (`codex login` / `OPENAI_API_KEY`).
 
 Internally, the Manager isolates each worker's opencode state into `.runs/<id>/.opencode-data/` via `XDG_DATA_HOME`, seeding it with your `auth.json` from `~/.local/share/opencode/auth.json` (see `src/agentRunner.ts`) — so concurrent workers don't contend on a shared opencode database.
 
@@ -191,7 +209,7 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
 ## Limitations / notes
 
 - Free-tier OpenCode Zen models may 503 or hit quota → the runner falls back through the pool; if all models fail the worker reports an error and the run fails. Note `opencode/deepseek-v4-flash-free` is both the primary model for reasoning roles and the first fallback for all roles.
-- opencode CLI flags (`run --agent/-m/--dir/--format json/--variant`) were verified only on **v1.18.7**; versions may drift.
+- opencode CLI flags (`run --agent/-m/--dir/--format json/--variant`) were verified only on **v1.18.7**; versions may drift. Claude Code flags (`-p/--output-format stream-json/--model/--append-system-prompt/--permission-mode`) verified on **v2.1.201**; Codex flags (`exec/--cd/-m/-s/--json/-o/--approve-for-me`) verified on **v0.147.0**. Codex `--json` event shapes are parsed tolerantly and fall back to the `-o` output file.
 - **`--no-web` disables the dashboard in both single-issue and queue mode.**
 - **Nothing is merged automatically.** The PR worker only pushes a branch and opens a PR; merging stays a human decision.
 - `gh` must have access to the target repo for cloning and PR creation.

@@ -4,6 +4,8 @@ description: >-
   a detailed rationale and any blocking issues.
 mode: all
 model: opencode/big-pickle
+claude_model: sonnet
+codex_model: gpt-5.1-codex
 codex_reasoning_effort: medium
 steps: 8
 tools:

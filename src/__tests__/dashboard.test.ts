@@ -33,6 +33,16 @@ describe("dashboard", () => {
         });
       }
     });
+
+    it("defaults backend to opencode", () => {
+      const d = newDashboardState("run-1", "owner/repo", 7);
+      expect(d.backend).toBe("opencode");
+    });
+
+    it("records a supplied backend", () => {
+      const d = newDashboardState("run-1", "owner/repo", 7, "codex");
+      expect(d.backend).toBe("codex");
+    });
   });
 
   describe("renderDashboard", () => {
@@ -41,6 +51,12 @@ describe("dashboard", () => {
       const out = renderDashboard(d);
       expect(out).toContain("run-42");
       expect(out).toContain("owner/repo#7");
+    });
+
+    it("shows the backend in the header", () => {
+      const d = newDashboardState("run-42", "owner/repo", 7, "claude");
+      const out = renderDashboard(d);
+      expect(out).toContain("claude");
     });
 
     it("lists every role", () => {

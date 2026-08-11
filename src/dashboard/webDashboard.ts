@@ -6,10 +6,16 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { DashboardState } from "../tui/dashboard.js";
-import type { Role } from "../types.js";
+import type { Backend, Role } from "../types.js";
 import { ghAuthInfo, type GhAuthInfo } from "../github/gh.js";
 import { startDeviceLogin, pollDeviceToken, storeGhToken } from "../github/gh.js";
-import { getModelOverrides, setModelOverride, saveModelOverrides, FREE_OPCODE_MODELS } from "../models/modelPolicy.js";
+import {
+  availableModels,
+  BACKENDS,
+  getModelOverrides,
+  setModelOverride,
+  saveModelOverrides,
+} from "../models/modelPolicy.js";
 
 const DEFAULT_PORT = 3456;
 const HOST = "127.0.0.1";
@@ -36,10 +42,11 @@ const EMPTY_OUTPUTS: Record<Role, string[]> = {
 export class WebDashboard {
   private readonly port: number;
   private readonly rootDir: string;
-  private onStartRequest: ((repo: string) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
+  private onStartRequest: ((repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
   private runActive = false;
   private notice: string | null = null;
   private loginInProgress = false;
+  private backend: Backend = "opencode";
   private server: Server | null = null;
   private clients = new Map<ServerResponse, SseClient>();
   private lastEventId = 0;
@@ -48,10 +55,16 @@ export class WebDashboard {
   private gh: GhAuthInfo | null = null;
   private agentEvents: Record<Role, Record<string, unknown>[]> = { ...EMPTY_OUTPUTS } as unknown as Record<Role, Record<string, unknown>[]>;
 
-  constructor(port: number = DEFAULT_PORT, rootDir: string, onStartRequest?: (repo: string) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) {
+  constructor(
+    port: number = DEFAULT_PORT,
+    rootDir: string,
+    onStartRequest?: (repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>,
+    initialBackend: Backend = "opencode",
+  ) {
     this.port = port;
     this.rootDir = rootDir;
     this.onStartRequest = onStartRequest ?? null;
+    this.backend = initialBackend;
   }
 
   /** Bind the HTTP server. Resolves `null` (never throws) when the port is unavailable. */
@@ -184,8 +197,9 @@ export class WebDashboard {
     notice: string | null;
     runActive: boolean;
     queueMode: boolean;
+    backend: Backend;
   } {
-    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, runActive: this.runActive, queueMode: this.onStartRequest !== null };
+    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.backend };
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
@@ -199,6 +213,10 @@ export class WebDashboard {
     }
     if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/models") {
       this.handleModels(req, res);
+      return;
+    }
+    if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/backend") {
+      this.handleBackend(req, res);
       return;
     }
     if ((req.method ?? "GET") !== "GET") {
@@ -223,7 +241,14 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/models") {
-      this.sendJson(res, 200, { models: getModelOverrides(), available: [...FREE_OPCODE_MODELS] });
+      const url = new URL(req.url ?? "/", `http://${HOST}`);
+      const backend = url.searchParams.get("backend") as Backend | null;
+      const b = backend && (BACKENDS as readonly string[]).includes(backend) ? backend : this.backend;
+      this.sendJson(res, 200, { models: getModelOverrides()[b] ?? {}, available: [...availableModels(b)] });
+      return;
+    }
+    if (path === "/api/backend") {
+      this.sendJson(res, 200, { backend: this.backend, backends: [...BACKENDS] });
       return;
     }
     if (path === "/api/events") {
@@ -270,6 +295,11 @@ export class WebDashboard {
         this.sendJson(res, 400, { ok: false, error: "missing repo" });
         return;
       }
+      const rawBackend = (body as { backend?: unknown }).backend;
+      const backend =
+        typeof rawBackend === "string" && (BACKENDS as readonly string[]).includes(rawBackend)
+          ? (rawBackend as Backend)
+          : this.backend;
       if (this.runActive) {
         this.sendJson(res, 200, { ok: false, error: "a run is already in progress" });
         return;
@@ -280,7 +310,7 @@ export class WebDashboard {
         this.sendJson(res, 200, { ok: false, error: "no start handler registered" });
         return;
       }
-      void this.onStartRequest(repo)
+      void this.onStartRequest(repo, backend)
         .then((result) => {
           this.sendJson(res, 200, result);
           if (!result.ok || !result.runStarted) this.runActive = false;
@@ -327,11 +357,16 @@ export class WebDashboard {
       }
       const role = (body as { role?: unknown }).role;
       const model = (body as { model?: unknown }).model;
+      const rawBackend = (body as { backend?: unknown }).backend;
+      const backend =
+        typeof rawBackend === "string" && (BACKENDS as readonly string[]).includes(rawBackend)
+          ? (rawBackend as Backend)
+          : this.backend;
       if (typeof role !== "string" || !ROLES.includes(role as Role)) {
         this.sendJson(res, 400, { ok: false, error: "invalid role" });
         return;
       }
-      if (typeof model !== "string" || !FREE_OPCODE_MODELS.includes(model)) {
+      if (typeof model !== "string" || !availableModels(backend).includes(model)) {
         this.sendJson(res, 400, { ok: false, error: "invalid model" });
         return;
       }
@@ -340,13 +375,56 @@ export class WebDashboard {
         return;
       }
       try {
-        setModelOverride(role as Role, model);
+        setModelOverride(role as Role, model, backend);
       } catch (err) {
         this.sendJson(res, 400, { ok: false, error: String(err instanceof Error ? err.message : err) });
         return;
       }
       saveModelOverrides(join(this.rootDir, "models.json"));
-      this.sendJson(res, 200, { ok: true, models: getModelOverrides() });
+      this.sendJson(res, 200, { ok: true, models: getModelOverrides()[backend] ?? {} });
+    });
+    req.on("error", () => {
+      if (!done) {
+        done = true;
+        this.sendJson(res, 400, { ok: false, error: "request error" });
+      }
+    });
+  }
+
+  /** Set the run backend (opencode | claude | codex) used for the next queue start. */
+  private handleBackend(req: IncomingMessage, res: ServerResponse): void {
+    const chunks: Buffer[] = [];
+    let done = false;
+    let bytes = 0;
+    const maxBytes = 8 * 1024;
+    req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        done = true;
+        this.sendJson(res, 413, { ok: false, error: "body too large" });
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (done) return;
+      let body: unknown;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      } catch {
+        this.sendJson(res, 400, { ok: false, error: "invalid JSON body" });
+        return;
+      }
+      const backend = (body as { backend?: unknown }).backend;
+      if (typeof backend !== "string" || !(BACKENDS as readonly string[]).includes(backend)) {
+        this.sendJson(res, 400, { ok: false, error: `invalid backend; must be one of: ${BACKENDS.join(", ")}` });
+        return;
+      }
+      this.backend = backend as Backend;
+      this.lastEventId += 1;
+      this.broadcast(this.lastEventId, "backend", { backend: this.backend, backends: [...BACKENDS] });
+      this.sendJson(res, 200, { ok: true, backend: this.backend });
     });
     req.on("error", () => {
       if (!done) {
@@ -603,6 +681,11 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   <input id="repoinput" type="text" placeholder="owner/name or https://github.com/owner/name" style="flex:1;min-width:220px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font:inherit">
   <button id="startbtn">Start</button>
   <span id="notice" class="meta" style="flex-basis:100%"></span>
+  <span class="meta" style="flex-basis:100%;display:block;margin-top:4px">Backend:
+    <button class="backend-btn" data-backend="opencode" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenCode</button>
+    <button class="backend-btn" data-backend="claude" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Claude</button>
+    <button class="backend-btn" data-backend="codex" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Codex</button>
+  </span>
 </div>
 <main>
   <div class="panel">
@@ -646,6 +729,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   var connEl = null, logEl = null, metaEl = null;
   var noticeEl = null, runActive = false;
   var queueMode = false, modelsLoaded = false;
+  var backend = "opencode", backends = ["opencode", "claude", "codex"];
   var agentEvents = {};
   var curTab = "transcript";
   function $(id) { return document.getElementById(id); }
@@ -689,6 +773,26 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     if (b) b.disabled = runActive;
     if (i) i.disabled = runActive;
     if (b) b.textContent = runActive ? "Running…" : "Start";
+  }
+  function renderBackend() {
+    var btns = document.querySelectorAll(".backend-btn");
+    for (var k = 0; k < btns.length; k++) {
+      var active = btns[k].getAttribute("data-backend") === backend;
+      btns[k].style.borderColor = active ? "var(--accent)" : "var(--border)";
+      btns[k].style.color = active ? "var(--accent)" : "var(--text)";
+      btns[k].disabled = runActive;
+    }
+  }
+  function postBackend(b) {
+    backend = b;
+    renderBackend();
+    fetch("/api/backend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: b })
+    }).then(function (r) { return r.json(); })
+      .then(function () { fetchModels(); })
+      .catch(function () { });
   }
   function copyText(text, btn) {
     function fallback() {
@@ -796,24 +900,26 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
      var models = data.models || {};
      var html = "";
      ROLES.forEach(function (r) {
+       var current = models[r] || "";
        var opts = "";
        available.forEach(function (m) {
-         var sel = models[r] === m ? " selected" : "";
+         var sel = current === m ? " selected" : "";
          opts += '<option value="' + esc(m) + '"' + sel + '>' + esc(m) + '</option>';
        });
+       var listId = "models-" + backend;
        html += '<div class="row" style="margin-bottom:8px">' +
          '<span class="role">' + esc(r) + '</span>' +
-         '<select id="model-' + r + '" data-role="' + r + '" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;font:inherit">' +
-         opts +
-         '</select></div>';
+         '<input list="' + listId + '" id="model-' + r + '" data-role="' + r + '" value="' + esc(current) + '" ' +
+         'style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font:inherit">' +
+         '<datalist id="' + listId + '">' + opts + '</datalist></div>';
      });
      box.innerHTML = html;
      setModelSelectsDisabled(runActive);
      ROLES.forEach(function (r) {
-       var sel = $("model-" + r);
-       if (!sel) return;
-       sel.addEventListener("change", function () {
-         postModel(sel.getAttribute("data-role"), sel.value);
+       var inp = $("model-" + r);
+       if (!inp) return;
+       inp.addEventListener("change", function () {
+         postModel(inp.getAttribute("data-role"), inp.value);
        });
      });
    }
@@ -823,7 +929,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
      fetch("/api/models", {
        method: "POST",
        headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({ role: role, model: model })
+       body: JSON.stringify({ role: role, model: model, backend: backend })
      }).then(function (r) {
        if (r.status === 409) return { ok: false, error: "a run is in progress; cannot change models" };
        return r.json();
@@ -839,7 +945,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
      });
    }
    function fetchModels() {
-     fetch("/api/models").then(function (r) { return r.json(); })
+     fetch("/api/models?backend=" + encodeURIComponent(backend)).then(function (r) { return r.json(); })
        .then(function (d) { renderModels(d); })
        .catch(function () { });
    }
@@ -852,6 +958,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
        fetchModels();
      }
      setModelSelectsDisabled(runActive);
+     renderBackend();
    }
    function renderMeta() {
     if (!dash) {
@@ -986,6 +1093,11 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     }
     if (typeof s.runActive === "boolean") runActive = s.runActive;
     if (typeof s.queueMode === "boolean") queueMode = s.queueMode;
+    if (s.backend && backends.indexOf(s.backend) !== -1) {
+      var prev = backend;
+      backend = s.backend;
+      if (prev !== backend && modelsLoaded) fetchModels();
+    }
     if (typeof s.notice !== "undefined") renderNotice(s.notice);
     syncModelsPanel();
   }
@@ -1001,7 +1113,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     fetch("/api/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo: value })
+      body: JSON.stringify({ repo: value, backend: backend })
     }).then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.ok) {
@@ -1032,6 +1144,15 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     es.addEventListener("snapshot", function (e) { applyState(JSON.parse(e.data)); });
     es.addEventListener("state", function (e) { applyState(JSON.parse(e.data)); });
     es.addEventListener("gh", function (e) { renderGh(JSON.parse(e.data)); });
+    es.addEventListener("backend", function (e) {
+      var d = JSON.parse(e.data);
+      if (d.backend && backends.indexOf(d.backend) !== -1) {
+        var prev = backend;
+        backend = d.backend;
+        renderBackend();
+        if (prev !== backend && modelsLoaded) fetchModels();
+      }
+    });
     es.addEventListener("output", function (e) {
       var d = JSON.parse(e.data);
       pushText(d.role, d.text);
@@ -1059,6 +1180,14 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     $("repoinput").addEventListener("keydown", function (e) {
       if (e.key === "Enter") startQueue();
     });
+    var backendBtns = document.querySelectorAll(".backend-btn");
+    for (var bi = 0; bi < backendBtns.length; bi++) {
+      backendBtns[bi].addEventListener("click", function () {
+        if (runActive) return;
+        postBackend(this.getAttribute("data-backend"));
+      });
+    }
+    renderBackend();
     fetchGh();
     setInterval(fetchGh, 5000);
     logEl.addEventListener("scroll", function () {
