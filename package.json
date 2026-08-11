@@ -1,0 +1,27 @@
+{
+  "name": "multi-orchestration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript Manager that orchestrates a fleet of headless opencode workers to take a GitHub issue to a real PR, gated by 3 human approvals.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dry": "tsx src/index.ts --dry-run",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:config": "tsx scripts/generate-configs.ts",
+    "check:config": "tsx scripts/generate-configs.ts --check"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "gray-matter": "^4.0.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}

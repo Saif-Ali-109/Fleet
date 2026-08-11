@@ -1,0 +1,8 @@
+{
+  "analyzer": "deepseek-v4-flash-free",
+  "planner": "deepseek-v4-flash-free",
+  "coder": "laguna-s-2.1-free",
+  "tester": "laguna-s-2.1-free",
+  "reviewer": "deepseek-v4-flash-free",
+  "pr": "laguna-s-2.1-free"
+}

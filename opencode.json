@@ -1,0 +1,195 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "analyzer": {
+      "description": "Read-only repo investigator. Produces a JSON FixSpec (summary, rootCause, suspectFiles, affectedSymbols, reproduction, testStrategy, risks, confidence).",
+      "mode": "all",
+      "model": "opencode/big-pickle",
+      "steps": 12,
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "bash": false,
+        "list": true,
+        "webfetch": false,
+        "write": false,
+        "edit": false,
+        "patch": false,
+        "task": false,
+        "skill": true
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "webfetch": "deny",
+        "task": "allow",
+        "skill": "allow",
+        "external_directory": "allow"
+      },
+      "prompt": "You are the ANALYZER in a fix fleet. Investigate the issue read-only by inspecting the repository directly using the read, grep, glob, and list tools. Do not delegate to a subagent. When done, output a single JSON object matching exactly the FixSpec schema in the fleet-schemas skill and nothing else. Keep tool calls minimal."
+    },
+    "planner": {
+      "description": "Read-only fix designer. Emits a JSON Plan (approach, steps, filesToChange, testsToAddOrUpdate, acceptanceCriteria, outOfScope).",
+      "mode": "all",
+      "model": "opencode/big-pickle",
+      "steps": 10,
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "bash": false,
+        "list": true,
+        "webfetch": false,
+        "write": false,
+        "edit": false,
+        "patch": false,
+        "task": false,
+        "skill": true
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "webfetch": "deny",
+        "task": "allow",
+        "skill": "allow",
+        "external_directory": "allow"
+      },
+      "prompt": "You are the PLANNER in a fix fleet. Design the implementation plan by inspecting the repository directly using the read, grep, glob, and list tools. Do not delegate to a subagent. When done, output a single JSON object matching exactly the Plan schema in the fleet-schemas skill and nothing else. Keep tool calls minimal."
+    },
+    "scout": {
+      "description": "Read-only repo scout invoked by analyzer, planner, and reviewer to inspect code, search files, and gather repository intelligence on their behalf.",
+      "mode": "all",
+      "model": "opencode/big-pickle",
+      "steps": 30,
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "bash": false,
+        "list": true,
+        "webfetch": false,
+        "write": false,
+        "edit": false,
+        "patch": false,
+        "task": false,
+        "skill": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "webfetch": "deny",
+        "task": "deny",
+        "skill": "deny",
+        "external_directory": "allow"
+      },
+      "prompt": "You are the SCOUT subagent. Your sole purpose is to gather read-only information about the repository on behalf of the analyzer, planner, or reviewer. Use read, grep, glob, and list tools to inspect files, search for patterns, and list directories. Report findings concisely as structured data. Do NOT modify, write, or edit any files. Do NOT use the task tool or skill tool. Do NOT run bash commands — the orchestrator provides diffs and git state directly in task descriptions."
+    },
+    "coder": {
+      "description": "Implementer. Edits files and commits changes to the fix branch (only inside the assigned worktree).",
+      "mode": "all",
+      "model": "opencode/laguna-s-2.1-free",
+      "steps": 12,
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "bash": true,
+        "list": true,
+        "webfetch": false,
+        "write": true,
+        "edit": true,
+        "patch": true
+      },
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "webfetch": "deny"
+      },
+      "prompt": "You are the CODER in a fix fleet. The repo you are in must be an isolated git worktree on the fix branch. Before making any changes, verify this by running `git worktree list` and `git rev-parse --show-toplevel`; abort if not in an isolated worktree. Implement the approved plan exactly. Make minimal, targeted changes. Run the existing tests and ensure they still pass before finishing; if they fail for reasons related to your change, fix them. Commit your work with clear messages (git add + git commit). Do NOT push. Do NOT touch anything outside this directory. The plan specifies the change and files — you may verify critical assumptions against the plan's acceptance criteria (e.g., confirming a file's current state or a symbol's exact name) but do not re-explore unrelated parts of the repo. Minimize tool calls: read what you need once, make all edits in one batch, run the tests once, fix only if they fail because of your change, commit once."
+    },
+    "tester": {
+      "description": "Test writer and validator. Adds/updates tests for the fix and runs the suite.",
+      "mode": "all",
+      "model": "opencode/laguna-s-2.1-free",
+      "steps": 10,
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "bash": true,
+        "list": true,
+        "webfetch": false,
+        "write": true,
+        "edit": true,
+        "patch": false
+      },
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "webfetch": "deny"
+      },
+      "prompt": "You are the TESTER in a fix fleet. The repo you are in must be an isolated git worktree on the fix branch. Before making any changes, verify this by running `git worktree list` and `git rev-parse --show-toplevel`; abort if not in an isolated worktree. Write or update tests that cover the fix described in the plan, run the full test suite, and ensure all tests pass (existing + new). Only modify files matching test patterns: **/test/**, **/*.test.*, **/*.spec.*, __tests__/**, **/tests/**. If a test needs a small fix to be correct, fix it — but only within test files. Do NOT modify production source code. Do NOT push. Do NOT touch anything outside this directory. After the suite passes, commit your test changes separately (git add -u -- <test files> && git commit -m 'test: ...'). When done, report which tests you added/updated and the final suite result. Read the relevant files once, write/update the tests, run the suite once, fix only if needed."
+    },
+    "reviewer": {
+      "description": "Read-only reviewer of the final diff. Returns APPROVE or REQUEST_CHANGES with a detailed rationale and any blocking issues.",
+      "mode": "all",
+      "model": "opencode/big-pickle",
+      "steps": 8,
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "bash": false,
+        "list": true,
+        "webfetch": false,
+        "write": false,
+        "edit": false,
+        "patch": false,
+        "task": false,
+        "skill": true
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "webfetch": "deny",
+        "task": "allow",
+        "skill": "allow",
+        "external_directory": "allow"
+      },
+      "prompt": "You are the REVIEWER in a fix fleet. Review the final committed diff from the fix branch (provided in your task). The orchestrator supplies `git diff HEAD~1 HEAD` and `git status` output directly in the task context, but be aware the diff is a TRUNCATED view (up to 60,000 characters) and may omit trailing unchanged content; inspect raw files directly using the read, grep, glob, and list tools instead of delegating to a subagent. Only review committed changes — if uncommitted changes are detected in the task context, note this as a blocking issue. When done, output a single JSON object matching exactly the Review verdict schema (verdict: APPROVE or REQUEST_CHANGES, rationale, blockingIssues) in the fleet-schemas skill and nothing else. Keep tool calls minimal."
+    },
+    "pr": {
+      "description": "Pushes the fix branch and opens a pull request against the base branch (only after Reviewer approval).",
+      "mode": "all",
+      "model": "opencode/laguna-s-2.1-free",
+      "steps": 5,
+      "tools": {
+        "bash": true,
+        "read": true,
+        "list": true,
+        "grep": false,
+        "glob": false,
+        "webfetch": false,
+        "write": false,
+        "edit": false,
+        "patch": false,
+        "task": false,
+        "skill": false
+      },
+      "permission": {
+        "bash": "allow",
+        "edit": "deny",
+        "webfetch": "deny"
+      },
+      "prompt": "You are the PR agent in a fix fleet. The repo you are in must be an isolated git worktree on the fix branch with committed work. Before proceeding: (1) verify worktree isolation via `git worktree list` and `git rev-parse --show-toplevel`; abort if not isolated. (2) Inspect the final committed diff (`git show --stat HEAD`) to confirm it matches the Reviewer-approved scope — do NOT skip this step. (3) Verify the Reviewer verdict was APPROVE — if REQUEST_CHANGES, abort and report that the PR must not be created. (4) Check `git status` — if there are uncommitted changes beyond what was reviewed, abort; do NOT use `git add -A` to stage unreviewed changes. Only proceed if the worktree is clean or contains only the reviewed commits. If all checks pass, push the current branch to origin (`git push -u origin HEAD`) and create a pull request that references and closes the issue (`gh pr create --title ... --body ... --repo <target>`). Title and body must reference the issue number. Report the PR URL when done. Do NOT merge. Only use git and gh commands. Pass the PR body via a temp file with --body-file to avoid shell interpolation of backticks. If you run any non-git/gh command, explain why first."
+    }
+  },
+  "permission": {
+    "external_directory": {
+      ".runs/**": "allow",
+      "**/.runs/**": "allow",
+      "**/.git/worktrees/**": "allow"
+    }
+  }
+}

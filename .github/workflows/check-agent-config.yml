@@ -1,0 +1,40 @@
+name: Check agent config is up to date
+
+# agents/*.md is the single source of truth for every CLI agent's config
+# (opencode.json, .claude/agents/*.md, .codex/agents/*.toml). This workflow
+# fails if any generated file was hand-edited, or if agents/*.md changed
+# without regenerating, so they can never silently drift apart.
+
+on:
+  push:
+    paths:
+      - "agents/**"
+      - "opencode.json"
+      - ".claude/agents/**"
+      - ".codex/agents/**"
+      - "scripts/**"
+      - ".github/workflows/check-agent-config.yml"
+  pull_request:
+    paths:
+      - "agents/**"
+      - "opencode.json"
+      - ".claude/agents/**"
+      - ".codex/agents/**"
+      - "scripts/**"
+      - ".github/workflows/check-agent-config.yml"
+
+jobs:
+  check-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Verify all generated configs match agents/*.md
+        run: npm run check:config
