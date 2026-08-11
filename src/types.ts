@@ -4,6 +4,9 @@
 /** The six worker roles in the fleet. */
 export type Role = "analyzer" | "planner" | "coder" | "tester" | "reviewer" | "pr";
 
+/** Which headless CLI agent runs the fleet for a given run. */
+export type Backend = "opencode" | "claude" | "codex";
+
 /** A GitHub issue as pulled from `gh issue view --json`. */
 export interface Issue {
   repo: string; // owner/name
@@ -65,6 +68,8 @@ export interface RunContext {
   tracesDir: string; // .runs/<runId>/traces
   branch: string; // fix branch name
   dryRun: boolean;
+  /** Which headless CLI runs the fleet's workers. Default "opencode". */
+  backend?: Backend;
 }
 
 /** Per-role model + privilege policy (mirrors opencode.json; used by the router/runner). */

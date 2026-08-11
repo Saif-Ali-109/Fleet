@@ -1,4 +1,4 @@
-import type { Role } from "../types.js";
+import type { Backend, Role } from "../types.js";
 import type { AgentResult } from "../types.js";
 
 type PhaseName = "idle" | "gate1" | "analyze" | "plan" | "gate2" | "implement" | "review" | "gate3" | "pr" | "done" | "aborted" | "failed";
@@ -24,15 +24,21 @@ export interface DashboardState {
   loopIteration: number;
   lastGate?: string;
   prUrl?: string;
+  backend?: Backend;
 }
 
 const ROLES: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
 
-export function newDashboardState(runId: string, repo: string, issue: number): DashboardState {
+export function newDashboardState(
+  runId: string,
+  repo: string,
+  issue: number,
+  backend: Backend = "opencode",
+): DashboardState {
   const agents = Object.fromEntries(
     ROLES.map((r) => [r, { role: r, state: "pending" as const, model: "" }]),
   ) as Record<Role, AgentStatus>;
-  return { runId, repo, issue, phase: "idle", agents, loopIteration: 1 };
+  return { runId, repo, issue, phase: "idle", agents, loopIteration: 1, backend };
 }
 
 const BAR_W = 20;
@@ -63,7 +69,7 @@ export function renderDashboard(d: DashboardState): string {
   const phasePct = d.phase === "done" ? 1 : d.phase === "aborted" ? 0 : 0.5;
 
   return [
-    `\n┌─ Multi-Orchestration ─ run ${d.runId} ─ ${d.repo}#${d.issue} ────────────┐`,
+    `\n┌─ Multi-Orchestration ─ run ${d.runId} ─ ${d.repo}#${d.issue} ─ ${d.backend ?? "opencode"} ────────┐`,
     `│ phase: ${d.phase.padEnd(12)} loop: ${d.loopIteration}  [${renderBar(phasePct)}]`,
     ...rows.map((r) => `│${r}`),
     `└──────────────────────────────────────────────────────────────┘`,
