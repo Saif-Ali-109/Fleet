@@ -9,7 +9,7 @@ CREATE TABLE run_outcomes (
   repo             TEXT NOT NULL,
   issue_number     INTEGER NOT NULL,
   issue_title      TEXT NOT NULL,
-  status           TEXT NOT NULL CHECK (status IN ('completed', 'aborted', 'failed')),
+  status           TEXT NOT NULL CHECK (status IN ('running', 'completed', 'aborted', 'failed')),
   pr_url           TEXT,
   total_cost_usd   NUMERIC NOT NULL,
   iterations_used  INTEGER NOT NULL,
