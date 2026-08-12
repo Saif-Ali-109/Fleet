@@ -63,4 +63,6 @@ jobs:
         continue-on-error: false
 
       - name: Dry-run smoke (orchestration spine)
+        env:
+          DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
         run: npm run dry -- --repo octocat/Hello-World --issue 1 --interactive=false --no-web
