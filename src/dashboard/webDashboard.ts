@@ -43,8 +43,11 @@ export class WebDashboard {
   private readonly port: number;
   private readonly rootDir: string;
   private onStartRequest: ((repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
+  private onStopRequest: (() => void) | null = null;
   private runActive = false;
+  private stopRequested = false;
   private notice: string | null = null;
+  private errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }> = [];
   private loginInProgress = false;
   private backend: Backend = "opencode";
   private server: Server | null = null;
@@ -60,11 +63,13 @@ export class WebDashboard {
     rootDir: string,
     onStartRequest?: (repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>,
     initialBackend: Backend = "opencode",
+    onStopRequest: (() => void) | null = null,
   ) {
     this.port = port;
     this.rootDir = rootDir;
     this.onStartRequest = onStartRequest ?? null;
     this.backend = initialBackend;
+    this.onStopRequest = onStopRequest;
   }
 
   /** Bind the HTTP server. Resolves `null` (never throws) when the port is unavailable. */
@@ -198,13 +203,19 @@ export class WebDashboard {
     runActive: boolean;
     queueMode: boolean;
     backend: Backend;
+    stopRequested: boolean;
+    errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }>;
   } {
-    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.backend };
+    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.backend, stopRequested: this.stopRequested, errorLog: this.errorLog };
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
     if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/start") {
       this.handleStart(req, res);
+      return;
+    }
+    if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/stop") {
+      this.handleStop(res);
       return;
     }
     if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/login") {
@@ -259,6 +270,10 @@ export class WebDashboard {
       void this.sendFile(res, join(this.rootDir, "MEMORY.md"));
       return;
     }
+    if (path === "/api/model-limit-error") {
+      this.handleModelLimitError(req, res);
+      return;
+    }
     if (path === "/api/session-log") {
       void this.sendFile(res, join(this.rootDir, "SESSION_LOG.md"));
       return;
@@ -304,19 +319,25 @@ export class WebDashboard {
         this.sendJson(res, 200, { ok: false, error: "a run is already in progress" });
         return;
       }
+      this.stopRequested = false;
       this.runActive = true;
       if (!this.onStartRequest) {
         this.runActive = false;
+        this.stopRequested = false;
         this.sendJson(res, 200, { ok: false, error: "no start handler registered" });
         return;
       }
       void this.onStartRequest(repo, backend)
         .then((result) => {
           this.sendJson(res, 200, result);
-          if (!result.ok || !result.runStarted) this.runActive = false;
+          if (!result.ok || !result.runStarted) {
+            this.runActive = false;
+            this.stopRequested = false;
+          }
         })
         .catch((err) => {
           this.runActive = false;
+          this.stopRequested = false;
           this.sendJson(res, 200, {
             ok: false,
             error: String(err instanceof Error ? err.message : err),
@@ -330,6 +351,65 @@ export class WebDashboard {
       }
     });
   }
+
+  private handleStop(res: ServerResponse): void {
+    this.stopRequested = true;
+    this.onStopRequest?.();
+    this.lastEventId += 1;
+    this.broadcast(this.lastEventId, "state", this.snapshot());
+    this.sendJson(res, 200, { ok: true });
+  }
+  private handleModelLimitError(req: IncomingMessage, res: ServerResponse): void {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let done = false;
+    const maxBytes = 8 * 1024;
+    req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        done = true;
+        this.sendJson(res, 413, { ok: false, error: "body too large" });
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (done) return;
+      let body: unknown;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      } catch {
+        this.sendJson(res, 400, { ok: false, error: "invalid JSON body" });
+        return;
+      }
+      const { type, message, agent, issue, timestamp } = body as {
+        type: string;
+        message: string;
+        agent: string;
+        issue?: number;
+        timestamp: number;
+      };
+      if (typeof type !== "string" || typeof message !== "string" || typeof agent !== "string") {
+        this.sendJson(res, 400, { ok: false, error: "missing or invalid fields" });
+        return;
+      }
+      // Store in error log (max 50, FIFO)
+      this.errorLog.push({ type, message, agent, issue, timestamp: timestamp ?? Date.now() });
+      if (this.errorLog.length > 50) this.errorLog.shift();
+      // Broadcast updated state to all SSE clients
+      this.lastEventId += 1;
+      this.broadcast(this.lastEventId, "state", this.snapshot());
+      this.sendJson(res, 202, { ok: true });
+    });
+    req.on("error", () => {
+      if (!done) {
+        done = true;
+        this.sendJson(res, 400, { ok: false, error: "request error" });
+      }
+    });
+  }
+
 
   private handleModels(req: IncomingMessage, res: ServerResponse): void {
     const chunks: Buffer[] = [];
@@ -680,6 +760,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   <span class="ghb-title" style="color:var(--accent)">Start a repo queue</span>
   <input id="repoinput" type="text" placeholder="owner/name or https://github.com/owner/name" style="flex:1;min-width:220px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font:inherit">
   <button id="startbtn">Start</button>
+  <button id="stopbtn" disabled style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Stop</button>
   <span id="notice" class="meta" style="flex-basis:100%"></span>
   <span class="meta" style="flex-basis:100%;display:block;margin-top:4px">Backend:
     <button class="backend-btn" data-backend="opencode" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenCode</button>
@@ -708,6 +789,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       <button class="tab-btn active" onclick="switchTab('transcript', this)">Live transcript</button>
       <button class="tab-btn" onclick="switchTab('memory', this)">MEMORY.md</button>
       <button class="tab-btn" onclick="switchTab('sessionlog', this)">SESSION_LOG.md</button>
+      <button class="tab-btn" onclick="switchTab('errorlog', this)">Error Log</button>
     </div>
     <div id="transcript-tab" class="tab-content active">
       <div id="tab-transcript"></div>
@@ -717,6 +799,10 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     </div>
     <div id="sessionlog-tab" class="tab-content">
       <div id="sessionlog-content" class="empty">No session started yet.</div>
+    </div>
+    <div id="errorlog-tab" class="tab-content">
+      <div class="empty" style="padding: 20px; text-align: center;">No model limit errors.</div>
+      <div id="errorlog-content" style="overflow-y: auto; height: 300px; padding: 12px;"></div>
     </div>
   </div>
 </div>
@@ -728,6 +814,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   var dash = null, log = [], es = null, pollT = null, stick = true;
   var connEl = null, logEl = null, metaEl = null;
   var noticeEl = null, runActive = false;
+  var stopRequested = false;
   var queueMode = false, modelsLoaded = false;
   var backend = "opencode", backends = ["opencode", "claude", "codex"];
   var agentEvents = {};
@@ -773,6 +860,28 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     if (b) b.disabled = runActive;
     if (i) i.disabled = runActive;
     if (b) b.textContent = runActive ? "Running…" : "Start";
+  }
+  function renderStop() {
+    var b = $("stopbtn");
+    if (!b) return;
+    if (runActive || stopRequested) {
+      b.textContent = "Stopping after current run…";
+      b.disabled = stopRequested;
+    } else {
+      b.textContent = "Stop";
+      b.disabled = true;
+    }
+  }
+  function requestStop() {
+    if (stopRequested) return;
+    stopRequested = true;
+    renderStop();
+    fetch("/api/stop", { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) renderNotice((d && d.error) || "stop failed");
+      })
+      .catch(function () { renderNotice("stop failed — network error"); });
   }
   function renderBackend() {
     var btns = document.querySelectorAll(".backend-btn");
@@ -866,6 +975,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     $("" + name + "-tab").classList.add("active");
     if (name === "memory") fetchMemory();
     if (name === "sessionlog") fetchSessionLog();
+    if (name === "errorlog") fetchErrorLog();
   };
   function fetchMemory() {
     var el = $("memory-content");
@@ -877,7 +987,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       })
       .catch(function () { el.textContent = "Error loading MEMORY.md"; });
   }
-  function fetchSessionLog() {
+function fetchSessionLog() {
     var el = $("sessionlog-content");
     if (!el) return;
     el.textContent = "Loading…";
@@ -886,6 +996,45 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
         el.textContent = d.content || "";
       })
        .catch(function () { el.textContent = "Error loading SESSION_LOG.md"; });
+   }
+   function fetchErrorLog() {
+    var el = $("errorlog-content");
+    if (!el) return;
+    el.textContent = "Loading…";
+    fetch("/api/model-limit-error").then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok) {
+          var errors = el;
+          errors.textContent = "";
+          // Render error log entries from dashboard state
+          // Errors are available via SSE state
+          if (window.dashboardState && window.dashboardState.errorLog) {
+            window.dashboardState.errorLog.forEach(function (err) {
+              var div = document.createElement("div");
+              div.style = "margin-bottom: 8px; padding: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 4px;";
+              var strong = document.createElement("strong");
+              strong.textContent = "[" + err.type + "] ";
+              div.appendChild(strong);
+              var span = document.createElement("span");
+              span.textContent = err.message;
+              div.appendChild(span);
+              if (err.issue !== undefined) {
+                var issueSpan = document.createElement("span");
+                issueSpan.textContent = " Issue #" + err.issue;
+                div.appendChild(issueSpan);
+              }
+              var timeSpan = document.createElement("span");
+              timeSpan.style = "color: var(--muted); font-size: 11px;";
+              timeSpan.textContent = " @ " + new Date(err.timestamp).toLocaleTimeString();
+              div.appendChild(timeSpan);
+              errors.appendChild(div);
+            });
+          }
+        } else {
+          el.textContent = "Error loading error log: " + (d && d.error);
+        }
+      })
+       .catch(function () { el.textContent = "Error loading error log"; });
    }
    function setModelSelectsDisabled(disabled) {
      ROLES.forEach(function (r) {
@@ -1093,12 +1242,14 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     }
     if (typeof s.runActive === "boolean") runActive = s.runActive;
     if (typeof s.queueMode === "boolean") queueMode = s.queueMode;
+    if (typeof s.stopRequested === "boolean") stopRequested = s.stopRequested;
     if (s.backend && backends.indexOf(s.backend) !== -1) {
       var prev = backend;
       backend = s.backend;
       if (prev !== backend && modelsLoaded) fetchModels();
     }
     if (typeof s.notice !== "undefined") renderNotice(s.notice);
+    renderStop();
     syncModelsPanel();
   }
   function startQueue() {
@@ -1109,6 +1260,8 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       return;
     }
     runActive = true;
+    stopRequested = false;
+    renderStop();
     renderNotice("Starting…");
     fetch("/api/start", {
       method: "POST",
@@ -1120,11 +1273,15 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
           renderNotice("Queue started…");
         } else {
           runActive = false;
+          stopRequested = false;
+          renderStop();
           renderNotice((d && d.error) || "start failed");
         }
       })
       .catch(function () {
         runActive = false;
+        stopRequested = false;
+        renderStop();
         renderNotice("start failed — network error");
       });
   }
@@ -1171,12 +1328,14 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   function onLoad() {
     connEl = $("conn"); logEl = $("log"); metaEl = $("meta"); noticeEl = $("notice");
     renderMeta();
+    renderStop();
     $("ghrecheck").addEventListener("click", fetchGh);
     $("ghlogin").addEventListener("click", startLogin);
     $("ghcodecopy").addEventListener("click", function () {
       copyText($("ghuserCode").textContent, $("ghcodecopy"));
     });
     $("startbtn").addEventListener("click", startQueue);
+    $("stopbtn").addEventListener("click", requestStop);
     $("repoinput").addEventListener("keydown", function (e) {
       if (e.key === "Enter") startQueue();
     });

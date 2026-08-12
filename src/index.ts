@@ -1,7 +1,9 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebDashboard } from "./dashboard/webDashboard.js";
-import { fetchIssue, ghAuthInfo, listOpenIssues, stubIssue, toRepoSlug } from "./github/gh.js";
+import { db } from "./db/client.js";
+import { fixBranchName, shouldSkipIssue } from "./daemon/dedup.js";
+import { fetchIssue, ghAuthInfo, hasOpenPrForBranch, listOpenIssues, stubIssue, toRepoSlug } from "./github/gh.js";
 import { runOrchestrator, type WebFeed } from "./orchestrator.js";
 import type { DashboardState } from "./tui/dashboard.js";
 import type { Issue, RunContext } from "./types.js";
@@ -33,6 +35,24 @@ const BACKENDS: readonly Backend[] = ["opencode", "claude", "codex"];
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const newRunId = (): string => new Date().toISOString().replace(/[:.]/g, "-");
+
+const scanIntervalMinutes = Math.max(1, Number(process.env.SCAN_INTERVAL_MINUTES) || 5);
+const scanIntervalMs = scanIntervalMinutes * 60_000;
+let stopRequested = false;
+let daemonActive = false;
+
+function isModelLimitError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("rate limit") ||
+    lower.includes("429") ||
+    lower.includes("token limit") ||
+    lower.includes("context length") ||
+    lower.includes("quota") ||
+    lower.includes("model limit") ||
+    lower.includes("too many requests")
+  );
+}
 
 const toRepoUrl = (repo: string): string =>
   /^https?:\/\//.test(repo) ? repo : `https://github.com/${repo.trim().replace(/\.git$/, "")}.git`;
@@ -137,10 +157,11 @@ async function runSingleIssue(args: {
   process.exitCode = summary.status === "completed" ? 0 : summary.status === "aborted" ? 2 : 1;
 }
 
-/** Dashboard-driven queue: fix every open issue of a repo, one by one, gates auto-approved. */
+/** Dashboard-driven daemon: watch a repo, auto-scan for open issues, fix them one by one until Stop. */
 async function runQueue(port: number, dryRun: boolean, backend: Backend): Promise<void> {
   let web: WebDashboard | null = null;
   let webFeed: WebFeed | undefined;
+  const watched = new Set<string>();
 
   const startHandler = async (
     repoInput: string,
@@ -153,27 +174,33 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
       if (!ghInfo.ok) return { ok: false, error: ghInfo.error ?? "GitHub not signed in" };
       web?.pushGh(ghInfo);
       web?.pushNotice("");
-      let issues: { number: number; title: string }[];
       try {
-        issues = await listOpenIssues(slug);
+        await listOpenIssues(slug);
       } catch (err: any) {
         return { ok: false, error: `repo not found or inaccessible: ${err?.message ?? err}` };
       }
-      if (issues.length === 0) {
-        web?.pushNotice(`No open issues found in ${slug}. You can enter another repo below.`);
-        return { ok: true };
+      watched.add(slug);
+      stopRequested = false;
+      if (!daemonActive) {
+        daemonActive = true;
+        void runDaemonLoop(watched, dryRun, effectiveBackend, web, webFeed).catch((err: unknown) => {
+          daemonActive = false;
+          console.error(err);
+          web?.pushNotice("Daemon crashed: " + (err instanceof Error ? err.message : err));
+        });
+      } else {
+        web?.pushNotice(`${slug} added to the watch list.`);
       }
-      void runQueueLoop(slug, issues, dryRun, effectiveBackend, web, webFeed).catch((err: unknown) => {
-        console.error(err);
-        web?.pushNotice(`Queue aborted: ${err instanceof Error ? err.message : err}`);
-      });
       return { ok: true, runStarted: true };
     } catch (err: any) {
       return { ok: false, error: String(err instanceof Error ? err.message : err) };
     }
   };
 
-  web = new WebDashboard(port, rootDir, startHandler, backend);
+  web = new WebDashboard(port, rootDir, startHandler, backend, () => {
+    stopRequested = true;
+    web?.pushNotice("Stop requested — finishing current issue…");
+  });
   const info = await web.start();
   if (info) {
     console.log(`\n▶ Dashboard: ${info.url} (live)`);
@@ -199,57 +226,119 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
   }
 }
 
-async function runQueueLoop(
-  slug: string,
-  issues: { number: number; title: string }[],
+async function runDaemonLoop(
+  repos: ReadonlySet<string>,
   dryRun: boolean,
   backend: Backend,
   web: WebDashboard | null,
   webFeed: WebFeed | undefined,
 ): Promise<void> {
-  let completed = 0;
-  let failed = 0;
-  let index = 0;
-  for (const item of issues) {
-    index += 1;
-    const num = item.number;
-    const title = item.title ?? "";
-    web?.pushNotice(`Fixing issue ${index} of ${issues.length} — #${num}: ${title}`);
-    const issue = await fetchIssue(slug, num);
-    const runId = newRunId();
-    const ctx: RunContext = {
-      runId,
-      issue,
-      repoUrl: toRepoUrl(slug),
-      rootDir,
-      runDir: join(rootDir, ".runs", runId),
-      worktreeDir: join(rootDir, ".runs", runId, "worktree"),
-      tracesDir: join(rootDir, ".runs", runId, "traces"),
-      branch: `fix-issue-${num}`,
-      dryRun,
-      backend,
-    };
-    const s = await runOrchestrator(ctx, { interactive: false, web: webFeed });
-    console.log("\n┌─ Issue #" + num + " finished ───────────────────────");
-    console.log(`│ status:      ${s.status}`);
-    if (s.prUrl) console.log(`│ PR:          ${s.prUrl}`);
-    console.log(`│ backend:     ${s.backend}`);
-    console.log(`│ total cost:  $${s.totalCostUsd.toFixed(4)}`);
-    if (s.failure) console.log(`│ failure:     ${s.failure}`);
-    console.log("└─────────────────────────────────────────────");
-    if (s.status === "completed") {
-      completed += 1;
-      web?.pushNotice(`✓ Issue #${num} → PR: ${s.prUrl ?? "(none)"}`);
-    } else {
-      failed += 1;
-      web?.pushNotice(`✗ Issue #${num} failed: ${s.failure ?? s.status}`);
-      web?.pushNotice("Continuing to next issue…");
+  try {
+    while (!stopRequested) {
+      for (const slug of repos) {
+        if (stopRequested) break;
+        let issues: { number: number; title: string }[];
+        try {
+          issues = await listOpenIssues(slug);
+        } catch (err: unknown) {
+          web?.pushNotice(`⚠ scan failed: ${err instanceof Error ? err.message : err}`);
+          web?.pushNotice("Skipping this scan — will retry at the next interval.");
+          issues = [];
+        }
+        for (const item of issues) {
+          if (stopRequested) break;
+          const num = item.number;
+          const title = item.title ?? "";
+          if (!dryRun) {
+            try {
+              const run = await db.getRunByRepoIssue(slug, num);
+              const completedRun = run?.status === "completed";
+              const openPr = await hasOpenPrForBranch(slug, fixBranchName(num));
+              if (shouldSkipIssue({ completedRun, openPrOnBranch: openPr })) {
+                web?.pushNotice(`Skipping #${num} (already fixed).`);
+                continue;
+              }
+            } catch (err: unknown) {
+              web?.pushNotice(
+                `⚠ skip check for #${num} failed: ${err instanceof Error ? err.message : err}`,
+              );
+            }
+          }
+          try {
+            const res = await runSingleIssueFromQueue(slug, num, title, dryRun, backend, web, webFeed);
+            if (res.status === "completed") {
+              web?.pushNotice(`✓ Issue #${num} → PR: ${res.prUrl ?? "(none)"}`);
+            } else {
+              web?.pushNotice(`✗ Issue #${num} failed: ${res.failure ?? res.status}`);
+              web?.pushNotice("Continuing to next issue…");
+            }
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            web?.pushNotice(`⛔ #${num} failed: ${errMsg}`);
+            // Check if this is a model limit error and POST to dashboard
+            if (isModelLimitError(errMsg) && web) {
+              fetch("/api/model-limit-error", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  type: "model_limit",
+                  message: errMsg,
+                  agent: backend,
+                  issue: num,
+                  timestamp: Date.now(),
+                }),
+              }).catch((e) => console.error("Failed to post model limit error:", e));
+            }
+          }
+        }
+        web?.pushNotice(
+          `Scan ${slug} — ${issues.length} issue${issues.length === 1 ? "" : "s"} processed. Next scan in ${scanIntervalMinutes} min.`,
+        );
+      }
+      const nextScanAt = Date.now() + scanIntervalMs;
+      while (!stopRequested && Date.now() < nextScanAt) {
+        await sleep(5000);
+      }
     }
+  } finally {
+    daemonActive = false;
+    web?.pushNotice("Daemon stopped — idle. Press Start to resume.");
   }
-  web?.pushNotice(`Queue finished — ${completed} completed, ${failed} failed`);
-  await sleep(15000);
-  await web?.close();
-  process.exit(failed === 0 ? 0 : 1);
+}
+
+async function runSingleIssueFromQueue(
+  slug: string,
+  num: number,
+  title: string,
+  dryRun: boolean,
+  backend: Backend,
+  web: WebDashboard | null,
+  webFeed: WebFeed | undefined,
+): Promise<{ status: string; prUrl?: string; failure?: string }> {
+  web?.pushNotice(`Fixing issue — #${num}: ${title}`);
+  const issue = await fetchIssue(slug, num);
+  const runId = newRunId();
+  const ctx: RunContext = {
+    runId,
+    issue,
+    repoUrl: toRepoUrl(slug),
+    rootDir,
+    runDir: join(rootDir, ".runs", runId),
+    worktreeDir: join(rootDir, ".runs", runId, "worktree"),
+    tracesDir: join(rootDir, ".runs", runId, "traces"),
+    branch: fixBranchName(num),
+    dryRun,
+    backend,
+  };
+  const s = await runOrchestrator(ctx, { interactive: false, web: webFeed });
+  console.log("\n┌─ Issue #" + num + " finished ───────────────────────");
+  console.log(`│ status:      ${s.status}`);
+  if (s.prUrl) console.log(`│ PR:          ${s.prUrl}`);
+  console.log(`│ backend:     ${s.backend}`);
+  console.log(`│ total cost:  $${s.totalCostUsd.toFixed(4)}`);
+  if (s.failure) console.log(`│ failure:     ${s.failure}`);
+  console.log("└─────────────────────────────────────────────");
+  return { status: s.status, prUrl: s.prUrl, failure: s.failure };
 }
 
 async function main(): Promise<void> {
