@@ -8,6 +8,7 @@ import type { WorktreeHandle } from "./git/worktree.js";
 import { changedFiles, diffAgainstBase, diffStatAgainstBase, setupWorktree } from "./git/worktree.js";
 import { createPr } from "./github/gh.js";
 import { db } from "./db/client.js";
+import { generateMemoryMarkdown } from "./db/queries/summaryReport.js";
 import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.js";
 import { policyFor } from "./models/modelPolicy.js";
 import { MAX_IMPL_ITERATIONS, planRoute } from "./router.js";
@@ -673,6 +674,12 @@ export async function runOrchestrator(
     );
     await writeFile(join(ctx.runDir, "result.json"), JSON.stringify(summary, null, 2) + "\n");
     await finalize("completed", { gate1: "approved", gate2: "approved", gate3: "approved" });
+    try {
+      const md = await generateMemoryMarkdown(ctx.rootDir);
+      await writeFile(join(ctx.rootDir, "MEMORY.md"), md);
+    } catch (e) {
+      await logLine(ctx.rootDir, "MEMORY.md regeneration failed: " + String(e));
+    }
     return summary;
   } catch (e) {
     await logLine(ctx.rootDir, "orchestrator error: " + String(e));
