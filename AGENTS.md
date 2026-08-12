@@ -66,3 +66,10 @@ file, or add content only to `CLAUDE.md`.
 - `npm run build:config` / `npm run check:config` — regenerate / verify
   `opencode.json` from `agents/*.md`.
 - `npm test` — vitest.
+
+### PostgreSQL
+
+`npm test` and `npm start` are DB-backed. Before running them locally, a
+PostgreSQL 16 instance must be up, `DATABASE_URL` must be set (via `.env` or
+export), and the schema migrated with `npm run migrate:up`. CI provisions the
+same postgres service container and runs `npm run migrate:up` before tests.

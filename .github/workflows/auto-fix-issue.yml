@@ -27,6 +27,20 @@ jobs:
     # Skip issues opened by bots (e.g. this workflow's own PR-close comment,
     # or other automation) to avoid accidental self-triggering loops.
     if: github.event.issue.user.type != 'Bot'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: multiorm
+          POSTGRES_PASSWORD: multiorm
+          POSTGRES_DB: multiorch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U multiorm -d multiorch"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +50,11 @@ jobs:
           cache: "npm"
 
       - run: npm ci
+
+      - name: Migrate database
+        env:
+          DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
+        run: npm run migrate:up
 
       - name: Install opencode CLI
         run: |
@@ -63,6 +82,7 @@ jobs:
       - name: Run the fix fleet
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
         run: |
           npm start -- \
             --repo "${{ github.repository }}" \

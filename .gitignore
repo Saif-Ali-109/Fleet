@@ -6,3 +6,5 @@ dist/
 .env.*
 !.env.example
 MEMORY.md
+PLAN.md
+Directory.md

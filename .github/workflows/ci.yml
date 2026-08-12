@@ -18,6 +18,20 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: multiorm
+          POSTGRES_PASSWORD: multiorm
+          POSTGRES_DB: multiorch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U multiorm -d multiorch"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,6 +45,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Migrate database
+        env:
+          DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
+        run: npm run migrate:up
+
       - name: Run typecheck
         run: npm run typecheck
 
@@ -38,6 +57,8 @@ jobs:
         run: npm run build
 
       - name: Run tests
+        env:
+          DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
         run: npm test
         continue-on-error: false
 
