@@ -8,6 +8,9 @@ import type { WorktreeHandle } from "./git/worktree.js";
 import { changedFiles, diffAgainstBase, diffStatAgainstBase, setupWorktree } from "./git/worktree.js";
 import { createPr } from "./github/gh.js";
 import { db } from "./db/client.js";
+import { getLastFailedStep } from "./db/checkpoint.js";
+import { runCoder } from "./workflow/coder.js";
+import { runTester } from "./workflow/tester.js";
 import { generateMemoryMarkdown } from "./db/queries/summaryReport.js";
 import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.js";
 import { policyFor } from "./models/modelPolicy.js";
@@ -415,18 +418,65 @@ export async function runOrchestrator(
       iterationsUsed = iter;
       dash.loopIteration = iter;
 
+      if (runId) {
+        const lastFailed = await getLastFailedStep(runId, "coder").catch(() => null);
+        if (lastFailed && iter > 1) {
+          await logLine(
+            ctx.rootDir,
+            `iteration ${iter}: resuming coder — previously failed at step "${lastFailed}" (completed steps are skipped automatically)`,
+          );
+        }
+      }
+
       for (const role of implRoles) {
-        const res = await runAgent(
-          role,
-          "implement",
-          implTask(feedback),
-          policyFor(role, ctx.backend),
-        );
-        if (!res.ok) {
+        const task = implTask(feedback);
+        const policy = policyFor(role, ctx.backend);
+
+        if (!runId) {
+          const res = await runAgent(role, "implement", task, policy);
+          if (!res.ok) {
+            setPhase("failed");
+            pushState();
+            await finalize("failed", {});
+            return makeSummary("failed", res.error ?? `${role} failed`);
+          }
+          continue;
+        }
+
+        setPhase("implement");
+        dash.agents[role] = { role, state: "running", model: policy.model };
+        pushState();
+
+        let ok = true;
+        let error: string | undefined;
+        if (role === "coder") {
+          const r = await runCoder(
+            ctx,
+            {
+              task,
+              policy,
+              worktreeDir: ctx.worktreeDir,
+              branch: ctx.branch,
+              issueNumber: ctx.issue.number,
+            },
+            runId,
+            iter,
+          );
+          ok = r.ok && !(r.agentResult && !r.agentResult.ok);
+          error = r.error ?? (r.agentResult && !r.agentResult.ok ? r.agentResult.error : undefined);
+        } else {
+          const r = await runTester(ctx, { task, policy, worktreeDir: ctx.worktreeDir }, runId, iter);
+          ok = r.ok && !(r.agentResult && !r.agentResult.ok);
+          error = r.error ?? (r.agentResult && !r.agentResult.ok ? r.agentResult.error : undefined);
+        }
+
+        dash.agents[role] = { role, state: ok ? "done" : "failed", model: policy.model, error };
+        pushState();
+        if (!ok) {
           setPhase("failed");
           pushState();
           await finalize("failed", {});
-          return makeSummary("failed", res.error ?? `${role} failed`);
+          return makeSummary("failed", error ?? `${role} failed`);
         }
       }
 
