@@ -7,7 +7,7 @@ import { gate } from "./gates.js";
 import type { WorktreeHandle } from "./git/worktree.js";
 import { changedFiles, diffAgainstBase, diffStatAgainstBase, setupWorktree } from "./git/worktree.js";
 import { createPr } from "./github/gh.js";
-import { appendRunOutcome } from "./memory/memoryStore.js";
+import { db } from "./db/client.js";
 import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.js";
 import { policyFor } from "./models/modelPolicy.js";
 import { MAX_IMPL_ITERATIONS, planRoute } from "./router.js";
@@ -100,6 +100,7 @@ export async function runOrchestrator(
   const web = opts.web;
   const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.backend);
   const agents = {} as Record<Role, AgentResult>;
+  let runId: string | undefined;
   let prUrl: string | undefined;
   let iterationsUsed = 0;
 
@@ -133,6 +134,19 @@ export async function runOrchestrator(
     startedAt,
     endedAt: Date.now(),
   });
+  const finalize = async (
+    status: string,
+    gateStatus: Record<string, unknown>,
+  ): Promise<void> => {
+    if (runId) {
+      await db.finalizeRun({
+        run_id: runId,
+        pr_url: prUrl ?? null,
+        total_cost: totalCostUsd(),
+        gate_status: JSON.stringify(gateStatus),
+      });
+    }
+  };
 
   const runAgent = async (
     role: Role,
@@ -159,6 +173,21 @@ export async function runOrchestrator(
       error: res.error,
     };
     pushState();
+    if (runId) {
+      await db.logAgentAction({
+        run_id: runId,
+        role,
+        model: res.model,
+        ok: res.ok,
+        text: res.text,
+        tokens: res.tokens,
+        cost_usd: res.costUsd ?? 0,
+        trace_path: res.tracePath,
+        started_at: new Date(res.startedAt),
+        ended_at: new Date(res.endedAt),
+        attempts: res.attempts ?? [],
+      });
+    }
     if (res.attempts && res.attempts.length > 1) {
       await logLine(
         ctx.rootDir,
@@ -176,6 +205,12 @@ export async function runOrchestrator(
       title: ctx.issue.title,
     });
     await logLine(ctx.rootDir, "run started");
+    runId = await db.createRun({
+      repo: ctx.issue.repo,
+      issue_number: ctx.issue.number,
+      backend: ctx.backend ?? "opencode",
+    });
+    await db.updateRunStatus({ run_id: runId, phase: "start", status: "running", iteration: 0 });
 
     let wt: WorktreeHandle;
     if (ctx.dryRun) {
@@ -194,6 +229,9 @@ export async function runOrchestrator(
 
     setPhase("gate1");
     pushState();
+    if (runId) {
+      await db.updateRunStatus({ run_id: runId, phase: "gate1", status: "running", iteration: 0 });
+    }
     const g1 = await gate(
       "Gate 1 · Confirm intent",
       `Issue #${ctx.issue.number}: ${ctx.issue.title}\n\n${ctx.issue.body}`,
@@ -203,6 +241,7 @@ export async function runOrchestrator(
       setPhase("aborted");
       pushState();
       await logLine(ctx.rootDir, "run aborted at gate 1");
+      await finalize("aborted", {});
       return makeSummary("aborted");
     }
     dash.lastGate = "gate1";
@@ -221,7 +260,11 @@ export async function runOrchestrator(
     if (!a.ok) {
       setPhase("failed");
       pushState();
+      await finalize("failed", {});
       return makeSummary("failed", a.error ?? "analyzer failed");
+    }
+    if (runId) {
+      await db.updateRunStatus({ run_id: runId, phase: "analyze", status: "completed", iteration: 0 });
     }
 
     let fixSpec: FixSpec | null = null;
@@ -242,6 +285,7 @@ export async function runOrchestrator(
     if (!fixSpec) {
       setPhase("failed");
       pushState();
+      await finalize("failed", {});
       return makeSummary("failed", "analyzer did not return a valid FixSpec JSON");
     }
     await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null, 2) + "\n");
@@ -264,7 +308,11 @@ export async function runOrchestrator(
     if (!p.ok) {
       setPhase("failed");
       pushState();
+      await finalize("failed", {});
       return makeSummary("failed", p.error ?? "planner failed");
+    }
+    if (runId) {
+      await db.updateRunStatus({ run_id: runId, phase: "plan", status: "completed", iteration: 0 });
     }
 
     let plan: Plan;
@@ -282,6 +330,7 @@ export async function runOrchestrator(
       if (!parsed) {
         setPhase("failed");
         pushState();
+        await finalize("failed", {});
         return makeSummary("failed", "planner did not return a valid Plan JSON");
       }
       plan = parsed;
@@ -313,6 +362,9 @@ export async function runOrchestrator(
 
     setPhase("gate2");
     pushState();
+    if (runId) {
+      await db.updateRunStatus({ run_id: runId, phase: "gate2", status: "running", iteration: iterationsUsed });
+    }
     const g2 = await gate("Gate 2 · Approve plan", planMd, {
       interactive: opts.interactive,
       captureFeedbackOnReject: false,
@@ -321,6 +373,7 @@ export async function runOrchestrator(
       setPhase("aborted");
       pushState();
       await logLine(ctx.rootDir, "run aborted at gate 2");
+      await finalize("aborted", {});
       return makeSummary("aborted");
     }
     dash.lastGate = "gate2";
@@ -371,6 +424,7 @@ export async function runOrchestrator(
         if (!res.ok) {
           setPhase("failed");
           pushState();
+          await finalize("failed", {});
           return makeSummary("failed", res.error ?? `${role} failed`);
         }
       }
@@ -450,6 +504,7 @@ export async function runOrchestrator(
       if (!r.ok) {
         setPhase("failed");
         pushState();
+        await finalize("failed", {});
         return makeSummary("failed", r.error ?? "reviewer failed");
       }
       if (!ctx.dryRun) {
@@ -468,6 +523,7 @@ export async function runOrchestrator(
           }
           setPhase("failed");
           pushState();
+          await finalize("failed", {});
           return makeSummary("failed", "reviewer still requesting changes after max iterations");
         }
       }
@@ -486,6 +542,9 @@ export async function runOrchestrator(
       ].join("\n");
       setPhase("gate3");
       pushState();
+      if (runId) {
+        await db.updateRunStatus({ run_id: runId, phase: "gate3", status: "running", iteration: iterationsUsed });
+      }
       const g3 = await gate("Gate 3 · Approve final diff", gateBody, {
         interactive: opts.interactive,
         captureFeedbackOnReject: true,
@@ -501,12 +560,14 @@ export async function runOrchestrator(
       setPhase("aborted");
       pushState();
       await logLine(ctx.rootDir, "run aborted at gate 3");
+      await finalize("aborted", {});
       return makeSummary("aborted");
     }
 
     if (!approved) {
       setPhase("failed");
       pushState();
+      await finalize("failed", {});
       return makeSummary("failed", "could not reach an approved implementation");
     }
 
@@ -585,6 +646,9 @@ export async function runOrchestrator(
 
     setPhase("done");
     pushState();
+    if (runId) {
+      await db.updateRunStatus({ run_id: runId, phase: "done", status: "completed", iteration: iterationsUsed });
+    }
     const summary = makeSummary("completed");
     const fallbackLines: string[] = [];
     for (const role of ROLES) {
@@ -608,19 +672,13 @@ export async function runOrchestrator(
       ].join("\n"),
     );
     await writeFile(join(ctx.runDir, "result.json"), JSON.stringify(summary, null, 2) + "\n");
-    await appendRunOutcome(ctx.rootDir, {
-      runId: ctx.runId,
-      repo: ctx.issue.repo,
-      issue: ctx.issue.number,
-      outcome: "completed" + (prUrl ? ` · PR: ${prUrl}` : ""),
-      prUrl,
-      costUsd: summary.totalCostUsd,
-    });
+    await finalize("completed", { gate1: "approved", gate2: "approved", gate3: "approved" });
     return summary;
   } catch (e) {
     await logLine(ctx.rootDir, "orchestrator error: " + String(e));
     setPhase("failed");
     pushState();
+    await finalize("failed", {});
     return makeSummary("failed", String(e));
   }
 }

@@ -169,7 +169,9 @@ describe("MCP server handleToolCall integration", () => {
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBeGreaterThanOrEqual(2);
 
-    const analyzerRow = result.find((r) => r.role === "analyzer");
+    const analyzerRow = result.find(
+      (r) => r.role === "analyzer" && r.model === "opencode/test-analyzer"
+    );
     expect(analyzerRow).toBeDefined();
     expect(analyzerRow?.model).toBe("opencode/test-analyzer");
     expect(analyzerRow?.count).toBe(1);
