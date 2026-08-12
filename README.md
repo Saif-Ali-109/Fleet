@@ -1,4 +1,4 @@
-# Github Issues FDE
+# Multi-Orchestration
 
 TypeScript Manager drives a fleet of 6 headless workers to take a GitHub issue to a real PR, with 3 human approval gates. The fleet can run on **opencode**, **Claude Code**, or **Codex** — chosen once per run (`--backend` flag or a dashboard toggle).
 
