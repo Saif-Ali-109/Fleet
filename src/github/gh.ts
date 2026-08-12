@@ -45,6 +45,18 @@ export async function listOpenIssues(repoUrlOrSlug: string): Promise<{ number: n
   return items.sort((a, b) => a.number - b.number);
 }
 
+/** True if a repo already has an OPEN pull request for the given head branch. */
+export async function hasOpenPrForBranch(repoUrlOrSlug: string, branch: string): Promise<boolean> {
+  try {
+    const repo = toRepoSlug(repoUrlOrSlug);
+    const raw = await gh(["pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "number"]);
+    const j = JSON.parse(raw);
+    return Array.isArray(j) && j.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Intake: fetch the issue via `gh issue view --json`. */
 export async function fetchIssue(repoUrlOrSlug: string, number: number): Promise<Issue> {
   const repo = toRepoSlug(repoUrlOrSlug);

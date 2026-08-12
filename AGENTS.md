@@ -67,6 +67,20 @@ file, or add content only to `CLAUDE.md`.
   `opencode.json` from `agents/*.md`.
 - `npm test` — vitest.
 
+### Daemon mode (24/7)
+
+Running `npm start` with no `--repo` starts the dashboard in queue/daemon
+mode. The daemon watches the repo(s) started from the dashboard, auto-scans
+for open issues every `SCAN_INTERVAL_MINUTES` (default 5), skips issues that
+already have a completed run (`run_outcomes.status = 'completed'`) or an open
+PR on the fix branch, and keeps going until Stop is clicked in the dashboard
+(finishing the current issue before going idle).
+
+The agent used for each fix is set by `ORCHESTRATOR_BACKEND` in `.env`
+(opencode | claude | codex; default opencode; CLI `--backend` overrides).
+Failures are logged to the dashboard as an error notice and the scan
+continues.
+
 ### PostgreSQL
 
 `npm test` and `npm start` are DB-backed. Before running them locally, a
