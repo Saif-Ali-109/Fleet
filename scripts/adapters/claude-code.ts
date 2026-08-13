@@ -22,6 +22,7 @@ import { join } from "node:path";
 import type { CanonicalConfig, CanonicalRole, ToolFlags } from "../lib/canonical.js";
 import type { Adapter, GeneratedFile } from "../lib/adapter.js";
 import { ROOT } from "../lib/canonical.js";
+import { emitClaudeSettingsHooks, emitSorHookScript } from "../lib/hooks.js";
 
 // opencode tool flag -> Claude Code tool name. "list" and "patch" have no
 // direct Claude Code equivalent (Claude Code's Glob covers directory
@@ -57,9 +58,33 @@ function renderFrontmatter(r: CanonicalRole): string {
   return lines.join("\n");
 }
 
+/**
+ * Embeds the hooks map from emitClaudeSettingsHooks() (an indented JSON object
+ * starting/ending with braces) under the top-level "hooks" key of
+ * `.claude/settings.json`, re-indenting the body by two spaces.
+ */
+function embedHooks(hooksJson: string): string {
+  const body = hooksJson
+    .split("\n")
+    .slice(1, -1)
+    .map((line) => (line.length > 0 ? `  ${line}` : line))
+    .join("\n");
+  return `{\n  "hooks": {\n${body}\n  }\n}\n`;
+}
+
 export const claudeCodeAdapter: Adapter = (config: CanonicalConfig): GeneratedFile[] => {
-  return config.roles.map((r) => ({
-    path: join(ROOT, ".claude", "agents", `${r.role}.md`),
-    contents: `---\n${renderFrontmatter(r)}\n---\n${r.prompt}\n`,
-  }));
+  return [
+    ...config.roles.map((r) => ({
+      path: join(ROOT, ".claude", "agents", `${r.role}.md`),
+      contents: `---\n${renderFrontmatter(r)}\n---\n${r.prompt}\n`,
+    })),
+    {
+      path: join(ROOT, ".claude", "settings.json"),
+      contents: embedHooks(emitClaudeSettingsHooks()),
+    },
+    {
+      path: join(ROOT, ".claude", "hooks", "sor-hook.sh"),
+      contents: emitSorHookScript(),
+    },
+  ];
 };

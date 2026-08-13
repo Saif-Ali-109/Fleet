@@ -15,6 +15,14 @@ import type { CanonicalConfig } from "../lib/canonical.js";
 import type { Adapter, GeneratedFile } from "../lib/adapter.js";
 import { ROOT } from "../lib/canonical.js";
 
+/**
+ * Committed SOR plugin source (NOT generated) at `.opencode/plugins/sor-hook.ts`.
+ * opencode resolves path-like plugin entries relative to the config file that
+ * declares them, so this points at the project's plugin even when a worker in a
+ * foreign worktree loads this opencode.json via OPENCODE_CONFIG.
+ */
+export const SOR_HOOK_PLUGIN = ".opencode/plugins/sor-hook.ts";
+
 export const opencodeAdapter: Adapter = (config: CanonicalConfig): GeneratedFile[] => {
   const agent: Record<string, unknown> = {};
   for (const r of config.roles) {
@@ -33,6 +41,7 @@ export const opencodeAdapter: Adapter = (config: CanonicalConfig): GeneratedFile
     ...(config.schema ? { $schema: config.schema } : {}),
     agent,
     ...(config.globalPermission ? { permission: config.globalPermission } : {}),
+    plugin: [SOR_HOOK_PLUGIN],
   };
 
   return [

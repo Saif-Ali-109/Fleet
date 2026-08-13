@@ -127,7 +127,7 @@ async function runTests(ctx: RunContext, opts: CoderOptions, _step: CoderStep): 
 /** `git add -A` + `git commit` in the worktree (git/exec operation). */
 async function commitChanges(ctx: RunContext, opts: CoderOptions, _step: CoderStep): Promise<void> {
   if (ctx.dryRun) return;
-  await exec("git", ["-C", opts.worktreeDir, "add", "-A", "--", ".", ":!__pycache__"], {
+  await exec("git", ["-C", opts.worktreeDir, "add", "-A", "--", ".", ":(exclude)__pycache__"], {
     maxBuffer: 32 * 1024 * 1024,
   });
   const message =

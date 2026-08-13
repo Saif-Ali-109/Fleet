@@ -81,7 +81,7 @@ describe("dashboard", () => {
         state: "done",
         model: "opencode/laguna-s-2.1-free",
         costUsd: 0.123,
-        tokens: { input: 10, output: 5, reasoning: 0, total: 15 },
+        tokens: { input: 10, output: 5, reasoning: 0, cached: 0, total: 15 },
       };
       const out = renderDashboard(d);
       expect(out).toContain("✓");

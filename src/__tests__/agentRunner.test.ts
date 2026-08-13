@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { writeFileSync, mkdirSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildArgs, parseTrace, readStderrTail } from "../agentRunner.js";
+import { buildArgs, parseTrace, readStderrTail, runWorker } from "../agentRunner.js";
 import type { RunContext, Role, RolePolicy } from "../types.js";
 
 // ---- Shared fixtures ----
@@ -26,6 +26,7 @@ function makeCtx(overrides: Partial<RunContext> = {}): RunContext {
       author: "dev",
     },
     repoUrl: "git@github.com:owner/repo.git",
+    ...overrides,
   };
 }
 
@@ -104,6 +105,26 @@ describe("buildArgs", () => {
   });
 });
 
+// ---- runWorker tests ----
+
+describe("runWorker", () => {
+  it("stubs workers on dryRun without touching the DB", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "rw-"));
+    const runDir = join(dir, ".runs", "test-run-123");
+    const ctx = makeCtx({
+      runDir,
+      worktreeDir: join(runDir, "worktree"),
+      tracesDir: join(runDir, "traces"),
+      dryRun: true,
+    });
+    const result = await runWorker("coder", "Fix the bug", ctx, makePolicy(), {});
+    expect(result.ok).toBe(true);
+    expect(result.text).toContain("[dry-run]");
+    expect(result.attempts).toEqual([{ model: "opencode/laguna-s-2.1-free", ok: true }]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 // ---- parseTrace tests ----
 
 describe("parseTrace", () => {
@@ -135,15 +156,16 @@ describe("parseTrace", () => {
     expect(result.sessionID).toBe("sess-1");
   });
 
-  it("sums tokens from step_finish events", () => {
+  it("sums fresh tokens from step_finish events and tracks cached separately", () => {
     const tracePath = writeTrace("trace3.jsonl", [
-      JSON.stringify({ type: "step_finish", part: { tokens: { input: 10, output: 5, reasoning: 2, total: 17 }, cost: 0.01 } }),
-      JSON.stringify({ type: "step_finish", part: { tokens: { input: 20, output: 8, reasoning: 0, total: 28 }, cost: 0.02 } }),
+      JSON.stringify({ type: "step_finish", part: { tokens: { input: 10, output: 5, reasoning: 2, cache: { read: 100 }, total: 117 }, cost: 0.01 } }),
+      JSON.stringify({ type: "step_finish", part: { tokens: { input: 20, output: 8, reasoning: 0, cache: { read: 50 }, total: 78 }, cost: 0.02 } }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.tokens.input).toBe(30);
     expect(result.tokens.output).toBe(13);
     expect(result.tokens.reasoning).toBe(2);
+    expect(result.tokens.cached).toBe(150);
     expect(result.tokens.total).toBe(45);
     expect(result.costUsd).toBe(0.03);
   });
