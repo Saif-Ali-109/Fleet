@@ -106,9 +106,9 @@ const CODEX_DEFAULTS: Record<Role, string> = {
 };
 
 const POLICIES: Record<Role, RolePolicy> = {
-  analyzer: { role: "analyzer", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "medium" },
-  planner: { role: "planner", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "medium" },
-  reviewer: { role: "reviewer", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "medium" },
+  analyzer: { role: "analyzer", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "low" },
+  planner: { role: "planner", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "low" },
+  reviewer: { role: "reviewer", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "low" },
   coder: { role: "coder", model: LAGUNA, fallbacks: [...OPENCODE_FALLBACKS] },
   tester: { role: "tester", model: LAGUNA, fallbacks: [...OPENCODE_FALLBACKS] },
   pr: { role: "pr", model: LAGUNA, fallbacks: [...OPENCODE_FALLBACKS] },

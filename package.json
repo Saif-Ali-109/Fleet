@@ -19,7 +19,9 @@
     "migrate:up": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
     "migrate:down": "tsx --env-file-if-exists=.env src/db/migrate.ts down",
     "generate-memory": "tsx --env-file-if-exists=.env src/db/queries/summaryReport.ts",
-    "analytics": "tsx --env-file-if-exists=.env src/analytics/report.ts"
+    "analytics": "tsx --env-file-if-exists=.env src/analytics/report.ts",
+    "sor:verify": "tsx --env-file-if-exists=.env src/sor/verifyCli.ts",
+    "sor:sync-registry": "tsx --env-file-if-exists=.env src/sor/syncRegistryCli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

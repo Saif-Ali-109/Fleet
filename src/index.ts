@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebDashboard } from "./dashboard/webDashboard.js";
-import { db } from "./db/client.js";
+import { db, pool } from "./db/client.js";
+import { appendAuditEvent, ensureChain } from "./db/audit.js";
+import type { SorEvent } from "./sor/events.js";
 import { fixBranchName, shouldSkipIssue } from "./daemon/dedup.js";
 import { fetchIssue, ghAuthInfo, hasOpenPrForBranch, listOpenIssues, stubIssue, toRepoSlug } from "./github/gh.js";
 import { runOrchestrator, type WebFeed } from "./orchestrator.js";
@@ -40,6 +43,52 @@ const scanIntervalMinutes = Math.max(1, Number(process.env.SCAN_INTERVAL_MINUTES
 const scanIntervalMs = scanIntervalMinutes * 60_000;
 let stopRequested = false;
 let daemonActive = false;
+
+const readVersion = (): string => {
+  try {
+    const pkg = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+};
+
+/** Append a signed `wakeup` event to the audit chain (requires SOR_SIGNING_KEY). */
+const emitWakeup = async (actor: string, payload: Record<string, unknown>): Promise<void> => {
+  const event: SorEvent = {
+    run_id: null,
+    event_type: "wakeup",
+    actor,
+    backend: null,
+    tool_name: null,
+    tool_input: null,
+    tool_output: null,
+    payload,
+    created_at: new Date().toISOString(),
+  };
+  await appendAuditEvent(pool, event);
+};
+
+/** Fire-and-forget wakeup emit; failures log a warning and never abort the flow. */
+const emitWakeupNonFatal = (actor: string, payload: Record<string, unknown>): void => {
+  void emitWakeup(actor, payload).catch((err: unknown) => {
+    console.warn(
+      `[sor] wakeup ${String(payload.kind ?? "")} skipped (${actor}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+};
+
+/** Boot: ensure the sor_chain singleton, then record a `boot` wakeup. Non-fatal. */
+const bootSOR = (mode: string): void => {
+  void (async () => {
+    try {
+      await ensureChain(pool);
+      await emitWakeup("system", { kind: "boot", version: readVersion(), mode });
+    } catch (err: unknown) {
+      console.warn(`[sor] boot wakeup skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  })();
+};
 
 function isModelLimitError(msg: string): boolean {
   const lower = msg.toLowerCase();
@@ -233,8 +282,11 @@ async function runDaemonLoop(
   web: WebDashboard | null,
   webFeed: WebFeed | undefined,
 ): Promise<void> {
+  let scanCycle = 0;
   try {
     while (!stopRequested) {
+      scanCycle += 1;
+      emitWakeupNonFatal("daemon", { kind: "scan", cycle: scanCycle });
       for (const slug of repos) {
         if (stopRequested) break;
         let issues: { number: number; title: string }[];
@@ -429,12 +481,16 @@ async function main(): Promise<void> {
 
   loadModelOverrides(join(rootDir, "models.json"));
 
+  const mode = repo !== undefined && issueNumber !== undefined ? "single" : "queue";
+  bootSOR(mode);
+
   if (repo === undefined && issueNumber === undefined) {
     if (noWeb) {
       console.error("Missing --repo (and --no-web cannot be used without a repo)\n");
       console.error(usage());
       process.exit(1);
     }
+    emitWakeupNonFatal("daemon", { kind: "config.load" });
     await runQueue(port, dryRun, backend);
     return;
   }

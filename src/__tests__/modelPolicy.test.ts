@@ -37,9 +37,9 @@ describe("modelPolicy", () => {
       }
     });
 
-    it("returns a medium variant for analyzer/planner/reviewer", () => {
+    it("returns a low variant for analyzer/planner/reviewer", () => {
       for (const role of ["analyzer", "planner", "reviewer"] as Role[]) {
-        expect(policyFor(role).variant).toBe("medium");
+        expect(policyFor(role).variant).toBe("low");
       }
     });
 

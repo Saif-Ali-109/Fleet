@@ -22,7 +22,7 @@ export function backendDef(backend: Backend): BackendDef {
 export interface BackendTrace {
   text: string;
   sessionID: string | null;
-  tokens: { input: number; output: number; reasoning: number; total: number };
+  tokens: { input: number; output: number; reasoning: number; cached: number; total: number };
   costUsd: number;
   sawError: boolean;
   errorMsg?: string;
@@ -92,9 +92,17 @@ export function buildBackendArgs(
   }
 }
 
-/** Per-run env. opencode gets an isolated data dir + seeded auth; claude/codex inherit the shell. */
+/** Per-run env. Every backend gets SOR_EVENT_DIR (the hook scripts/plugin write events.jsonl there);
+ *  opencode additionally gets an isolated data dir + seeded auth; claude/codex inherit the shell. */
 export function buildBackendEnv(backend: Backend, ctx: RunContext): NodeJS.ProcessEnv {
-  if (backend !== "opencode") return { ...process.env };
+  const sorEventDir = join(ctx.runDir, "events");
+  try {
+    mkdirSync(sorEventDir, { recursive: true });
+  } catch {
+    // non-fatal: the hook scripts/plugin create it lazily if needed
+  }
+  const base: NodeJS.ProcessEnv = { ...process.env, SOR_EVENT_DIR: sorEventDir };
+  if (backend !== "opencode") return base;
   const dataHome = join(ctx.runDir, ".opencode-data");
   try {
     mkdirSync(join(dataHome, "opencode"), { recursive: true });
@@ -106,7 +114,7 @@ export function buildBackendEnv(backend: Backend, ctx: RunContext): NodeJS.Proce
     // non-fatal: continue without a seeded auth file
   }
   return {
-    ...process.env,
+    ...base,
     OPENCODE_CONFIG: join(ctx.rootDir, "opencode.json"),
     XDG_DATA_HOME: dataHome,
   };
@@ -192,7 +200,8 @@ function parseOpencodeLine(ev: any, acc: BackendTrace): void {
       acc.tokens.input += part.tokens.input ?? 0;
       acc.tokens.output += part.tokens.output ?? 0;
       acc.tokens.reasoning += part.tokens.reasoning ?? 0;
-      acc.tokens.total += part.tokens.total ?? 0;
+      acc.tokens.cached += part.tokens.cache?.read ?? part.tokens.cacheRead ?? 0;
+      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning;
     }
     acc.costUsd += part.cost ?? 0;
   } else if (ev.type === "error" || part.type === "error") {
@@ -223,8 +232,8 @@ function parseClaudeLine(ev: any, acc: BackendTrace): void {
       acc.tokens.input += usage.input_tokens ?? 0;
       acc.tokens.output += usage.output_tokens ?? 0;
       acc.tokens.reasoning += usage.reasoning_tokens ?? 0;
-      const total = usage.total_tokens;
-      acc.tokens.total += total != null ? total : usage.input_tokens + usage.output_tokens;
+      acc.tokens.cached += (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning;
     }
     if (ev.session_id) acc.sessionID = ev.session_id;
   }
@@ -256,7 +265,13 @@ function parseCodexLine(ev: any, acc: BackendTrace): void {
     if (ev.usage) {
       acc.tokens.input += ev.usage.input_tokens ?? ev.usage.prompt_tokens ?? 0;
       acc.tokens.output += ev.usage.output_tokens ?? ev.usage.completion_tokens ?? 0;
-      acc.tokens.total += ev.usage.total_tokens ?? 0;
+      acc.tokens.reasoning += ev.usage.reasoning_tokens ?? 0;
+      acc.tokens.cached +=
+        ev.usage.prompt_tokens_details?.cached_tokens ??
+        ev.usage.input_tokens_details?.cached_tokens ??
+        ev.usage.cached_tokens ??
+        0;
+      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning;
     }
     if (ev.session_id || ev.sessionId) acc.sessionID = ev.session_id ?? ev.sessionId;
   }
@@ -265,7 +280,7 @@ function parseCodexLine(ev: any, acc: BackendTrace): void {
 const emptyTrace = (): BackendTrace => ({
   text: "",
   sessionID: null,
-  tokens: { input: 0, output: 0, reasoning: 0, total: 0 },
+  tokens: { input: 0, output: 0, reasoning: 0, cached: 0, total: 0 },
   costUsd: 0,
   sawError: false,
 });

@@ -49,7 +49,7 @@ export interface AgentResult {
   model: string; // model actually used (after any fallback)
   attempts?: { model: string; ok: boolean; error?: string }[]; // each model tried, in order
   text: string; // final assembled assistant text (the worker's "return value")
-  tokens: { input: number; output: number; reasoning: number; total: number };
+  tokens: { input: number; output: number; reasoning: number; cached: number; total: number };
   costUsd: number;
   error?: string;
   tracePath: string; // .runs/<id>/traces/<role>.jsonl

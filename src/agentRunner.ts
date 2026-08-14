@@ -9,6 +9,10 @@ import {
   parseBackendTrace,
   resolveRolePrompt,
 } from "./runner/backends.js";
+import { appendAuditEvent, ensureChain } from "./db/audit.js";
+import { pool } from "./db/client.js";
+import { normalizeTraceEvent } from "./sor/ingest.js";
+import type { SorEvent } from "./sor/events.js";
 import type { AgentResult, Backend, Role, RolePolicy, RunContext } from "./types.js";
 
 export interface RunWorkerOpts {
@@ -42,6 +46,15 @@ export async function runWorker(
   await mkdir(dirname(tracePath), { recursive: true });
   const startedAt = Date.now();
 
+  if (!ctx.dryRun) {
+    try {
+      await ensureChain(pool);
+    } catch (err) {
+      // The orchestrator also ensures the chain; a failure here must not abort the run.
+      console.warn(`[sor] ensureChain failed for run ${ctx.runId}: ${(err as Error).message}`);
+    }
+  }
+
   if (ctx.dryRun) {
     return stubResult(role, policy.model, tracePath, startedAt);
   }
@@ -49,13 +62,15 @@ export async function runWorker(
   const env = buildBackendEnv(backend, ctx);
   const rolePrompt = resolveRolePrompt(backend, role, ctx);
   const models = [policy.model, ...policy.fallbacks];
+  const bridge = makeEventBridge(ctx, role, backend, opts);
   let last: ParsedStream | null = null;
   let lastModel = policy.model;
   const attempts: NonNullable<AgentResult["attempts"]> = [];
 
   for (const model of models) {
     lastModel = model;
-    const parsed = await spawnOnce(backend, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt);
+    emitWakeup(ctx, backend, { kind: "spawn", role, model });
+    const parsed = await spawnOnce(backend, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt, bridge);
     last = parsed;
     const ok = !parsed.sawError && parsed.text.trim().length > 0;
     attempts.push({ model, ok, error: parsed.errorMsg });
@@ -100,6 +115,7 @@ function spawnOnce(
   opts: RunWorkerOpts,
   env: NodeJS.ProcessEnv,
   rolePrompt: string,
+  onEvent: ((ev: Record<string, unknown>) => void) | undefined,
 ): Promise<ParsedStream> {
   return new Promise((resolve) => {
     const { args, cwd } = buildBackendArgs(backend, role, task, ctx, model, policy, opts, rolePrompt);
@@ -136,7 +152,7 @@ function spawnOnce(
         env,
         stdio: ["ignore", fdOut, fdErr],
       });
-      stopTail = startTailing(tracePath, startOffset, opts.onText, opts.onEvent);
+      stopTail = startTailing(tracePath, startOffset, opts.onText, onEvent);
 
       child.on("error", (err) => {
         settle({
@@ -168,6 +184,51 @@ function spawnOnce(
       });
     }
   });
+}
+
+/** Wrap the caller's onEvent so every trace event also ingests into the signed System of Record.
+ *  Preserves opts.onEvent behavior; DB writes are fire-and-forget and skipped on dryRun. */
+function makeEventBridge(
+  ctx: RunContext,
+  role: Role,
+  backend: Backend,
+  opts: RunWorkerOpts,
+): (ev: Record<string, unknown>) => void {
+  return (evRaw: Record<string, unknown>) => {
+    opts.onEvent?.(evRaw);
+    if (ctx.dryRun) return;
+    const ev = normalizeTraceEvent(evRaw);
+    if (ev) {
+      ev.run_id = ctx.runId;
+      if (!ev.actor || ev.actor === "system") ev.actor = role;
+      appendAuditEvent(pool, ev).catch((err) =>
+        console.warn(`[sor] trace event append failed (run=${ctx.runId}, role=${role}): ${(err as Error).message}`),
+      );
+    }
+  };
+}
+
+/** Emit a spawn wakeup event for the system of record before an attempt starts. Fire-and-forget. */
+function emitWakeup(
+  ctx: RunContext,
+  backend: Backend,
+  payload: { kind: "spawn"; role: Role; model: string },
+): void {
+  if (ctx.dryRun) return;
+  const event: SorEvent = {
+    run_id: ctx.runId,
+    event_type: "wakeup",
+    actor: payload.role,
+    backend,
+    tool_name: null,
+    tool_input: null,
+    tool_output: null,
+    payload: { kind: payload.kind, role: payload.role, model: payload.model },
+    created_at: new Date().toISOString(),
+  };
+  appendAuditEvent(pool, event).catch((err) =>
+    console.warn(`[sor] spawn wakeup append failed (run=${ctx.runId}, role=${payload.role}): ${(err as Error).message}`),
+  );
 }
 
 /** Read back this attempt's trace from the trace file and build the parsed shape for `backend`. */
@@ -246,7 +307,7 @@ function stubResult(role: Role, model: string, tracePath: string, startedAt: num
   };
 }
 
-const zeroTokens = (): AgentResult["tokens"] => ({ input: 0, output: 0, reasoning: 0, total: 0 });
+const zeroTokens = (): AgentResult["tokens"] => ({ input: 0, output: 0, reasoning: 0, cached: 0, total: 0 });
 const emptyStream = (): ParsedStream => ({ text: "", sessionID: null, tokens: zeroTokens(), costUsd: 0, sawError: true });
 
 /**

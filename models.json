@@ -1,8 +1,26 @@
 {
-  "analyzer": "deepseek-v4-flash-free",
-  "planner": "deepseek-v4-flash-free",
-  "coder": "laguna-s-2.1-free",
-  "tester": "laguna-s-2.1-free",
-  "reviewer": "deepseek-v4-flash-free",
-  "pr": "laguna-s-2.1-free"
+  "opencode": {
+    "analyzer": "north-mini-code-free",
+    "planner": "north-mini-code-free",
+    "coder": "laguna-s-2.1-free",
+    "tester": "laguna-s-2.1-free",
+    "reviewer": "mimo-v2.5-free",
+    "pr": "laguna-s-2.1-free"
+  },
+  "claude": {
+    "analyzer": "deepseek-v4-flash-free",
+    "planner": "deepseek-v4-flash-free",
+    "coder": "laguna-s-2.1-free",
+    "tester": "laguna-s-2.1-free",
+    "reviewer": "deepseek-v4-flash-free",
+    "pr": "laguna-s-2.1-free"
+  },
+  "codex": {
+    "analyzer": "deepseek-v4-flash-free",
+    "planner": "deepseek-v4-flash-free",
+    "coder": "laguna-s-2.1-free",
+    "tester": "laguna-s-2.1-free",
+    "reviewer": "deepseek-v4-flash-free",
+    "pr": "laguna-s-2.1-free"
+  }
 }

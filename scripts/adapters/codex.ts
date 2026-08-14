@@ -22,6 +22,7 @@ import { join } from "node:path";
 import type { CanonicalConfig, CanonicalRole } from "../lib/canonical.js";
 import type { Adapter, GeneratedFile } from "../lib/adapter.js";
 import { ROOT } from "../lib/canonical.js";
+import { emitCodexConfigHooks, emitSorHookScript } from "../lib/hooks.js";
 
 function tomlString(value: string): string {
   return JSON.stringify(value); // close enough for TOML basic strings on ASCII text
@@ -48,8 +49,22 @@ function renderToml(r: CanonicalRole): string {
 }
 
 export const codexAdapter: Adapter = (config: CanonicalConfig): GeneratedFile[] => {
-  return config.roles.map((r) => ({
-    path: join(ROOT, ".codex", "agents", `${r.role}.toml`),
-    contents: renderToml(r),
-  }));
+  return [
+    ...config.roles.map((r) => ({
+      path: join(ROOT, ".codex", "agents", `${r.role}.toml`),
+      contents: renderToml(r),
+    })),
+    // The SOR hooks live in .codex/config.toml (the only config.toml this
+    // adapter emits). emitCodexConfigHooks() is self-contained today; if a
+    // future adapter emits additional config.toml sections, merge them here
+    // rather than replacing the file.
+    {
+      path: join(ROOT, ".codex", "config.toml"),
+      contents: emitCodexConfigHooks(),
+    },
+    {
+      path: join(ROOT, ".codex", "hooks", "sor-hook.sh"),
+      contents: emitSorHookScript(),
+    },
+  ];
 };

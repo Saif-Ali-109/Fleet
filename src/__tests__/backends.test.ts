@@ -47,7 +47,7 @@ function makePolicy(overrides: Partial<RolePolicy> = {}): RolePolicy {
 const empty = (): BackendTrace => ({
   text: "",
   sessionID: null,
-  tokens: { input: 0, output: 0, reasoning: 0, total: 0 },
+  tokens: { input: 0, output: 0, reasoning: 0, cached: 0, total: 0 },
   costUsd: 0,
   sawError: false,
 });
@@ -120,6 +120,23 @@ describe("buildBackendEnv", () => {
     const env = buildBackendEnv("codex", makeCtx());
     expect(env).toHaveProperty("PATH");
   });
+
+  it("sets SOR_EVENT_DIR to the runDir events dir for opencode", () => {
+    const ctx = makeCtx();
+    const env = buildBackendEnv("opencode", ctx);
+    expect(env.SOR_EVENT_DIR).toBe(join(ctx.runDir, "events"));
+    expect(env.SOR_EVENT_DIR?.endsWith("events")).toBe(true);
+    expect(env.OPENCODE_CONFIG).toBe(join(ctx.rootDir, "opencode.json"));
+  });
+
+  it("sets SOR_EVENT_DIR for claude and codex too", () => {
+    const ctx = makeCtx();
+    for (const backend of ["claude", "codex"] as const) {
+      const env = buildBackendEnv(backend, ctx);
+      expect(env.SOR_EVENT_DIR).toBe(join(ctx.runDir, "events"));
+      expect(env).toHaveProperty("PATH");
+    }
+  });
 });
 
 describe("resolveRolePrompt", () => {
@@ -154,7 +171,7 @@ describe("parseBackendTrace (claude)", () => {
     parseBackendLine("claude", { type: "assistant", message: { content: [{ type: "text", text: "World" }] } }, acc);
     parseBackendLine(
       "claude",
-      { type: "result", result: "Final", is_error: false, session_id: "sess-1", total_cost_usd: 0.05, usage: { input_tokens: 100, output_tokens: 50 } },
+      { type: "result", result: "Final", is_error: false, session_id: "sess-1", total_cost_usd: 0.05, usage: { input_tokens: 100, output_tokens: 50, total_tokens: 200, cache_read_input_tokens: 20, cache_creation_input_tokens: 10 } },
       acc,
     );
     expect(acc.text).toBe("Final");
@@ -162,6 +179,8 @@ describe("parseBackendTrace (claude)", () => {
     expect(acc.costUsd).toBe(0.05);
     expect(acc.tokens.input).toBe(100);
     expect(acc.tokens.output).toBe(50);
+    expect(acc.tokens.cached).toBe(30);
+    expect(acc.tokens.total).toBe(150);
     expect(acc.sawError).toBe(false);
   });
 
@@ -179,12 +198,14 @@ describe("parseBackendTrace (codex)", () => {
     parseBackendLine("codex", { type: "message", text: "partial " }, acc);
     parseBackendLine(
       "codex",
-      { type: "result", result: "done", status: "success", usage: { input_tokens: 10, output_tokens: 20 } },
+      { type: "result", result: "done", status: "success", usage: { input_tokens: 10, output_tokens: 20, total_tokens: 37, prompt_tokens_details: { cached_tokens: 7 } } },
       acc,
     );
     expect(acc.text).toBe("partial done");
     expect(acc.tokens.input).toBe(10);
     expect(acc.tokens.output).toBe(20);
+    expect(acc.tokens.cached).toBe(7);
+    expect(acc.tokens.total).toBe(30);
     expect(acc.sawError).toBe(false);
   });
 
