@@ -2,6 +2,8 @@
 
 TypeScript Manager drives a fleet of 6 headless workers to take a GitHub issue to a real PR, with 3 human approval gates. The fleet can run on **opencode**, **Claude Code**, or **Codex** — chosen once per run (`--backend` flag or a dashboard toggle).
 
+> **Tested live:** this fleet was exercised end-to-end against [Saif-Ali-109/demo-repo](https://github.com/Saif-Ali-109/demo-repo) — real issues were filed there and the agents picked them up, cleared all 3 gates, and opened fix PRs. Use it as a reference for what a target repo looks like, or fork it to try the flow yourself.
+
 ## Architecture
 
 The **Manager** is plain TypeScript — not an LLM. It owns routing, the 3 gates, git worktrees, `gh`, memory, logging, SOR, durable execution, workforce hiring, and analytics. Each of the 6 workers is a separate headless CLI process with its own least-privilege config, spawned via `node:child_process.spawn` (no SDK, no shell). The runner is backend-agnostic: `src/runner/backends.ts` maps each backend to its binary, argv, env, and stream parser, and `src/agentRunner.ts` dispatches on the run's `backend`. Agent discovery is wired through `OPENCODE_CONFIG` for opencode; Claude Code and Codex read their agents from `.claude/agents/` and `.codex/agents/` respectively (regenerated from `agents/*.md`).
@@ -244,7 +246,7 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
 5. `npm run sor:sync-registry` — refresh `agent_registry` from `agents/*.md`.
 6. `npm run dry -- --repo <url> --issue <n>` — stubbed workers, zero tokens. (Add `--interactive=false` to auto-approve the gates; no trace files are produced.)
 7. Single-agent live — run only the Analyzer on a real issue to confirm auth, traces, and cost.
-8. Full E2E — `npm start -- --repo <url> --issue <n>` on a small repo you own; clear all 3 gates → real PR URL in `result.json`.
+8. Full E2E — `npm start -- --repo <url> --issue <n>` on a small repo you own; clear all 3 gates → real PR URL in `result.json`. (The fleet was tested against [Saif-Ali-109/demo-repo](https://github.com/Saif-Ali-109/demo-repo).)
 
 **Isolation guarantee:** the Manager clones into `.runs/<id>/repo/` and works in the linked worktree at `.runs/<id>/worktree/`. Workers are pointed at the worktree via `--dir` and told it is disposable. Any existing checkout of the sample repo is never touched; all edits are confined to `.runs/<id>/worktree/`.
 
