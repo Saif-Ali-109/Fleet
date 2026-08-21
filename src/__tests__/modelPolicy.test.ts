@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -143,7 +143,9 @@ describe("modelPolicy", () => {
 
     it("loads a legacy flat file as opencode overrides", () => {
       const root = mkdtempSync(join(tmpdir(), "mp-load-"));
-      const path = join(root, "models.json");
+      // App-default location, mirroring src/index.ts (<rootDir>/manager/models.json).
+      const path = join(root, "manager", "models.json");
+      mkdirSync(join(root, "manager"), { recursive: true });
       writeFileSync(path, JSON.stringify({ analyzer: "ling-3.0-tiny-free", pr: "north-mini-code-free" }));
       loadModelOverrides(path);
       const ov = getModelOverrides();

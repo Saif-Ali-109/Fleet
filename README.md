@@ -180,7 +180,7 @@ The dashboard exposes a small JSON/SSE API used by its own UI:
 ## Config
 
 - **`.fleet/opencode.json`** — all 6 fleet agents. Per-agent schema: `description`, `mode` (`"all"`), `model`, `steps` (per-agent step cap: analyzer 12, planner 10, scout 15, coder 12, tester 10, reviewer 8, pr 10), `tools` (`read`/`grep`/`glob`/`bash`/`list`/`write`/`edit`/`patch`/`task`/`skill`/`webfetch` booleans), `permission` (`bash`/`edit`/`webfetch`/`task`: allow|deny, plus `external_directory` allow-list for `.runs/**` and `**/.git/worktrees/**`), `prompt`. `permission` deny is what actually restricts a worker's *tools*; higher-level behavioral guarantees (no-push, no-merge) are prompt-enforced. No `$comment` key allowed.
-- **`src/models/modelPolicy.ts`** — per-backend model tiers (reasoning vs build roles), the fallback pool, per-role `variant` (reasoning effort, opencode only), and curated model catalogs for claude/codex. Authoritative for the `-m`/`--model` passed at spawn (overrides the agent configs). `models.json` stores per-role, per-backend overrides.
+- **`src/models/modelPolicy.ts`** — per-backend model tiers (reasoning vs build roles), the fallback pool, per-role `variant` (reasoning effort, opencode only), and curated model catalogs for claude/codex. Authoritative for the `-m`/`--model` passed at spawn (overrides the agent configs). `manager/models.json` stores per-role, per-backend overrides.
 - **`OPENCODE_CONFIG`** — set by the Manager to `<project>/.fleet/opencode.json` when spawning each worker, so the roster is found even though workers run with `--dir` inside the worktree.
 - **Hook Generation** — `npm run build:config` emits per-tool hook configs via `scripts/generate-configs.ts` (3 adapters: opencode, claude-code, codex) + syncs `agent_registry`. `npm run check:config` fails on drift. Hook scripts generated deterministically via `scripts/lib/hooks.ts`; every generated hook command is `bash "$FLEET_SOR_HOOK"` — the Manager sets `FLEET_SOR_HOOK` in each worker's env at spawn:
   - opencode: `.fleet/opencode/plugins/sor-hook.ts` (committed plugin source; `tool.execute.before/after` + `event`→`session.created`)
@@ -230,9 +230,9 @@ Internally, the Manager isolates each worker's opencode state into `.runs/<id>/.
 Plus, per-agent, along each `traces/*.jsonl`:
 - **`traces/*.stderr.log`** — the worker's stderr for that attempt (used to diagnose 5xx/quota/empty-output fallbacks).
 
-And in the project root:
-- **`SESSION_LOG.md`** — reset fresh each run; the previous log is stashed to `.runs/<id>/SESSION_LOG.md`.
-- **`MEMORY.md`** — durable cross-run knowledge; the orchestrator is the only writer and appends a one-line run outcome (date, repo#issue, PR link, cost) under its "Run log" section. Auto-generated from database via `npm run generate-memory`.
+And in `manager/`:
+- **`manager/SESSION_LOG.md`** — reset fresh each run; the previous log is stashed to `.runs/<id>/SESSION_LOG.md`.
+- **`manager/MEMORY.md`** — durable cross-run knowledge; the orchestrator is the only writer and appends a one-line run outcome (date, repo#issue, PR link, cost) under its "Run log" section. Auto-generated from database via `npm run generate-memory`.
 
 Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs/`, `node_modules/`, `dist/`, and `.env*` are gitignored (only `.env.example` is kept).
 
@@ -271,16 +271,19 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     ├── README.md                           # Project overview, architecture, CLI usage
     ├── AGENTS.md                           # Canonical rules file (read by opencode/codex); CLAUDE.md symlinks here
     ├── CLAUDE.md                           # Symlink -> AGENTS.md (Claude Code reads this name)
-    ├── MEMORY.md                           # Regenerated run-log + "Next" memory (db/queries/summaryReport)
-    ├── MEMORY.example.md                   # Template/example of MEMORY.md format
-    ├── SESSION_LOG.md                      # Per-run session log appended by orchestrator/memory/sessionLog
     ├── package.json                        # Deps + scripts: start/dry/test/build:config/migrate/analytics
     ├── package-lock.json                   # npm lockfile
     ├── tsconfig.json                       # TypeScript config (ES2022, NodeNext, strict)
     ├── vitest.config.ts                    # Vitest setup (defaults DATABASE_URL, src/**/__tests__)
-    ├── models.json                         # Per-role model overrides for the opencode backend (persisted)
     ├── .env.example                        # Env template: OPENCODE_BIN, ORCHESTRATOR_BACKEND, SCAN_INTERVAL, DB…
     ├── .env                                # Local env/secrets (git-ignored; DB URL, CLI overrides)
+    │
+    # — manager runtime artifacts (durable memory, session log, model overrides) —
+    ├── manager/
+    │   ├── MEMORY.md                       # Regenerated cross-run memory + "Run log" (orchestrator-only writer; npm run generate-memory)
+    │   ├── MEMORY.example.md               # Template/example of MEMORY.md format
+    │   ├── SESSION_LOG.md                  # Fresh per run; previous log stashed to .runs/<id>/SESSION_LOG.md
+    │   └── models.json                     # Per-role, per-backend model overrides (dashboard Models panel persists here)
     │
     # — SQL migrations (system of record, Postgres) —
     ├── migrations/

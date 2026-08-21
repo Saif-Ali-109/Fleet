@@ -1,6 +1,6 @@
 import { readFile, appendFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { resolveManagerPath } from "./paths.ts";
 
 const RUN_LOG_HEADER = "## Run log (appended by orchestrator)";
 
@@ -10,7 +10,7 @@ const RUN_LOG_HEADER = "## Run log (appended by orchestrator)";
  * as one-line entries under a dedicated "Run log" section at the end.
  */
 export async function readMemory(rootDir: string): Promise<string> {
-  const p = join(rootDir, "MEMORY.md");
+  const p = resolveManagerPath(rootDir, "MEMORY.md");
   return existsSync(p) ? readFile(p, "utf8") : "";
 }
 
@@ -18,7 +18,7 @@ export async function appendRunOutcome(
   rootDir: string,
   entry: { runId: string; repo: string; issue: number; outcome: string; prUrl?: string; costUsd: number },
 ): Promise<void> {
-  const p = join(rootDir, "MEMORY.md");
+  const p = resolveManagerPath(rootDir, "MEMORY.md");
   const now = new Date().toISOString().slice(0, 10);
   const line =
     `- \`${now}\` **${entry.repo}#${entry.issue}** (${entry.runId}): ${entry.outcome}` +

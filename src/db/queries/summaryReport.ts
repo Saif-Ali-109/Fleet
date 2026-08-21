@@ -14,6 +14,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pool } from "../client.ts";
+import { resolveManagerPath } from "../../memory/paths.ts";
 
 export const RUN_LOG_START = "<!-- run-log-start -->";
 export const RUN_LOG_END = "<!-- run-log-end -->";
@@ -111,7 +112,7 @@ export async function generateMemoryMarkdown(_rootDir: string): Promise<string> 
   return [...header, ...block, ""].join("\n");
 }
 
-/** CLI entrypoint: writes MEMORY.md to the project root (process.cwd()). */
+/** CLI entrypoint: writes MEMORY.md under <rootDir>/manager/ (default cwd). */
 export async function generateMemory(rootDir = process.cwd()): Promise<string> {
   const migrationCount = await pool.query<{ count: string }>(
     "SELECT count(*) AS count FROM migrations WHERE status = 'applied'"
@@ -119,7 +120,7 @@ export async function generateMemory(rootDir = process.cwd()): Promise<string> {
   const applied = migrationCount.rows[0]?.count ?? "0";
 
   const md = await generateMemoryMarkdown(rootDir);
-  const outPath = path.join(rootDir, "MEMORY.md");
+  const outPath = resolveManagerPath(rootDir, "MEMORY.md");
 
   let finalMd = md;
   const existing = await readFile(outPath, "utf8").catch(() => null);

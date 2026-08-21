@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pool } from "../db/client.ts";
@@ -95,7 +95,8 @@ describe("summaryReport MEMORY.md merge", () => {
   it("generateMemory merges into an existing file, preserving hand-curated sections", async () => {
     stubQueries();
     const dir = await mkdtemp(path.join(tmpdir(), "memory-merge-"));
-    const memPath = path.join(dir, "MEMORY.md");
+    const memPath = path.join(dir, "manager", "MEMORY.md");
+    await mkdir(path.dirname(memPath), { recursive: true });
     await writeFile(memPath, EXISTING);
 
     const out = await generateMemory(dir);
@@ -109,7 +110,9 @@ describe("summaryReport MEMORY.md merge", () => {
   it("generateMemory falls back to full overwrite when the file lacks delimiters", async () => {
     stubQueries();
     const dir = await mkdtemp(path.join(tmpdir(), "memory-fallback-"));
-    await writeFile(path.join(dir, "MEMORY.md"), "# Run log\n\nstale content\n");
+    const memPath = path.join(dir, "manager", "MEMORY.md");
+    await mkdir(path.dirname(memPath), { recursive: true });
+    await writeFile(memPath, "# Run log\n\nstale content\n");
 
     const out = await generateMemory(dir);
     const content = await readFile(out, "utf8");

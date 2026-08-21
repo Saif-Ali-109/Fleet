@@ -18,16 +18,19 @@ Annotated repo map for Multi-Orchestration. Generated fleet configs live under `
 ├── README.md                               # Project overview, architecture, CLI usage
 ├── AGENTS.md                               # Canonical rules file (read by opencode/codex); CLAUDE.md symlinks here
 ├── CLAUDE.md                               # Symlink -> AGENTS.md (Claude Code reads this name)
-├── MEMORY.md                               # Regenerated run-log + "Next" memory (db/queries/summaryReport)
-├── MEMORY.example.md                       # Template/example of MEMORY.md format
-├── SESSION_LOG.md                          # Per-run session log appended by orchestrator/memory/sessionLog
 ├── package.json                            # Deps + scripts: start/dry/test/build:config/migrate/analytics
 ├── package-lock.json                       # npm lockfile
 ├── tsconfig.json                           # TypeScript config (ES2022, NodeNext, strict)
 ├── vitest.config.ts                        # Vitest setup (defaults DATABASE_URL, src/**/__tests__)
-├── models.json                             # Per-role model overrides for the opencode backend (persisted)
 ├── .env.example                            # Env template: OPENCODE_BIN, ORCHESTRATOR_BACKEND, SCAN_INTERVAL, DB…
 ├── .env                                    # Local env/secrets (git-ignored; DB URL, CLI overrides)
+│
+# — manager runtime artifacts (durable memory, session log, model overrides) —
+├── manager/
+│   ├── MEMORY.md                             # Regenerated cross-run memory + "Run log" (orchestrator-only writer; npm run generate-memory)
+│   ├── MEMORY.example.md                     # Template/example of MEMORY.md format
+│   ├── SESSION_LOG.md                        # Fresh per run; previous log stashed to .runs/<id>/SESSION_LOG.md
+│   └── models.json                           # Per-role, per-backend model overrides (dashboard Models panel persists here)
 │
 # — SQL migrations (system of record, Postgres) —
 ├── migrations/
