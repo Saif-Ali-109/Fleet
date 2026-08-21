@@ -3,7 +3,7 @@ description: >-
   Implementer. Edits files and commits changes to the fix branch (only inside
   the assigned worktree).
 mode: all
-model: opencode/laguna-s-2.1-free
+model: opencode/mimo-v2.5-free
 claude_model: sonnet
 codex_model: gpt-5.1-codex
 steps: 12

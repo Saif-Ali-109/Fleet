@@ -1,7 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { db, pool } from "../db/client.js";
+import { db, pool } from "../db/client.ts";
 
 const server = new Server(
   { name: "multi-orch-mcp", version: "1.0.0" },
@@ -66,8 +66,10 @@ const FINALIZE_RUN_SCHEMA = {
     pr_url: { type: "string" },
     total_cost: { type: "number" },
     gate_status: { type: "string" },
+    status: { type: "string" },
+    iterations_used: { type: "number" },
   },
-  required: ["run_id", "pr_url", "total_cost", "gate_status"],
+  required: ["run_id", "pr_url", "total_cost", "gate_status", "status"],
 } as const;
 
 const QUERY_COST_BY_ROLE_SCHEMA = {
@@ -114,6 +116,21 @@ function reqNumber(
   const value = args[key];
   if (typeof value !== "number" || Number.isNaN(value)) {
     throw new Error(`Tool ${tool}: missing or invalid number argument '${key}'`);
+  }
+  return value;
+}
+
+function optNumber(
+  args: Record<string, unknown>,
+  key: string,
+  tool: string
+): number | undefined {
+  const value = args[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    throw new Error(`Tool ${tool}: invalid number argument '${key}'`);
   }
   return value;
 }
@@ -219,6 +236,8 @@ async function finalizeRun(args: Record<string, unknown>): Promise<{ finalized: 
     pr_url: reqNullableString(args, "pr_url", "finalize_run"),
     total_cost: reqNumber(args, "total_cost", "finalize_run"),
     gate_status: reqString(args, "gate_status", "finalize_run"),
+    status: reqString(args, "status", "finalize_run"),
+    iterationsUsed: optNumber(args, "iterations_used", "finalize_run"),
   });
   return { finalized };
 }
@@ -293,14 +312,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    return { content: [{ type: "text", text: JSON.stringify({ error: msg }, null, 2) }] };
+    return {
+      isError: true,
+      content: [{ type: "text", text: JSON.stringify({ error: msg }, null, 2) }],
+    };
   }
 });
+
+let shuttingDown = false;
+async function shutdown(): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await server.close().catch(() => {});
+  await db.close().catch(() => {});
+}
 
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 void main();
+
+process.stdin.on("end", () => {
+  void shutdown();
+});
+process.once("SIGINT", () => {
+  void shutdown();
+});
+process.once("SIGTERM", () => {
+  void shutdown();
+});
 
 export { handleToolCall };

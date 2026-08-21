@@ -39,16 +39,16 @@ All 6 agents live in one project-level `opencode.json` (`mode: "all"`, `webfetch
 
 | Role | Model | Permission gist |
 |---|---|---|
-| **analyzer** | `opencode/deepseek-v4-flash-free` | Read-only repo investigation → FixSpec JSON. No writes. |
-| **planner** | `opencode/deepseek-v4-flash-free` | Read-only fix design → Plan JSON. No writes. |
-| **coder** | `opencode/laguna-s-2.1-free` | Edits worktree files + `git add`/`git commit`. **No push.** |
-| **tester** | `opencode/laguna-s-2.1-free` | Writes/updates tests, runs the suite. **No push.** |
-| **reviewer** | `opencode/deepseek-v4-flash-free` | Read-only diff review → APPROVE / REQUEST_CHANGES. No writes. |
-| **pr** | `opencode/laguna-s-2.1-free` | `git push -u origin HEAD` + `gh pr create`. **No merge.** |
+| **analyzer** | `opencode/x-preview-f-free` | Read-only repo investigation → FixSpec JSON. No writes. |
+| **planner** | `opencode/x-preview-f-free` | Read-only fix design → Plan JSON. No writes. |
+| **coder** | `opencode/mimo-v2.5-free` | Edits worktree files + `git add`/`git commit`. **No push.** |
+| **tester** | `opencode/mimo-v2.5-free` | Writes/updates tests, runs the suite. **No push.** |
+| **reviewer** | `opencode/x-preview-f-free` | Read-only diff review → APPROVE / REQUEST_CHANGES. No writes. |
+| **pr** | `opencode/mimo-v2.5-free` | `git push -u origin HEAD` + `gh pr create`. **No merge.** |
 
-Reasoning-heavy roles (analyzer/planner/reviewer) use `opencode/deepseek-v4-flash-free` with `variant: "medium"`; build roles (coder/tester/pr) use `opencode/laguna-s-2.1-free` (no variant). Fallback pool (tried in order on 5xx/quota/empty output): `opencode/deepseek-v4-flash-free`, `opencode/north-mini-code-free`, `opencode/mimo-v2.5-free`, `opencode/nemotron-3-ultra-free`.
+Reasoning-heavy roles (analyzer/planner/reviewer) use `opencode/x-preview-f-free` with `variant: "low"`; build roles (coder/tester/pr) use `opencode/mimo-v2.5-free` (no variant). Fallback pool (tried in order on 5xx/quota/empty output): `opencode/x-preview-f-free`, `opencode/mimo-v2.5-free`, `opencode/nemotron-3-ultra-free`, `opencode/nemotron-3.5-lightning-free`.
 
-> **Model split to know:** the model each worker actually runs is resolved by `src/models/modelPolicy.ts` (the Manager passes it via `-m`, which overrides the agent's config). `opencode.json` still declares `model: "opencode/big-pickle"` for the analyzer/planner/reviewer agents, but that value is superseded at spawn time by the policy — `modelPolicy.ts` is authoritative.
+> **Model split to know:** the model each worker actually runs is resolved by `src/models/modelPolicy.ts` (the Manager passes it via `-m`, which overrides the agent's config). `opencode.json` still declares the per-agent frontmatter model, but that value is superseded at spawn time by the policy — `modelPolicy.ts` is authoritative.
 
 > **Prompt-enforced vs permission-enforced:** the coder/tester "no push" and the pr "no merge" guarantees are enforced by the agent **prompts**, not by the CLI permission system. The permission system restricts *tools*; push-vs-no-push behavior relies on the role being told not to do it.
 
@@ -79,6 +79,23 @@ npm start -- --repo <url> --issue <n> [--dry-run] [--interactive=false] [--branc
 ```
 
 Run the dashboard-driven **repo queue** (fix every open issue in a repo, one by one) by calling `npm start` with **no arguments** and pasting a repo URL in the dashboard's "Start a repo queue" panel (use the **Backend** toggle to choose opencode / Claude / Codex first).
+
+#### Webhook triggers (hybrid mode)
+
+Queue mode supports instant, push-based triggering via GitHub webhooks while keeping the `SCAN_INTERVAL_MINUTES` poll scan as a safety net:
+
+1. Generate a secret: `openssl rand -hex 32` and set it as `WEBHOOK_SECRET`.
+2. Start queue mode (`npm start`, no args) and add your repo to the watch list.
+3. In GitHub: repo → Settings → Webhooks → Add webhook — payload URL `https://<public-url>/webhook`, content type `application/json`, secret = `WEBHOOK_SECRET`, events: **Issues only**.
+4. For local dev, relay through [smee.io](https://smee.io): `npx smee-client --target http://127.0.0.1:3456/webhook`.
+
+Semantics:
+
+- Only `issues.opened` and `issues.reopened` trigger runs; every other event (including GitHub's initial `ping`) is acknowledged with `200 {"ignored": true}` so webhook setup shows a green check.
+- Deliveries are HMAC-verified against `WEBHOOK_SECRET` (`X-Hub-Signature-256`); bad signatures get `401`. With `WEBHOOK_SECRET` unset the endpoint is disabled (`503`).
+- Issues for repos not on the watch list are ignored; dedup checks run at intake AND again at drain time (authoritative) — already-fixed or since-closed issues are skipped.
+- **Reopened issues bypass the done-label/completed-run dedup on the webhook path only** (a reopen means "the fix was wrong"); the open-PR guard still applies. The 5-min poll keeps full dedup.
+- The 5-minute poll loop remains the safety net: anything missed or failed via webhook is re-picked by the next scan.
 
 Run `npm start -- --help` for the full flag summary.
 
@@ -148,23 +165,30 @@ The dashboard exposes a small JSON/SSE API used by its own UI:
 | `/api/start` | Start a repo queue run from the dashboard |
 | `/api/backend` | Get/set the run backend (`opencode` \| `claude` \| `codex`) |
 | `/api/models` | Per-backend model catalog + overrides (GET `?backend=…`, POST to save) |
+| `/webhook` | GitHub webhook receiver (HMAC-verified; queue mode hybrid trigger) |
 
 ## Fleet Skills & Subagents
 
 - RO roles (`analyzer`/`planner`/`reviewer`) emit their JSON artifacts against the canonical schemas held in the `fleet-schemas` skill (`.opencode/skills/fleet-schemas/SKILL.md`), not inlined in prompts.
 - `analyzer`/`planner`/`reviewer` delegate raw repo reads/greps to the free-model `scout` subagent via the `task` tool (`task: true`, `permission.task: "allow"`, `permission.external_directory: "allow"` covering `.runs/**` and `.git/worktrees/**`).
 - `pr-helper.md` was previously an unwired subagent; it has been **removed** — the orchestrator builds the PR title/body itself via `src/github/gh.ts`.
-- The `fleet-schemas` skill and `scout` subagent each pin `opencode/deepseek-v4-flash-free` (free). RO roles run at `variant: "medium"`.
+- The `scout` subagent pins `opencode/big-pickle` (free). RO roles run at `variant: "low"`.
 
 ## Config
 
-- **`opencode.json`** — all 6 fleet agents. Per-agent schema: `description`, `mode` (`"all"`), `model`, `steps` (per-agent step cap: analyzer 12, planner 10, scout 30, coder 12, tester 10, reviewer 8, pr 5), `tools` (`read`/`grep`/`glob`/`bash`/`list`/`write`/`edit`/`patch`/`task`/`skill`/`webfetch` booleans), `permission` (`bash`/`edit`/`webfetch`/`task`: allow|deny, plus `external_directory` allow-list for `.runs/**` and `**/.git/worktrees/**`), `prompt`. `permission` deny is what actually restricts a worker's *tools*; higher-level behavioral guarantees (no-push, no-merge) are prompt-enforced. No `$comment` key allowed.
+- **`opencode.json`** — all 6 fleet agents. Per-agent schema: `description`, `mode` (`"all"`), `model`, `steps` (per-agent step cap: analyzer 12, planner 10, scout 15, coder 12, tester 10, reviewer 8, pr 10), `tools` (`read`/`grep`/`glob`/`bash`/`list`/`write`/`edit`/`patch`/`task`/`skill`/`webfetch` booleans), `permission` (`bash`/`edit`/`webfetch`/`task`: allow|deny, plus `external_directory` allow-list for `.runs/**` and `**/.git/worktrees/**`), `prompt`. `permission` deny is what actually restricts a worker's *tools*; higher-level behavioral guarantees (no-push, no-merge) are prompt-enforced. No `$comment` key allowed.
 - **`src/models/modelPolicy.ts`** — per-backend model tiers (reasoning vs build roles), the fallback pool, per-role `variant` (reasoning effort, opencode only), and curated model catalogs for claude/codex. Authoritative for the `-m`/`--model` passed at spawn (overrides the agent configs). `models.json` stores per-role, per-backend overrides.
 - **`OPENCODE_CONFIG`** — set by the Manager to `<project>/opencode.json` when spawning each worker, so the roster is found even though workers run with `--dir` inside the worktree.
 - **Hook Generation** — `npm run build:config` emits per-tool hook configs via `scripts/generate-configs.ts` (3 adapters: opencode, claude-code, codex) + syncs `agent_registry`. `npm run check:config` fails on drift. Hook scripts generated deterministically via `scripts/lib/hooks.ts`:
   - opencode: `.opencode/plugins/sor-hook.ts` (committed plugin source; `tool.execute.before/after` + `event`→`session.created`)
   - claude: `.claude/settings.json` hooks → `.claude/hooks/sor-hook.sh` (PreToolUse/PostToolUse/SessionStart/Stop)
   - codex: `.codex/config.toml` `[[hooks.*]]` + `[features] codex_hooks = true` → `.codex/hooks/sor-hook.sh`
+
+### Session resumption & scout tracking
+
+Coder and tester run their phases (parse-edit → run-tests → commit → verify-diff / setup → run → validate) as **resumed sessions**: each phase resumes the same opencode session (`-s <id>` for opencode, `--resume` for claude/codex), so repeat context is not re-sent every phase. Resumption only engages when the primary model succeeded on the first attempt — any fallback discards the session id.
+
+Read-only roles delegate bulk repo reads to the `scout` subagent; `src/workflow/scoutTracker.ts` counts invocations per parent role, logs `[scout] invoked by <role> (call N)` to SESSION_LOG.md, and appends a per-run summary to the Run complete block.
 
 ## Environment Variables
 
@@ -179,6 +203,7 @@ The dashboard exposes a small JSON/SSE API used by its own UI:
 | `SOR_SIGNING_KEY` | — | **Required**; HMAC-SHA256 secret for SOR hash chain (`openssl rand -hex 32`). |
 | `SOR_EVENT_DIR` | `<runDir>/events` | Hook event file directory (optional override). |
 | `SCAN_INTERVAL_MINUTES` | `5` | Daemon repo scan interval. |
+| `WEBHOOK_SECRET` | — | Optional; GitHub webhook HMAC secret for `POST /webhook` (queue mode). Unset = endpoint disabled (`503`). |
 
 GitHub auth is done through the `gh` CLI login (`gh auth login`), not environment variables. The free OpenCode Zen models need no key at all; Claude Code uses its own auth (`claude auth` / `ANTHROPIC_API_KEY`) and Codex its own (`codex login` / `OPENAI_API_KEY`).
 
@@ -234,7 +259,7 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
 ```
 .
 ├── AGENT_IMPLEMENTATION_PROMPT.md          # Original prompt spec used to build the fleet agents/workflow
-├── PLAN.md                                 # Working plan docs (currently: signed System of Record / SOR plan)
+├── PLAN.md                                 # Current working plan (hybrid webhook triggering; dashboard transcript fixes)
 ├── directory.md                            # This file — annotated repo map
 │
 └── Multi-Orchestration-export/             # Project root: TypeScript Manager + 6-worker fleet
@@ -319,9 +344,10 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     │   │   ├── syncRegistryCli.ts          # `npm run sor:sync-registry`
     │   │   └── __tests__/                  # signer/ingest unit tests
     │   ├── workflow/
-    │   │   ├── coder.ts                    # 5-step checkpointed coder phase (parse->edit->test->commit->verify)
-    │   │   ├── tester.ts                   # Tester phase wrapper
-    │   │   └── index.ts                    # Workflow re-exports
+    │   │   ├── coder.ts                    # Checkpointed coder phases (parse-edit -> run-tests -> commit -> verify-diff), session-resumed
+│   │   ├── tester.ts                   # Tester phase wrapper
+│   │   ├── scoutTracker.ts             # Tracks scout subagent invocations per parent role
+│   │   └── index.ts                    # Workflow re-exports
     │   ├── tui/
     │   │   └── dashboard.ts                # Terminal dashboard renderer
     │   ├── dashboard/
@@ -337,8 +363,9 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     │   ├── analytics/
     │   │   ├── queries.ts                  # Analytics SQL queries
     │   │   └── report.ts                   # Analytics report generator (npm run analytics)
-    │   ├── daemon/
-    │   │   └── dedup.ts                    # Daemon dedup: skip already-fixed issues (DB + open PR)
+│   ├── daemon/
+│   │   ├── dedup.ts                      # Daemon dedup: skip already-fixed issues (label + open PR + DB)
+│   │   └── webhook.ts                    # GitHub webhook HMAC verification + issues-event parsing
     │   └── __tests__/                      # Vitest suite (one file per module under test)
     │       ├── agentRunner.test.ts         # Worker spawn + token-summing trace parsing
     │       ├── analytics.test.ts           # Analytics report/queries
@@ -352,7 +379,9 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     │       ├── hiring.test.ts              # Workforce hiring
     │       ├── mcp-server.test.ts          # MCP server
     │       ├── modelPolicy.test.ts         # Model tiers/overrides
-    │       └── router.test.ts              # Issue routing
+    │       ├── router.test.ts              # Issue routing
+    │       ├── scoutTracker.test.ts        # Scout invocation tracking
+    │       └── webhook.test.ts             # Webhook signature verification + event parsing
     │
     # — generated per-tool configs (never hand-edit) —
     ├── .claude/
@@ -381,7 +410,7 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
 
 ## Limitations / Notes
 
-- Free-tier OpenCode Zen models may 503 or hit quota → the runner falls back through the pool; if all models fail the worker reports an error and the run fails. Note `opencode/deepseek-v4-flash-free` is both the primary model for reasoning roles and the first fallback for all roles.
+- Free-tier OpenCode Zen models may 503 or hit quota → the runner falls back through the pool; if all models fail the worker reports an error and the run fails. Reasoning roles (analyzer/planner/reviewer) run `opencode/x-preview-f-free`; build roles (coder/tester/pr) run `opencode/mimo-v2.5-free`; the first fallback for every role is `opencode/x-preview-f-free`.
 - opencode CLI flags (`run --agent/-m/--dir/--format json/--variant`) were verified only on **v1.18.7**; versions may drift. Claude Code flags (`-p/--output-format stream-json/--model/--append-system-prompt/--permission-mode`) verified on **v2.1.201**; Codex flags (`exec/--cd/-m/-s/--json/-o/--approve-for-me`) verified on **v0.147.0**. Codex `--json` event shapes are parsed tolerantly and fall back to the `-o` output file.
 - **SOR caveats:** Codex hooks fire for the `Bash` tool only today (requires `[features] codex_hooks = true`); non-Bash calls fall back to NDJSON/trace capture. Claude headless (`claude -p`): hook discovery depends on cwd/config location; verify empirically and fall back to trace capture where hooks can't fire. No DB creds in worktrees: hooks write local JSONL only; the Manager owns the DB write. If `SOR_EVENT_DIR` is unset, hooks no-op safely. Hook scripts are generated deterministically by the adapters so `check:config` remains meaningful. All SOR writes are non-fatal — never abort a run. `--dry-run` still records boot/phase/finalize events (chain verifies, no API/tokens).
 - **`--no-web` disables the dashboard in both single-issue and queue mode.**

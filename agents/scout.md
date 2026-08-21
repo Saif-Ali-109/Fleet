@@ -4,7 +4,7 @@ description: >-
   code, search files, and gather repository intelligence on their behalf.
 mode: all
 model: opencode/big-pickle
-steps: 30
+steps: 15
 tools:
   read: true
   grep: true

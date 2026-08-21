@@ -3,7 +3,7 @@ description: >-
   Read-only reviewer of the final diff. Returns APPROVE or REQUEST_CHANGES with
   a detailed rationale and any blocking issues.
 mode: all
-model: opencode/big-pickle
+model: opencode/x-preview-f-free
 claude_model: sonnet
 codex_model: gpt-5.1-codex
 codex_reasoning_effort: medium

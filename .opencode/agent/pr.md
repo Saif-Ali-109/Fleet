@@ -3,10 +3,10 @@ description: >-
   Pushes the fix branch and opens a pull request against the base branch (only
   after Reviewer approval).
 mode: all
-model: opencode/laguna-s-2.1-free
+model: opencode/x-preview-f-free
 claude_model: sonnet
 codex_model: gpt-5.1-codex
-steps: 5
+steps: 10
 tools:
   bash: true
   read: true

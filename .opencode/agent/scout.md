@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Free-model read-only subagent for bulk repo reads/greps grepped delegated by the big-pickle fleet agents.
-model: opencode/deepseek-v4-flash-free
+model: opencode/x-preview-f-free
 mode: subagent
 tools:
   read: true

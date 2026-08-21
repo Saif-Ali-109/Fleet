@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { gate, confirm, ask, type GateResult } from "../gates.js";
+import { gate, confirm, ask, type GateResult } from "../gates.ts";
 
 // Mocked readline: each `confirm`/`ask` call pops the next preset answer.
 // Variables referenced inside vi.mock must be prefixed with `mock`.

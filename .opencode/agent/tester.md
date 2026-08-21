@@ -1,7 +1,7 @@
 ---
 description: Test writer and validator. Adds/updates tests for the fix and runs the suite.
 mode: all
-model: opencode/laguna-s-2.1-free
+model: opencode/x-preview-f-free
 claude_model: sonnet
 codex_model: gpt-5.1-codex
 steps: 10

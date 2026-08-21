@@ -1,5 +1,8 @@
-// Database schema interfaces — source of truth for the 4 persistent tables.
-// These mirror migrations/001_init.sql and are imported by src/db/client.ts.
+// Database schema interfaces — source of truth for the persistent tables.
+// These mirror migrations/001_init.sql (run_outcomes, agent_actions) and
+// migrations/002_agent_steps.sql (agent_steps). trace_events and cost_ledger
+// are created by 001 but are reserved for future use — nothing writes them
+// today (the dead client write methods were removed).
 
 /**
  * run_outcomes — one row per orchestrator run.
@@ -10,7 +13,7 @@ export interface RunOutcome {
   repo: string; // "owner/name"
   issue_number: number;
   issue_title: string;
-  status: "completed" | "aborted" | "failed";
+  status: "running" | "completed" | "aborted" | "failed";
   pr_url?: string | null;
   total_cost_usd: number;
   iterations_used: number;

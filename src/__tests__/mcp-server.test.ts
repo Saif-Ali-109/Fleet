@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { handleToolCall } from "../mcp/server.js";
-import { pool } from "../db/client.js";
+import { randomUUID } from "node:crypto";
+import { handleToolCall } from "../mcp/server.ts";
+import { pool } from "../db/client.ts";
 
 const REPO = "test/mcp";
 
@@ -105,7 +106,7 @@ describe("MCP server handleToolCall integration", () => {
     );
   });
 
-  it("finalize_run returns { finalized: true }", async () => {
+  it("finalize_run returns { finalized: true } and persists the real status", async () => {
     const created = (await handleToolCall("create_run", {
       repo: REPO,
       issue_number: 1005,
@@ -117,9 +118,128 @@ describe("MCP server handleToolCall integration", () => {
       pr_url: "https://github.com/x/y/pull/1",
       total_cost: 0.05,
       gate_status: "{}",
+      status: "completed",
     })) as { finalized: boolean };
 
     expect(result.finalized).toBe(true);
+    const row = await pool.query<{ status: string }>(
+      "SELECT status FROM run_outcomes WHERE run_id = $1",
+      [created.run_id]
+    );
+    expect(row.rows[0]?.status).toBe("completed");
+  });
+
+  it("finalize_run persists iterations_used when provided", async () => {
+    const created = (await handleToolCall("create_run", {
+      repo: REPO,
+      issue_number: 1010,
+      backend: "opencode",
+    })) as { run_id: string };
+
+    const result = (await handleToolCall("finalize_run", {
+      run_id: created.run_id,
+      pr_url: null,
+      total_cost: 0.05,
+      gate_status: "{}",
+      status: "completed",
+      iterations_used: 7,
+    })) as { finalized: boolean };
+
+    expect(result.finalized).toBe(true);
+    const row = await pool.query<{ iterations_used: number }>(
+      "SELECT iterations_used FROM run_outcomes WHERE run_id = $1",
+      [created.run_id]
+    );
+    expect(row.rows[0]?.iterations_used).toBe(7);
+  });
+
+  it("finalize_run derives iterations_used from gate_status when not provided", async () => {
+    const created = (await handleToolCall("create_run", {
+      repo: REPO,
+      issue_number: 1011,
+      backend: "opencode",
+    })) as { run_id: string };
+
+    await handleToolCall("update_run_status", {
+      run_id: created.run_id,
+      phase: "done",
+      status: "completed",
+      iteration: 3,
+    });
+
+    const result = (await handleToolCall("finalize_run", {
+      run_id: created.run_id,
+      pr_url: null,
+      total_cost: 0.05,
+      gate_status: "{}",
+      status: "completed",
+    })) as { finalized: boolean };
+
+    expect(result.finalized).toBe(true);
+    const row = await pool.query<{ iterations_used: number }>(
+      "SELECT iterations_used FROM run_outcomes WHERE run_id = $1",
+      [created.run_id]
+    );
+    expect(row.rows[0]?.iterations_used).toBe(3);
+  });
+
+  it("finalize_run returns finalized:false when the run does not exist", async () => {
+    const result = (await handleToolCall("finalize_run", {
+      run_id: randomUUID(),
+      pr_url: null,
+      total_cost: 0,
+      gate_status: "{}",
+      status: "completed",
+    })) as { finalized: boolean };
+
+    expect(result.finalized).toBe(false);
+  });
+
+  it("update_run_status merges gate_status phases atomically", async () => {
+    const created = (await handleToolCall("create_run", {
+      repo: REPO,
+      issue_number: 1012,
+      backend: "opencode",
+    })) as { run_id: string };
+
+    await handleToolCall("update_run_status", {
+      run_id: created.run_id,
+      phase: "gate1",
+      status: "running",
+      iteration: 0,
+    });
+    await handleToolCall("update_run_status", {
+      run_id: created.run_id,
+      phase: "gate2",
+      status: "approved",
+      iteration: 2,
+    });
+    await handleToolCall("update_run_status", {
+      run_id: created.run_id,
+      phase: "gate1",
+      status: "approved",
+      iteration: 1,
+    });
+
+    const row = await pool.query<{ gate_status: Record<string, { status: string; iteration: number }> }>(
+      "SELECT gate_status FROM run_outcomes WHERE run_id = $1",
+      [created.run_id]
+    );
+    expect(row.rows[0]?.gate_status).toEqual({
+      gate1: { status: "approved", iteration: 1 },
+      gate2: { status: "approved", iteration: 2 },
+    });
+  });
+
+  it("update_run_status returns updated:false for a nonexistent run", async () => {
+    const result = (await handleToolCall("update_run_status", {
+      run_id: randomUUID(),
+      phase: "gate1",
+      status: "running",
+      iteration: 0,
+    })) as { updated: boolean };
+
+    expect(result.updated).toBe(false);
   });
 
   it("query_cost_by_role returns an array with expected fields", async () => {

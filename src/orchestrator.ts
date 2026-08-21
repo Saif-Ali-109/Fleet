@@ -1,26 +1,59 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { runWorker } from "./agentRunner.js";
-import { gate } from "./gates.js";
-import type { WorktreeHandle } from "./git/worktree.js";
-import { changedFiles, diffAgainstBase, diffStatAgainstBase, setupWorktree } from "./git/worktree.js";
-import { createPr } from "./github/gh.js";
-import { db, pool } from "./db/client.js";
-import { appendAuditEvent, ensureChain } from "./db/audit.js";
-import { readEventFile } from "./sor/ingest.js";
-import type { SorEvent } from "./sor/events.js";
-import { getLastFailedStep } from "./db/checkpoint.js";
-import { runCoder } from "./workflow/coder.js";
-import { runTester } from "./workflow/tester.js";
-import { generateMemoryMarkdown } from "./db/queries/summaryReport.js";
-import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.js";
-import { policyFor } from "./models/modelPolicy.js";
-import { MAX_IMPL_ITERATIONS, planRoute } from "./router.js";
-import type { DashboardState } from "./tui/dashboard.js";
-import { newDashboardState, renderDashboard } from "./tui/dashboard.js";
-import type { AgentResult, Backend, FixSpec, Plan, Role, RolePolicy, RunContext } from "./types.js";
+import { runWorker } from "./agentRunner.ts";
+import { gate } from "./gates.ts";
+import type { WorktreeHandle } from "./git/worktree.ts";
+import {
+  changedFiles,
+  cleanupWorktree,
+  diffAgainstBase,
+  diffStatAgainstBase,
+  setupWorktree,
+} from "./git/worktree.ts";
+import {
+  buildSkeletonMap,
+  readSelectedFileSymbols,
+} from "./git/snapshotReader.ts";
+import {
+  addIssueLabel,
+  commentOnIssue,
+  createPr,
+  ensureLabels,
+  ISSUE_LABEL_DONE,
+  ISSUE_LABEL_IN_PROGRESS,
+  removeIssueLabel,
+  splitRepoSlug,
+} from "./github/gh.ts";
+import { db, pool } from "./db/client.ts";
+import { appendAuditEvent, ensureChain } from "./db/audit.ts";
+import type { SorEvent } from "./sor/events.ts";
+import { getLastFailedStep } from "./db/checkpoint.ts";
+import {
+  EXCLUDE_ARTIFACTS,
+  execErrorText,
+  runCoder,
+} from "./workflow/coder.ts";
+import { runTester } from "./workflow/tester.ts";
+import { ScoutTracker } from "./workflow/scoutTracker.ts";
+import { detectTestCommand } from "./runner/backends.ts";
+import { generateMemory } from "./db/queries/summaryReport.ts";
+import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.ts";
+import { policyFor } from "./models/modelPolicy.ts";
+import { MAX_IMPL_ITERATIONS, planRoute } from "./router.ts";
+import type { DashboardState } from "./tui/dashboard.ts";
+import { newDashboardState, renderDashboard } from "./tui/dashboard.ts";
+import type {
+  AgentResult,
+  Backend,
+  FixSpec,
+  Issue,
+  Plan,
+  Role,
+  RolePolicy,
+  RunContext,
+} from "./types.ts";
 
 export type RunStatus = "completed" | "aborted" | "failed";
 
@@ -29,6 +62,7 @@ export interface WebFeed {
   pushState(d: DashboardState): void;
   pushOutput(role: Role, text: string): void;
   pushAgentEvent?(role: Role, event: Record<string, unknown>): void;
+  pushFinal?(phase: DashboardState["phase"], prUrl?: string): void;
 }
 
 export interface RunSummary {
@@ -99,6 +133,34 @@ export function extractJson<T>(text: string): T | null {
 }
 
 /**
+ * Build a factual git commit message from the approved plan's approach line,
+ * e.g. `plan.approach` "Validate the range before emitting an event" →
+ * `fix: validate the range before emitting an event`.
+ *
+ * Rule: commit messages are factual and NEVER reference the issue number —
+ * `Closes #N` belongs only in the PR body (merge-time close). Throws when the
+ * plan has no approach text, so the caller surfaces a clear phase failure.
+ */
+export function commitMessageFor(plan: Plan, issue: Issue): string {
+  const text = (plan.approach ?? "").trim();
+  if (!text) {
+    throw new Error(`cannot build a factual commit message for issue #${issue.number}: plan.approach is empty`);
+  }
+  const firstLine = text.split("\n")[0] as string;
+  // Drop a leading imperative ("Fix", "Fixes", …) so the message reads
+  // "fix: validate …" instead of "fix: Fix validate …".
+  const stripped = firstLine.replace(/^\s*(?:fix(?:es)?)\s*[:.-]?\s+/i, "");
+  let body = (stripped.charAt(0).toLowerCase() + stripped.slice(1)).trim();
+  body = body.replace(/[.\s]+$/, "");
+  const MAX_SUBJECT = 72;
+  const prefix = "fix: ";
+  if (prefix.length + body.length > MAX_SUBJECT) {
+    body = body.slice(0, MAX_SUBJECT - prefix.length - 1) + "…";
+  }
+  return `${prefix}${body}`;
+}
+
+/**
  * Non-fatal append of one signed audit event to the System of Record.
  * Builds a full SorEvent from `event` overrides (defaulting event_type to
  * "phase", actor to "manager", backend to the run's backend), with run_id from
@@ -131,147 +193,6 @@ async function sorEmit(
   }
 }
 
-/**
- * Drain the workers' hook event file (runDir/events/events.jsonl) into the
- * System of Record. Skips dry-run runs and missing/unreadable files; missing
- * run_ids are set to ctx.runId and missing actors default to "manager". Each
- * append is fire-and-forget so a signing/DB failure never aborts the run.
- */
-async function sorDrain(ctx: RunContext): Promise<void> {
-  if (ctx.dryRun) return;
-  const eventFile = join(ctx.runDir, "events", "events.jsonl");
-  let events: SorEvent[];
-  try {
-    events = readEventFile(eventFile);
-  } catch (e) {
-    console.warn(`[sor] drain failed reading ${eventFile}: ${String(e)}`);
-    return;
-  }
-  for (const ev of events) {
-    const event: SorEvent = {
-      ...ev,
-      run_id: ev.run_id ?? ctx.runId,
-      actor: ev.actor || "manager",
-    };
-    try {
-      await appendAuditEvent(pool, event);
-    } catch (e) {
-      console.warn(`[sor] drain appendAuditEvent failed (non-fatal): ${String(e)}`);
-    }
-  }
-}
-
-// ---- B1: repo snapshot (context pre-injection) ----
-// The Manager is plain TypeScript (not an LLM): snapshot the worktree ONCE and
-// inline it into the analyzer/planner task prompts so those read-only agents
-// can work purely from context instead of re-reading files with read/grep/glob.
-
-/** Budget cap for the whole `## Repository` block (tokens ≈ half the chars). */
-const SNAPSHOT_MAX_CHARS = 25_000;
-/** Per-file size guard — larger files are skipped (too big to inline usefully). */
-const SNAPSHOT_MAX_FILE_BYTES = 10_000;
-/** Directories always skipped even when git is unavailable (fallback walker). */
-const SNAPSHOT_SKIP_DIRS = new Set([".git", ".runs", "node_modules", "dist"]);
-
-/**
- * Walk `dir` recursively, skipping SNAPSHOT_SKIP_DIRS. Used only when the
- * directory is not a git worktree (e.g. dry-run stubs), where `git ls-files`
- * cannot tell us what's ignored/discovered.
- */
-async function listRepoFilesFallback(dir: string): Promise<string[]> {
-  const out: string[] = [];
-  const walk = async (rel: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(join(dir, rel), { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      if (SNAPSHOT_SKIP_DIRS.has(e.name)) continue;
-      const relPath = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) {
-        await walk(relPath);
-      } else if (e.isFile()) {
-        out.push(relPath);
-      }
-    }
-  };
-  await walk("");
-  return out.sort();
-}
-
-/**
- * Non-LLM worktree snapshot for context pre-injection.
- * Lists files (via `git ls-files` so git-ignored files are excluded, falling
- * back to a readdir walk that skips .git/.runs/node_modules/dist), reads each
- * one (skipping binaries and files >10KB), and concatenates them into a
- * compact `## Repository` block. Stops once the ~25KB budget is reached
- * (last file truncated to fit). Returns null when nothing fits or the dir is
- * unusable — callers keep today's behavior in that case.
- */
-export async function snapshotRepo(worktreeDir: string): Promise<string | null> {
-  const notSkipped = (f: string): boolean => !SNAPSHOT_SKIP_DIRS.has(f.split("/")[0] as string);
-  let files: string[];
-  try {
-    const exec = promisify(execFile);
-    const { stdout } = await exec(
-      "git",
-      ["-C", worktreeDir, "ls-files", "-co", "--exclude-standard", "-z"],
-      { maxBuffer: 32 * 1024 * 1024 },
-    );
-    files = stdout.split("\0").filter(Boolean).filter(notSkipped).sort();
-  } catch {
-    files = (await listRepoFilesFallback(worktreeDir)).filter(notSkipped);
-  }
-  if (files.length === 0) return null;
-
-  const header = "## Repository";
-  const lines: string[] = [header];
-  // Reserve the block header + one join newline per entry so the final block
-  // (joined with "\n") never exceeds SNAPSHOT_MAX_CHARS.
-  let budget = SNAPSHOT_MAX_CHARS - (header.length + 1);
-  for (const file of files) {
-    if (budget <= 0) break;
-    const abs = join(worktreeDir, file);
-    let size: number;
-    try {
-      size = (await stat(abs)).size;
-    } catch {
-      continue; // disappeared between listing and stat
-    }
-    if (size === 0 || size > SNAPSHOT_MAX_FILE_BYTES) continue;
-    let content: Buffer;
-    try {
-      content = await readFile(abs);
-    } catch {
-      continue;
-    }
-    if (content.includes(0)) continue; // binary
-    const text = content.toString("utf8");
-    if (text.length === 0) continue;
-
-    const fileHeader = `Path: ${file}\n===${file}===`;
-    const footer = "===EOF===";
-    const entry = `${fileHeader}\n${text}\n${footer}`;
-    if (entry.length + 1 > budget) {
-      const room = budget - 1 - (fileHeader.length + footer.length + 2);
-      if (room <= 0) break;
-      lines.push(`${fileHeader}\n${text.slice(0, room)}\n${footer}`);
-      budget = 0;
-      break;
-    }
-    lines.push(entry);
-    budget -= entry.length + 1;
-  }
-  return lines.length > 1 ? lines.join("\n") : null;
-}
-
-/** Instruction appended with the repository block: agent must not re-read the repo. */
-const REPO_SNAPSHOT_INSTRUCTION =
-  "The repository contents are already fully provided above in the `## Repository` block. " +
-  "Work purely from that block — do NOT use the read, grep, or glob tools.";
-
 // The Manager (not an LLM): issue intake → 3 human gates → 6 workers → PR.
 export async function runOrchestrator(
   ctx: RunContext,
@@ -281,9 +202,13 @@ export async function runOrchestrator(
   const web = opts.web;
   const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.backend);
   const agents = {} as Record<Role, AgentResult>;
+  const scoutTracker = new ScoutTracker();
   let runId: string | undefined;
   let prUrl: string | undefined;
   let iterationsUsed = 0;
+  // Set once the worktree is up (or the dry-run stub replaces it); every
+  // finalize() branch tears it down so we never leak linked worktrees.
+  let wt: WorktreeHandle | undefined;
 
   const render = () => process.stdout.write(renderDashboard(dash) + "\n");
   const pushState = () => {
@@ -318,6 +243,7 @@ export async function runOrchestrator(
   const finalize = async (
     status: string,
     gateStatus: Record<string, unknown>,
+    reason?: string,
   ): Promise<void> => {
     await sorEmit(ctx, {
       event_type: "finalize",
@@ -326,6 +252,7 @@ export async function runOrchestrator(
         status,
         pr_url: prUrl ?? null,
         total_cost: totalCostUsd(),
+        failure: reason ?? null,
       },
     });
     if (runId) {
@@ -334,7 +261,50 @@ export async function runOrchestrator(
         pr_url: prUrl ?? null,
         total_cost: totalCostUsd(),
         gate_status: JSON.stringify(gateStatus),
+        status,
       });
+    }
+    // Issue lifecycle (0.1): labels + comment. All non-fatal, best-effort, and
+    // skipped entirely on dry-run — a gh failure here must never change the
+    // run's outcome. Completed = remove in-progress, mark done (PR created);
+    // failed/aborted = remove in-progress, comment the reason.
+    if (!ctx.dryRun) {
+      const { owner, repo } = splitRepoSlug(ctx.issue.repo);
+      try {
+        await ensureLabels(owner, repo, [ISSUE_LABEL_IN_PROGRESS, ISSUE_LABEL_DONE]);
+        await removeIssueLabel(owner, repo, ctx.issue.number, ISSUE_LABEL_IN_PROGRESS);
+        if (status === "completed") {
+          await addIssueLabel(owner, repo, ctx.issue.number, ISSUE_LABEL_DONE);
+          const lines = [
+            `Managed run \`${ctx.runId}\` completed.`,
+            prUrl ? `- PR: ${prUrl}` : "- PR: (none)",
+            `- Total cost: $${totalCostUsd().toFixed(4)}`,
+            `- Backend: ${ctx.backend ?? "opencode"}`,
+          ].join("\n");
+          await commentOnIssue(owner, repo, ctx.issue.number, lines);
+        } else {
+          const suffix = reason ? `: ${reason}` : "";
+          await commentOnIssue(
+            owner,
+            repo,
+            ctx.issue.number,
+            `Managed run \`${ctx.runId}\` ${status}${suffix}.`,
+          );
+        }
+      } catch (e) {
+        console.warn(`[lifecycle] finalize (${status}) failed (non-fatal): ${String(e)}`);
+      }
+    }
+    // Worktree hygiene: every terminal path (completed/failed/aborted) tears
+    // down the linked worktree. Best-effort — a cleanup failure must never
+    // change the run's outcome (AGENTS.md: all cleanup is non-fatal). Dry-run
+    // creates a plain directory stub, not a real git worktree, so skip it.
+    if (wt && !ctx.dryRun) {
+      try {
+        await cleanupWorktree(wt);
+      } catch (e) {
+        console.warn(`[worktree] cleanup failed (non-fatal): ${String(e)}`);
+      }
     }
   };
 
@@ -348,7 +318,12 @@ export async function runOrchestrator(
     dash.agents[role] = { role, state: "running", model: policy.model };
     pushState();
     const onText = (t: string) => web?.pushOutput(role, t);
-    const onEvent = (ev: Record<string, unknown>) => web?.pushAgentEvent?.(role, ev);
+    const onEvent = (ev: Record<string, unknown>) => {
+      if (scoutTracker.observe(role, ev)) {
+        void logLine(ctx.rootDir, `[scout] invoked by ${role} (call ${scoutTracker.total}, ${scoutTracker.countFor(role)}/${role})`);
+      }
+      web?.pushAgentEvent?.(role, ev);
+    };
     const res = await runWorker(role, task, ctx, policy, { onText, onEvent });
     agents[role] = res;
     dash.agents[role] = {
@@ -400,19 +375,20 @@ export async function runOrchestrator(
       title: ctx.issue.title,
     });
     await logLine(ctx.rootDir, "run started");
-    runId = await db.createRun({
-      repo: ctx.issue.repo,
-      issue_number: ctx.issue.number,
-      backend: ctx.backend ?? "opencode",
-    });
-    await db.updateRunStatus({ run_id: runId, phase: "start", status: "running", iteration: 0 });
+    if (!ctx.dryRun) {
+      runId = await db.createRun({
+        repo: ctx.issue.repo,
+        issue_number: ctx.issue.number,
+        backend: ctx.backend ?? "opencode",
+      });
+      await db.updateRunStatus({ run_id: runId, phase: "start", status: "running", iteration: 0 });
+    }
     await sorEmit(ctx, {
       event_type: "phase",
       actor: "manager",
       payload: { phase: "start", status: "running", iteration: 0 },
     });
 
-    let wt: WorktreeHandle;
     if (ctx.dryRun) {
       await mkdir(ctx.runDir, { recursive: true });
       await mkdir(ctx.worktreeDir, { recursive: true });
@@ -423,7 +399,7 @@ export async function runOrchestrator(
         baseBranch: "main",
       };
     } else {
-      wt = await setupWorktree(ctx.repoUrl, ctx.runDir, ctx.branch);
+      wt = await setupWorktree(ctx.repoUrl, ctx.runDir, ctx.branch, ctx.cloneDir);
       await logLine(ctx.rootDir, "worktree ready at " + wt.worktreeDir + " base " + wt.baseBranch);
     }
 
@@ -446,33 +422,31 @@ export async function runOrchestrator(
       setPhase("aborted");
       pushState();
       await logLine(ctx.rootDir, "run aborted at gate 1");
-      await finalize("aborted", {});
+      await finalize("aborted", {}, "rejected at Gate 1");
       return makeSummary("aborted");
     }
     dash.lastGate = "gate1";
 
-    const repoSnapshot = await snapshotRepo(ctx.worktreeDir);
-    const repoSection = repoSnapshot
-      ? `${repoSnapshot}\n\n${REPO_SNAPSHOT_INSTRUCTION}`
-      : null;
+    const skeleton = await buildSkeletonMap(ctx.worktreeDir);
 
     const analyzerTask = [
       `Issue #${ctx.issue.number}: ${ctx.issue.title}`,
       "",
       ctx.issue.body,
       "",
-      ...(repoSection
-        ? [repoSection, ""]
-        : [`Inspect the repository at ${ctx.worktreeDir} (read-only) and diagnose this issue.`]),
+      "## Skeleton",
+      "File paths and symbol headers are provided separately (JIT).",
+      "Do not use read/grep/glob tools; rely on the provided structure.",
+      "If you need a specific file's full content, it will be provided JIT (just-in-time) after planning.",
+      "",
       `Return ONLY one JSON object with exactly this shape and nothing else:`,
-      `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
       `{"summary": "...", "rootCause": "...", "suspectFiles": ["..."], "affectedSymbols": ["..."], "reproduction": "...", "testStrategy": "...", "risks": ["..."], "confidence": "low" | "medium" | "high"}`,
     ].join("\n");
     const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer", ctx.backend));
     if (!a.ok) {
       setPhase("failed");
       pushState();
-      await finalize("failed", {});
+      await finalize("failed", {}, a.error ?? "analyzer failed");
       return makeSummary("failed", a.error ?? "analyzer failed");
     }
     if (runId) {
@@ -502,10 +476,10 @@ export async function runOrchestrator(
     if (!fixSpec) {
       setPhase("failed");
       pushState();
-      await finalize("failed", {});
+      await finalize("failed", {}, "analyzer did not return a valid FixSpec JSON");
       return makeSummary("failed", "analyzer did not return a valid FixSpec JSON");
     }
-    await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null, 2) + "\n");
+await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null, 2) + "\n");
 
     const plannerTask = [
       `Issue #${ctx.issue.number}: ${ctx.issue.title}`,
@@ -516,18 +490,42 @@ export async function runOrchestrator(
       "",
       JSON.stringify(fixSpec, null, 2),
       "",
-      ...(repoSection ? [repoSection, ""] : []),
+      ...(skeleton.files.length > 0
+        ? [
+            "## Skeleton",
+            ...(function () {
+              const lines: string[] = [];
+              for (const f of skeleton.files.slice(0, 20)) {
+                lines.push(`Path: ${f.path}`);
+                for (const s of f.symbols.slice(0, 3)) {
+                  lines.push(`  ${s.kind}:${s.name}@L${s.line}`);
+                }
+              }
+              return lines;
+            })(),
+            "",
+          ]
+        : []),
       `Design a concrete implementation plan for the fix.`,
       `Return ONLY one JSON object with exactly this shape and nothing else:`,
       `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
-      `{"approach": "...", "steps": ["..."], "filesToChange": ["..."], "testsToAddOrUpdate": ["..."], "acceptanceCriteria": ["..."], "outOfScope": ["..."]}`,
+      `{"approach": "...", "steps": ["..."], "filesToChange": ["..."], "testsToAddOrUpdate": ["..."], "acceptanceCriteria": ["..."], "outOfScope": ["..."], "filesNeeded": "string[]"}`,
     ].join("\n");
     const p = await runAgent("planner", "plan", plannerTask, policyFor("planner", ctx.backend));
     if (!p.ok) {
       setPhase("failed");
       pushState();
-      await finalize("failed", {});
+      await finalize("failed", {}, p.error ?? "planner failed");
       return makeSummary("failed", p.error ?? "planner failed");
+    }
+    // C3: Parse the planner's JSON response for filesNeeded.
+    let filesNeeded: string[] = [];
+    try {
+      const parsed = JSON.parse(p.text);
+      filesNeeded = parsed.filesNeeded ?? parsed.files_needed ?? [];
+      if (!Array.isArray(filesNeeded)) filesNeeded = [];
+    } catch {
+      filesNeeded = [];
     }
     if (runId) {
       await db.updateRunStatus({ run_id: runId, phase: "plan", status: "completed", iteration: 0 });
@@ -553,11 +551,15 @@ export async function runOrchestrator(
       if (!parsed) {
         setPhase("failed");
         pushState();
-        await finalize("failed", {});
+        await finalize("failed", {}, "planner did not return a valid Plan JSON");
         return makeSummary("failed", "planner did not return a valid Plan JSON");
       }
       plan = parsed;
     }
+
+    // Factual commit message from the approved plan's approach; used for both the
+    // coder's own commit and the orchestrator's residual commit. Never `Fix #N`.
+    const commitMessage = commitMessageFor(plan, ctx.issue);
 
     const planMd = [
       `# Plan — ${ctx.issue.repo}#${ctx.issue.number}`,
@@ -601,7 +603,7 @@ export async function runOrchestrator(
       setPhase("aborted");
       pushState();
       await logLine(ctx.rootDir, "run aborted at gate 2");
-      await finalize("aborted", {});
+      await finalize("aborted", {}, "rejected at Gate 2");
       return makeSummary("aborted");
     }
     dash.lastGate = "gate2";
@@ -638,6 +640,9 @@ export async function runOrchestrator(
     let feedback: string | undefined;
     let approved = false;
 
+    const testCommand = detectTestCommand(ctx.worktreeDir);
+    await logLine(ctx.rootDir, `detected test command: ${testCommand}`);
+
     for (let iter = 1; iter <= MAX_IMPL_ITERATIONS; iter++) {
       iterationsUsed = iter;
       dash.loopIteration = iter;
@@ -661,7 +666,7 @@ export async function runOrchestrator(
           if (!res.ok) {
             setPhase("failed");
             pushState();
-            await finalize("failed", {});
+            await finalize("failed", {}, res.error ?? `${role} failed`);
             return makeSummary("failed", res.error ?? `${role} failed`);
           }
           continue;
@@ -671,8 +676,17 @@ export async function runOrchestrator(
         dash.agents[role] = { role, state: "running", model: policy.model };
         pushState();
 
+        const onText = (t: string) => web?.pushOutput(role, t);
+        const onEvent = (ev: Record<string, unknown>) => {
+          if (scoutTracker.observe(role, ev)) {
+            void logLine(ctx.rootDir, `[scout] invoked by ${role} (call ${scoutTracker.total}, ${scoutTracker.countFor(role)}/${role})`);
+          }
+          web?.pushAgentEvent?.(role, ev);
+        };
+
         let ok = true;
         let error: string | undefined;
+        let ar: AgentResult | undefined;
         if (role === "coder") {
           const r = await runCoder(
             ctx,
@@ -682,24 +696,64 @@ export async function runOrchestrator(
               worktreeDir: ctx.worktreeDir,
               branch: ctx.branch,
               issueNumber: ctx.issue.number,
+              commitMessage,
+              testCommand,
+              onText,
+              onEvent,
             },
             runId,
             iter,
           );
-          ok = r.ok && !(r.agentResult && !r.agentResult.ok);
-          error = r.error ?? (r.agentResult && !r.agentResult.ok ? r.agentResult.error : undefined);
+          ar = r.agentResult;
+          ok = r.ok && !(ar && !ar.ok);
+          error = r.error ?? (ar && !ar.ok ? ar.error : undefined);
         } else {
-          const r = await runTester(ctx, { task, policy, worktreeDir: ctx.worktreeDir }, runId, iter);
-          ok = r.ok && !(r.agentResult && !r.agentResult.ok);
-          error = r.error ?? (r.agentResult && !r.agentResult.ok ? r.agentResult.error : undefined);
+          const r = await runTester(
+            ctx,
+            { task, policy, worktreeDir: ctx.worktreeDir, testCommand, expectPass: true, onText, onEvent },
+            runId,
+            iter,
+          );
+          ar = r.agentResult;
+          ok = r.ok && !(ar && !ar.ok);
+          error = r.error ?? (ar && !ar.ok ? ar.error : undefined);
         }
 
-        dash.agents[role] = { role, state: ok ? "done" : "failed", model: policy.model, error };
+        // Record cost/usage + agent action for coder/tester (mirrors runAgent).
+        if (ar) {
+          agents[role] = ar;
+        }
+        dash.agents[role] = {
+          role,
+          state: ok ? "done" : "failed",
+          model: policy.model,
+          sessionID: ar?.sessionID ?? undefined,
+          tokens: ar?.tokens,
+          costUsd: ar?.costUsd,
+          startedAt: ar?.startedAt,
+          endedAt: ar?.endedAt,
+          error,
+        };
         pushState();
+        if (runId && ar) {
+          await db.logAgentAction({
+            run_id: runId,
+            role,
+            model: ar.model,
+            ok: ar.ok,
+            text: ar.text,
+            tokens: ar.tokens,
+            cost_usd: ar.costUsd ?? 0,
+            trace_path: ar.tracePath,
+            started_at: new Date(ar.startedAt),
+            ended_at: new Date(ar.endedAt),
+            attempts: ar.attempts ?? [],
+          });
+        }
         if (!ok) {
           setPhase("failed");
           pushState();
-          await finalize("failed", {});
+          await finalize("failed", {}, error ?? `${role} failed`);
           return makeSummary("failed", error ?? `${role} failed`);
         }
       }
@@ -719,27 +773,41 @@ export async function runOrchestrator(
               ctx.worktreeDir,
               "add",
               "-A",
-            "--",
-            ".",
-            ":(exclude)__pycache__",
+              "--",
+              ".",
+              ...EXCLUDE_ARTIFACTS,
             ]);
-            try {
-              await exec("git", [
-                "-C",
-                ctx.worktreeDir,
-                "commit",
-                "-m",
-                `Fix #${ctx.issue.number}: ${ctx.issue.title} (orchestrated commit)`,
-              ]);
+            const { stdout: staged } = await exec("git", [
+              "-C",
+              ctx.worktreeDir,
+              "diff",
+              "--cached",
+              "--name-only",
+            ]);
+            if (!staged.trim()) {
               await logLine(
                 ctx.rootDir,
-                `orchestrated commit created on ${ctx.branch}`,
+                "orchestrated commit skipped — only untracked artifacts present",
               );
-            } catch (e) {
-              await logLine(
-                ctx.rootDir,
-                `orchestrated commit failed (non-fatal): ${String(e)}`,
-              );
+            } else {
+              try {
+                await exec("git", [
+                  "-C",
+                  ctx.worktreeDir,
+                  "commit",
+                  "-m",
+                  commitMessage,
+                ]);
+                await logLine(
+                  ctx.rootDir,
+                  `orchestrated commit created on ${ctx.branch}`,
+                );
+              } catch (e) {
+                await logLine(
+                  ctx.rootDir,
+                  `orchestrated commit failed (non-fatal): ${execErrorText(e)}`,
+                );
+              }
             }
           }
         } catch (e) {
@@ -779,7 +847,7 @@ export async function runOrchestrator(
       if (!r.ok) {
         setPhase("failed");
         pushState();
-        await finalize("failed", {});
+        await finalize("failed", {}, r.error ?? "reviewer failed");
         return makeSummary("failed", r.error ?? "reviewer failed");
       }
       if (!ctx.dryRun) {
@@ -789,17 +857,25 @@ export async function runOrchestrator(
           nonBlockingNotes?: string[];
           rationale?: string;
         }>(r.text);
-        if (verdict?.verdict === "REQUEST_CHANGES") {
+        const normalized = (verdict?.verdict ?? "").trim().toUpperCase();
+        const isRequestChanges = normalized === "REQUEST_CHANGES";
+        const isApprove = normalized === "APPROVE";
+        // Missing / malformed / unrecognized verdict is a soft-fail: require a
+        // human to resolve it rather than silently fast-tracking to Gate 3.
+        if (isRequestChanges || !isApprove) {
+          const feedback = isRequestChanges
+            ? [verdict?.rationale, ...(verdict?.blockingIssues ?? [])].filter(Boolean).join("\n") ||
+              "reviewer requested changes"
+            : (verdict?.verdict === undefined
+                ? "reviewer verdict missing/empty"
+                : `unrecognized reviewer verdict "${verdict.verdict}" (expected APPROVE or REQUEST_CHANGES)`);
           if (iter < MAX_IMPL_ITERATIONS) {
-            feedback =
-              [verdict.rationale, ...(verdict.blockingIssues ?? [])].filter(Boolean).join("\n") ||
-              "reviewer requested changes";
             continue;
           }
           setPhase("failed");
           pushState();
-          await finalize("failed", {});
-          return makeSummary("failed", "reviewer still requesting changes after max iterations");
+          await finalize("failed", {}, feedback);
+          return makeSummary("failed", feedback);
         }
       }
 
@@ -840,14 +916,14 @@ export async function runOrchestrator(
       setPhase("aborted");
       pushState();
       await logLine(ctx.rootDir, "run aborted at gate 3");
-      await finalize("aborted", {});
+      await finalize("aborted", {}, "rejected at Gate 3");
       return makeSummary("aborted");
     }
 
     if (!approved) {
       setPhase("failed");
       pushState();
-      await finalize("failed", {});
+      await finalize("failed", {}, "could not reach an approved implementation");
       return makeSummary("failed", "could not reach an approved implementation");
     }
 
@@ -944,6 +1020,13 @@ export async function runOrchestrator(
         );
       }
     }
+    const tokenLines = ROLES
+      .filter((role) => (agents[role]?.tokens?.total ?? 0) > 0)
+      .map((role) => {
+        const t = agents[role]!.tokens!;
+        const c = agents[role]!.costUsd;
+        return `- ${role}: in ${t.input.toLocaleString()} · out ${t.output.toLocaleString()} · cached ${t.cached.toLocaleString()} · total ${t.total.toLocaleString()} tok${c !== undefined ? ` · $${c.toFixed(4)}` : ""}`;
+      });
     await logBlock(
       ctx.rootDir,
       "Run complete",
@@ -951,17 +1034,17 @@ export async function runOrchestrator(
         `- Status: ${summary.status}`,
         prUrl ? `- PR: ${prUrl}` : "- PR: (none)",
         `- Total cost: $${summary.totalCostUsd.toFixed(4)}`,
+        ...tokenLines,
         `- Iterations used: ${iterationsUsed}`,
         `- Run dir: ${ctx.runDir}`,
+        `- ${scoutTracker.summary()}`,
         ...fallbackLines,
       ].join("\n"),
     );
     await writeFile(join(ctx.runDir, "result.json"), JSON.stringify(summary, null, 2) + "\n");
-    await sorDrain(ctx);
     await finalize("completed", { gate1: "approved", gate2: "approved", gate3: "approved" });
     try {
-      const md = await generateMemoryMarkdown(ctx.rootDir);
-      await writeFile(join(ctx.rootDir, "MEMORY.md"), md);
+      await generateMemory(ctx.rootDir);
     } catch (e) {
       await logLine(ctx.rootDir, "MEMORY.md regeneration failed: " + String(e));
     }
@@ -970,7 +1053,7 @@ export async function runOrchestrator(
     await logLine(ctx.rootDir, "orchestrator error: " + String(e));
     setPhase("failed");
     pushState();
-    await finalize("failed", {});
+    await finalize("failed", {}, String(e));
     return makeSummary("failed", String(e));
   }
 }

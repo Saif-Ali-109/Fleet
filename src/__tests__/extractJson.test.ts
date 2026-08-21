@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { extractJson } from "../orchestrator.js";
-import type { FixSpec, Plan } from "../types.js";
+import { extractJson } from "../orchestrator.ts";
+import type { FixSpec, Plan } from "../types.ts";
 
 describe("extractJson", () => {
   it("parses a plain JSON object", () => {

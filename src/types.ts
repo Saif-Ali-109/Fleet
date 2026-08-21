@@ -14,6 +14,7 @@ export interface Issue {
   title: string;
   body: string;
   url: string;
+  state: string; // "open" | "closed"
   labels: string[];
   author: string;
 }
@@ -49,8 +50,9 @@ export interface AgentResult {
   model: string; // model actually used (after any fallback)
   attempts?: { model: string; ok: boolean; error?: string }[]; // each model tried, in order
   text: string; // final assembled assistant text (the worker's "return value")
-  tokens: { input: number; output: number; reasoning: number; cached: number; total: number };
+  tokens: { input: number; output: number; reasoning: number; cached: number; cacheWrite: number; total: number };
   costUsd: number;
+  sawError?: boolean; // true if the worker stream contained an error event
   error?: string;
   tracePath: string; // .runs/<id>/traces/<role>.jsonl
   startedAt: number;
@@ -68,6 +70,8 @@ export interface RunContext {
   tracesDir: string; // .runs/<runId>/traces
   branch: string; // fix branch name
   dryRun: boolean;
+  /** Session-level clone to reuse instead of cloning again (0.7 worktree hygiene). */
+  cloneDir?: string;
   /** Which headless CLI runs the fleet's workers. Default "opencode". */
   backend?: Backend;
 }

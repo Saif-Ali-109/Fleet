@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toRepoSlug, stubIssue } from "../github/gh.js";
+import { splitRepoSlug, stubIssue, toRepoSlug } from "../github/gh.ts";
 
 describe("toRepoSlug", () => {
   it("passes through an owner/name slug untouched", () => {
@@ -43,6 +43,30 @@ describe("toRepoSlug", () => {
   });
 });
 
+describe("splitRepoSlug", () => {
+  it("splits an owner/name slug", () => {
+    expect(splitRepoSlug("owner/repo")).toEqual({ owner: "owner", repo: "repo" });
+  });
+
+  it("splits an HTTPS repo URL", () => {
+    expect(splitRepoSlug("https://github.com/owner/repo.git")).toEqual({
+      owner: "owner",
+      repo: "repo",
+    });
+  });
+
+  it("splits an SSH repo URL", () => {
+    expect(splitRepoSlug("git@github.com:owner/repo.git")).toEqual({
+      owner: "owner",
+      repo: "repo",
+    });
+  });
+
+  it("throws for an input that is not owner/name", () => {
+    expect(() => splitRepoSlug("just-a-repo")).toThrow(/Cannot derive/);
+  });
+});
+
 describe("stubIssue", () => {
   it("returns an issue with the expected shape", () => {
     const issue = stubIssue("owner/repo", 42);
@@ -54,6 +78,7 @@ describe("stubIssue", () => {
       url: "",
       labels: [],
       author: "stub",
+      state: "open",
     });
   });
 

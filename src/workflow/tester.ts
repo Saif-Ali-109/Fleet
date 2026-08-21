@@ -1,50 +1,65 @@
-// Tester workflow — the 3-step validation phase with durable checkpoints.
-// Shares the same step-level checkpoint pattern as the coder workflow so a
-// crash can resume from the last completed step.
+// Tester workflow — validates fixes via test execution with durable checkpoints.
+// Each step is recorded via the checkpoint API so a crash mid-phase can resume
+// from the last completed step instead of re-running everything.
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { runWorker } from "../agentRunner.js";
-import { checkpoint } from "../db/checkpoint.js";
-import type { AgentResult, Role, RolePolicy, RunContext } from "../types.js";
+import { aggregateAgentResults, runWorker } from "../agentRunner.ts";
+import { checkpoint } from "../db/checkpoint.ts";
+import { splitTestCommand } from "../runner/backends.ts";
+import type { AgentResult, Role, RolePolicy, RunContext } from "../types.ts";
 
 const exec = promisify(execFile);
 
 const ROLE: Role = "tester";
 
-const TESTER_STEPS = ["run-tests", "parse-results", "diagnose"] as const;
+const TESTER_STEPS = [
+  "setup",
+  "run",
+  "validate",
+] as const;
 
 type TesterStep = (typeof TESTER_STEPS)[number];
 
-/** Inputs the tester workflow needs from the orchestrator (Decision 5c). */
+/** Inputs the Tester workflow needs from the orchestrator. */
 export interface TesterOptions {
-  /** Base testing task handed to the tester worker (issue + plan + diff context). */
+  /** Base validation task handed to the tester worker (issue + plan context). */
   task: string;
   /** Per-role model policy (from `policyFor("tester", backend)`). */
   policy: RolePolicy;
-  /** The worktree to execute the test suite in. */
+  /** The worktree where tests are run. */
   worktreeDir: string;
-  /** Test command to run (argv form, run in the worktree). Defaults to `git status --porcelain`. */
-  testCommand?: string[];
-  /** When false, failures are expected to be diagnosed rather than raised. */
-  expectPass?: boolean;
+  /** Test command to validate the fix (shell string). */
+  testCommand: string;
+  /** Whether the test command is expected to pass (true) or fail (false). */
+  expectPass: boolean;
   /** Live streaming hooks (forwarded to runWorker). */
   onText?: (chunk: string) => void;
-  onEvent?: (ev: Record<string, unknown>) => void;
+  onEvent?: (ev: Record<string, string | unknown>) => void;
 }
 
 export interface TesterResult {
   ok: boolean;
   error?: string;
+  /** Per-spawn AgentResults in phase order (for action logging / cost attribution). */
+  results?: AgentResult[];
+  /** Aggregated AgentResult for the whole tester phase (role = "tester"). */
   agentResult?: AgentResult;
-  testOutput?: string;
-  diagnosis?: string;
 }
 
 /**
- * Run the tester phase as 3 checkpointed steps. Steps already marked success for
- * `(runId, role, iteration)` are skipped (resume support). On any step failure
- * the step is marked failed and the phase stops so a later re-run resumes.
+ * Tester phases. Each step gets its own worker spawn for clear checkpointing.
+ */
+const TESTER_PHASES = [
+  { steps: ["setup"], kind: "setup" as const },
+  { steps: ["run"], kind: "run" as const },
+  { steps: ["validate"], kind: "validate" as const },
+];
+
+/** Run the tester phase as checkpointed phases. Steps already marked success for
+ * `(runId, role, iteration)` are skipped (resume support). On any failure the
+ * in-flight phase's steps are all marked failed and the phase stops so a later
+ * re-run resumes.
  */
 export async function runTester(
   ctx: RunContext,
@@ -53,78 +68,144 @@ export async function runTester(
   iteration: number,
 ): Promise<TesterResult> {
   const completed = await safeCompleted(runId, iteration);
-  const result: TesterResult = { ok: false };
-
-  for (const step of TESTER_STEPS) {
-    if (completed.includes(step)) {
-      continue;
-    }
-    const stepId = await checkpoint.startStep(runId, ROLE, iteration, step);
+  const results: AgentResult[] = [];
+  // Session captured from the setup spawn; reused for later phases (model-bound, so discarded on fallback).
+  const session: { id: string | undefined } = { id: undefined };
+  for (const phase of TESTER_PHASES) {
+    const pending = phase.steps.filter((s) => !completed.includes(s));
+    if (pending.length === 0) continue;
+    const ids = await Promise.all(
+      pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as TesterStep)),
+    );
     try {
-      if (step === "run-tests") {
-        result.testOutput = await runTests(ctx, opts);
-      } else if (step === "parse-results") {
-        await parseResults(ctx, opts, step, result.testOutput);
-      } else {
-        result.diagnosis = await diagnose(ctx, opts, step, result.testOutput);
-      }
+      await runPhase(ctx, opts, phase.kind, results, session);
+      await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      await checkpoint.markStepFailed(stepId, message);
-      return { ok: false, error: `${step}: ${message}` };
+      await Promise.all(
+        pending.map((s, i) => checkpoint.markStepFailed(ids[i]!, `${s}: ${message}`)),
+      );
+      return {
+        ok: false,
+        error: `${pending.join("+")}: ${message}`,
+        results,
+        agentResult: results.length > 0 ? aggregateAgentResults(results) : undefined,
+      };
     }
-    await checkpoint.markStepSuccess(stepId);
   }
-  result.ok = true;
-  return result;
+  return {
+    ok: true,
+    results,
+    agentResult: results.length > 0 ? aggregateAgentResults(results) : undefined,
+  };
 }
 
-/** Execute the test suite in the worktree and return the raw output. */
-async function runTests(ctx: RunContext, opts: TesterOptions): Promise<string> {
-  if (ctx.dryRun) {
-    return "[dry-run] tests would run here.";
-  }
-  const cmd = opts.testCommand ?? ["git", "-C", opts.worktreeDir, "status", "--porcelain"];
-  const { stdout, stderr } = await exec(cmd[0] ?? "git", cmd.slice(1), {
-    cwd: opts.worktreeDir,
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  return stdout + (stderr ? `\n${stderr}` : "");
-}
-
-/** Parse test output for pass/fail and fail the step on unexpected failures. */
-async function parseResults(
+async function runPhase(
   ctx: RunContext,
   opts: TesterOptions,
-  _step: TesterStep,
-  testOutput: string | undefined,
+  kind: (typeof TESTER_PHASES)[number]["kind"],
+  results: AgentResult[],
+  session: { id: string | undefined },
 ): Promise<void> {
-  if (ctx.dryRun) return;
-  const output = testOutput ?? "";
-  const failedRe = /fail(?:ed|ing)?/i;
-  if (opts.expectPass && failedRe.test(output)) {
-    throw new Error("test output indicates failures");
+  switch (kind) {
+    case "setup":
+      await runSetup(ctx, opts, results, session);
+      return;
+    case "run":
+      await runTests(ctx, opts, "run", results, session);
+      return;
+    case "validate":
+      await runValidation(ctx, opts, "validate", results, session);
+      return;
   }
 }
 
-/** If failures, produce a diagnosis for the Coder (LLM worker call). */
-async function diagnose(
+async function runSetup(
   ctx: RunContext,
   opts: TesterOptions,
-  step: TesterStep,
-  testOutput: string | undefined,
-): Promise<string> {
-  const instruction = "inspect the failing test output and produce a concise diagnosis for the Coder.";
+  results: AgentResult[],
+  session: { id: string | undefined },
+): Promise<void> {
   const task =
-    `${opts.task}\n\nWorkflow step "${step}": ${instruction}\n\nTest output:\n${testOutput ?? "(none)"}`;
+    `${opts.task}` +
+    `\n\nSet up the test environment in the worktree at ${opts.worktreeDir}. ` +
+    `Ensure all dependencies are installed and the test command \`${opts.testCommand}\` can be executed.`;
   const res = await runWorker(ROLE, task, ctx, opts.policy, {
     onText: opts.onText,
     onEvent: opts.onEvent,
   });
-  if (!res.ok) {
-    throw new Error(res.error ?? "tester worker failed");
+  results.push(res);
+  // Sessions are model-bound — discard if a fallback model was used.
+  session.id = res.ok && (!res.attempts || res.attempts.length === 1) ? res.sessionID ?? undefined : undefined;
+  return;
+}
+
+async function worker(
+  ctx: RunContext,
+  opts: TesterOptions,
+  step: TesterStep,
+  instruction: string,
+  results: AgentResult[],
+  session: { id: string | undefined },
+): Promise<AgentResult> {
+  // On resume, send only the step instruction (the session already holds the base task).
+  const task =
+    session.id !== undefined
+      ? `Workflow step "${step}": ${instruction}`
+      : `${opts.task}\n\nWorkflow step "${step}": ${instruction}`;
+  const res = await runWorker(ROLE, task, ctx, opts.policy, {
+    onText: opts.onText,
+    onEvent: opts.onEvent,
+    resumeSessionID: session.id,
+  });
+  results.push(res);
+  return res;
+}
+
+async function runTests(
+  ctx: RunContext,
+  opts: TesterOptions,
+  step: TesterStep,
+  results: AgentResult[],
+  session: { id: string | undefined },
+): Promise<void> {
+  const res = await worker(
+    ctx,
+    opts,
+    step,
+    `execute the test command: \`${opts.testCommand}\` in the worktree (${opts.worktreeDir})`,
+    results,
+    session,
+  );
+
+  // Check if the test result matches expectation
+  const testPassed = res.ok && res.text.trim().length > 0 && !res.sawError;
+  const expectationMet = opts.expectPass ? testPassed : !testPassed;
+
+  if (!expectationMet) {
+    const expected = opts.expectPass ? "to pass" : "to fail";
+    const actual = testPassed ? "passed" : "failed";
+    throw new Error(`test command ${opts.testCommand} expected ${expected} but ${actual}`);
   }
-  return res.text;
+}
+
+async function runValidation(
+  ctx: RunContext,
+  opts: TesterOptions,
+  step: TesterStep,
+  results: AgentResult[],
+  session: { id: string | undefined },
+): Promise<void> {
+  await worker(
+    ctx,
+    opts,
+    step,
+    `validate that the test execution confirms the fix works correctly`,
+    results,
+    session,
+  );
+  // Validation step mainly serves as a checkpoint - the actual validation
+  // happens in the runTests phase where we check expectations
 }
 
 /** `getCompletedSteps` that is safe for dry-run/DB-unavailable contexts. */

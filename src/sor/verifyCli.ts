@@ -1,8 +1,8 @@
 // CLI entry for `npm run sor:verify` — replay-verify the signed System of
 // Record hash chain against the DB and exit 0 (ok) / 1 (broken chain).
 
-import { pool } from "../db/client.js";
-import { runSorVerify } from "./verify.js";
+import { pool } from "../db/client.ts";
+import { runSorVerify } from "./verify.ts";
 
 let code: number;
 try {

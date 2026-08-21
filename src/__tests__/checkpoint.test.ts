@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { db, pool } from "../db/client.js";
-import { checkpoint } from "../db/checkpoint.js";
+import { db, pool } from "../db/client.ts";
+import { checkpoint } from "../db/checkpoint.ts";
 
 const ROLE = "coder";
 const ITERATION = 1;
@@ -49,6 +49,13 @@ describe("checkpoint", () => {
     const completed = await checkpoint.getCompletedSteps(runId, ROLE, ITERATION);
     expect(completed).toContain("commit");
     expect(completed).not.toContain("run-tests");
+  });
+
+  it("startStep rejects a duplicate (run, role, iteration, step_name)", async () => {
+    await checkpoint.startStep(runId, ROLE, ITERATION, "commit");
+    await expect(
+      checkpoint.startStep(runId, ROLE, ITERATION, "commit"),
+    ).rejects.toThrow();
   });
 
   it("getLastFailedStep returns the most recent failed step name", async () => {

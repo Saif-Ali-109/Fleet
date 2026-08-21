@@ -1,18 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { planRoute, MAX_IMPL_ITERATIONS } from "../router.js";
-import type { Issue } from "../types.js";
+import { planRoute, MAX_IMPL_ITERATIONS } from "../router.ts";
+import type { Issue } from "../types.ts";
 
-function makeIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
+function makeIssue(overrides: Partial<Omit<Issue, "state">> & { state?: Issue["state"] } = {}): Issue {
+  const base: Issue = {
     repo: "owner/repo",
     number: 42,
     title: "Some bug",
     body: "Something is broken",
     url: "https://github.com/owner/repo/issues/42",
+    state: "open",
     labels: [],
     author: "someone",
-    ...overrides,
   };
+  return { ...base, ...overrides };
 }
 
 describe("planRoute", () => {
@@ -106,5 +107,5 @@ describe("MAX_IMPL_ITERATIONS", () => {
 
 // helper used by the 'wording' test above
 function makeRole(bodyText: string): Issue {
-  return makeIssue({ title: "Improve wording", body: bodyText });
+  return makeIssue({ title: "Improve wording", body: bodyText, state: "open" });
 }

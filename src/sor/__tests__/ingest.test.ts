@@ -6,8 +6,8 @@ import {
   normalizeHookLine,
   normalizeTraceEvent,
   readEventFile,
-} from "../ingest.js";
-import { TOOL_INPUT_CAP, type SorEvent } from "../events.js";
+} from "../ingest.ts";
+import { TOOL_INPUT_CAP, type SorEvent } from "../events.ts";
 
 function makeHookLine(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({

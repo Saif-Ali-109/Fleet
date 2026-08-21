@@ -4,15 +4,19 @@
  * (opencode, Claude Code, Codex, ...) consumes CanonicalConfig, never the
  * filesystem directly. Add a new tool by writing a new adapter against this
  * shape; never by adding another reader of agents/*.md.
+ *
+ * Model assignments come from models.json (single source of truth for both
+ * build-time generated configs and runtime modelPolicy.ts).
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import matter from "gray-matter";
 
 export const ROOT = join(import.meta.dirname, "..", "..");
 export const AGENTS_DIR = join(ROOT, "agents");
 const GLOBAL_FILE = "_global.md";
+export const MODELS_JSON = join(ROOT, "models.json");
 
 // Fixed pipeline order (analyzer -> planner -> scout -> coder -> tester ->
 // reviewer -> pr), not alphabetical. Roles present on disk but absent here
@@ -61,9 +65,15 @@ export interface CanonicalRole {
   claude_model?: string;
 }
 
+export interface ToolOutputConfig {
+  max_lines?: number;
+  max_bytes?: number;
+}
+
 export interface CanonicalConfig {
   schema?: string;
   globalPermission?: Record<string, unknown>;
+  tool_output?: ToolOutputConfig;
   roles: CanonicalRole[];
 }
 
@@ -83,7 +93,17 @@ function loadRoleFiles(): string[] {
 export function loadCanonicalConfig(): CanonicalConfig {
   const globalRaw = readFileSync(join(AGENTS_DIR, GLOBAL_FILE), "utf8");
   const { data: globalFrontmatter } = matter(globalRaw);
-  const { $schema, permission: globalPermission } = globalFrontmatter as Record<string, unknown>;
+  const { $schema, permission: globalPermission, tool_output: toolOutput } = globalFrontmatter as Record<string, unknown>;
+
+  // Load model overrides from models.json (single source of truth)
+  let modelOverrides: Record<string, Record<string, string>> = {};
+  if (existsSync(MODELS_JSON)) {
+    try {
+      modelOverrides = JSON.parse(readFileSync(MODELS_JSON, "utf8")) as Record<string, Record<string, string>>;
+    } catch {
+      // If models.json is invalid, fall back to agent frontmatter
+    }
+  }
 
   const roles: CanonicalRole[] = loadRoleFiles().map((file) => {
     const role = file.replace(/\.md$/, "");
@@ -97,24 +117,30 @@ export function loadCanonicalConfig(): CanonicalConfig {
       throw new Error(`agents/${file}: missing required "description" field`);
     }
 
+    // Determine model for each backend from models.json, falling back to agent frontmatter
+    const opencodeModel = modelOverrides.opencode?.[role] ?? data.model;
+    const claudeModel = modelOverrides.claude?.[role] ?? data.claude_model;
+    const codexModel = modelOverrides.codex?.[role] ?? data.codex_model;
+
     return {
       role,
       description: data.description,
       mode: data.mode,
-      model: data.model,
+      model: opencodeModel,
       steps: data.steps,
       tools: data.tools ?? {},
       permission: data.permission ?? {},
       prompt: content.trim(),
       codex_reasoning_effort: data.codex_reasoning_effort,
-      codex_model: data.codex_model,
-      claude_model: data.claude_model,
+      codex_model: codexModel,
+      claude_model: claudeModel,
     };
   });
 
   return {
     schema: $schema as string | undefined,
     globalPermission: globalPermission as Record<string, unknown> | undefined,
+    tool_output: toolOutput as ToolOutputConfig | undefined,
     roles,
   };
 }

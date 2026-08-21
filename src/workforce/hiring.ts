@@ -1,8 +1,8 @@
 // Hiring API — hire/retire worker roles against policy limits, backed by the
 // worker_roles table. All quotas derive from active (pending/running) workers.
 
-import { pool } from "../db/client.js";
-import type { WorkforcePolicy } from "./policy.js";
+import { pool } from "../db/client.ts";
+import type { WorkforcePolicy } from "./policy.ts";
 
 const ACTIVE_STATUSES = ["pending", "running"];
 const VALID_STATUSES = ["pending", "running", "success", "failed", "retired"];
