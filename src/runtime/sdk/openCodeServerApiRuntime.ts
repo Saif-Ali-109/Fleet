@@ -1,6 +1,7 @@
-import type { Role, RolePolicy, RunContext, AgentResult } from "../../../types.ts";
-import { AgentRuntime, AgentRunInput } from "../../agentRuntime.ts";
+import type { Role, RolePolicy, RunContext, AgentResult } from "../../types.ts";
 import type { Backend } from "../../types.ts";
+import { AgentRuntime, AgentRunInput } from "../agentRuntime.ts";
+import { spawnOnce, type ParsedStream } from "../../agentRunner.ts";
 
 /** OpenCode Server API runtime that can attach to a running OpenCode server */
 export class OpenCodeServerApiRuntime implements AgentRuntime {
@@ -31,8 +32,9 @@ export class OpenCodeServerApiRuntime implements AgentRuntime {
         );
       } catch (error) {
         // Fall back to CLI runtime if server API fails
+        const message = error instanceof Error ? error.message : String(error);
         console.warn(
-          `[OpenCode Server API] Failed to use server API: ${error.message}. Falling back to CLI runtime.`
+          `[OpenCode Server API] Failed to use server API: ${message}. Falling back to CLI runtime.`
         );
         return await this.runViaCliRuntime(
           role,
@@ -69,17 +71,13 @@ export class OpenCodeServerApiRuntime implements AgentRuntime {
   ): Promise<AgentResult> {
     // Import CLI runtime functions we need to delegate to
     const {
-      spawnOnce,
       finalize,
-      stubResult,
-      zeroTokens,
       emptyStream,
       emitWakeup,
       makeEventBridge,
       buildBackendEnv,
       resolveRolePrompt,
     } = await import("../../agentRunner.ts");
-    type ParsedStream = Awaited<ReturnType<typeof spawnOnce>>;
 
     // For server API, we still use spawnOnce but with --attach flag
     // This preserves all existing behavior while utilizing a running server
@@ -119,6 +117,7 @@ export class OpenCodeServerApiRuntime implements AgentRuntime {
       // We need to use spawnOnce but with modified args for server attach
       // Since spawnOnce expects to build args from backend, we'll create a custom spawn function
       const parsed = await this.spawnWithServerAttach(
+        "opencode",
         role,
         task,
         ctx,
@@ -185,7 +184,19 @@ export class OpenCodeServerApiRuntime implements AgentRuntime {
     // Actually, let's use the existing CLI spawning for now
     // The true server integration would require modifying how we call opencode
     // But we can at least demonstrate the pattern
-    return await spawnOnce(backend, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt, onEvent);
+    void attachArgs;
+    return await spawnOnce(
+      backend,
+      role,
+      task,
+      ctx,
+      model,
+      policy,
+      tracePath,
+      { ...opts, onEvent },
+      env,
+      rolePrompt
+    );
   }
 
   private async runViaCliRuntime(
@@ -197,7 +208,7 @@ export class OpenCodeServerApiRuntime implements AgentRuntime {
     startedAt: number,
     opts: AgentRunInput["opts"]
   ): Promise<AgentResult> {
-    const { OpenCodeCliRuntime } = await import("./opencodeCliRuntime.ts");
+    const { OpenCodeCliRuntime } = await import("../cli/opencodeCliRuntime.ts");
     const runtime = new OpenCodeCliRuntime();
     return runtime.run({ role, task, ctx, policy, opts });
   }

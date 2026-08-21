@@ -43,7 +43,7 @@ function makeCtx(): RunContext {
   mkdirSync(join(runDir, "worktree"), { recursive: true });
   return {
     runId: "t1",
-    issue: { repo: "owner/repo", number: 1, title: "t", body: "b", url: "u", labels: [], author: "x" },
+    issue: { repo: "owner/repo", number: 1, title: "t", body: "b", url: "u", state: "open", labels: [], author: "x" },
     repoUrl: "git@github.com:owner/repo.git",
     rootDir: ctxDir,
     runDir,

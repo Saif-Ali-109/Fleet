@@ -50,6 +50,7 @@ const issue: Issue = {
   title: "Range bug",
   body: "",
   url: "",
+  state: "open",
   labels: [],
   author: "test",
 };

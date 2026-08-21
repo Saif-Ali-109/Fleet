@@ -284,8 +284,8 @@ describe("dashboard", () => {
       .replace(/>/g, "&gt;");
     // eslint-disable-next-line no-eval
     const fn = eval("(function(esc){ " + match[0] + " return formatAgentEvent; })") as (
-      ev: Record<string, unknown>,
-    ) => string;
+      esc: (s: unknown) => string,
+    ) => (ev: Record<string, unknown>) => string;
     const format = fn(esc);
 
     it("returns empty string for step_start", () => {

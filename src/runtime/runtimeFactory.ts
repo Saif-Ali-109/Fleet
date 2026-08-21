@@ -5,7 +5,7 @@ import { CodexCliRuntime } from "./cli/codexCliRuntime.ts";
 import { OpenCodeSdkRuntime } from "./sdk/openCodeSdkRuntime.ts";
 import { OpenCodeServerApiRuntime } from "./sdk/openCodeServerApiRuntime.ts";
 import { ClaudeSdkRuntime } from "./sdk/claudeSdkRuntime.ts";
-import type { Backend } from "../../types.ts";
+import type { Backend } from "../types.ts";
 
 /** Factory to select runtime based on configuration */
 export class RuntimeFactory {

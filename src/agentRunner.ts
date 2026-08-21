@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, fstatSync, mkdirSync, openSync, readSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { appendAuditEvent, ensureChain } from "./db/audit.ts";
+import { pool } from "./db/client.ts";
 import {
   backendDef,
   buildBackendArgs,
@@ -10,6 +12,9 @@ import {
   resolveRolePrompt,
 } from "./runner/backends.ts";
 import type { AgentResult, Backend, Role, RolePolicy, RunContext } from "./types.ts";
+
+// Shared with the CLI/SDK runtimes under src/runtime/.
+export { buildBackendEnv, resolveRolePrompt } from "./runner/backends.ts";
 
 export interface RunWorkerOpts {
   /** Reasoning-effort variant override (else policy.variant). */
@@ -22,7 +27,7 @@ export interface RunWorkerOpts {
   resumeSessionID?: string;
 }
 
-interface ParsedStream {
+export interface ParsedStream {
   text: string;
   sessionID: string | null;
   tokens: AgentResult["tokens"];
@@ -122,7 +127,7 @@ export function buildArgs(
   return buildBackendArgs(backend, role, task, ctx, model, policy, opts, "").args;
 }
 
-function spawnOnce(
+export function spawnOnce(
   backend: Backend,
   role: Role,
   task: string,
@@ -144,11 +149,21 @@ function spawnOnce(
     const fdErr = openSync(stderrPath, "a");
     const startOffset = fstatSync(fdOut).size;
 
+    // WORKER_TIMEOUT_MS kill switch: SIGTERM the worker after the timeout,
+    // then SIGKILL after an optional grace period (WORKER_TIMEOUT_GRACE_MS).
+    const timeoutMs = Number(process.env.WORKER_TIMEOUT_MS ?? "") || 0;
+    const graceMs = Number(process.env.WORKER_TIMEOUT_GRACE_MS ?? "") || 1000;
+    let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    let graceTimer: NodeJS.Timeout | undefined;
+
     let settled = false;
     let stopTail = () => {};
     const settle = (s: ParsedStream) => {
       if (settled) return;
       settled = true;
+      clearTimeout(killTimer);
+      clearTimeout(graceTimer);
       stopTail();
       try {
         closeSync(fdOut);
@@ -185,9 +200,26 @@ function spawnOnce(
         });
       });
 
+      if (timeoutMs > 0) {
+        killTimer = setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGTERM");
+          graceTimer = setTimeout(() => {
+            try {
+              child.kill("SIGKILL");
+            } catch {
+              // already dead
+            }
+          }, graceMs);
+        }, timeoutMs);
+      }
+
       child.on("close", (code) => {
         const parsed = parseTrace(tracePath, opts, startOffset, backend);
-        if (code !== 0 && !parsed.sawError) {
+        if (timedOut) {
+          parsed.sawError = true;
+          parsed.errorMsg = `timed out after ${timeoutMs}ms${parsed.errorMsg ? `: ${parsed.errorMsg}` : ""}`;
+        } else if (code !== 0 && !parsed.sawError) {
           parsed.sawError = true;
           parsed.errorMsg = `exit ${code}: ${readStderrTail(stderrPath)}`;
         }
@@ -240,7 +272,7 @@ export function readStderrTail(stderrPath: string): string {
   }
 }
 
-function finalize(
+export function finalize(
   role: Role,
   model: string,
   s: ParsedStream,
@@ -259,6 +291,7 @@ function finalize(
     text: s.text,
     tokens: s.tokens,
     costUsd: s.costUsd,
+    sawError: s.sawError,
     error,
     tracePath,
     startedAt,
@@ -266,7 +299,7 @@ function finalize(
   };
 }
 
-function stubResult(role: Role, model: string, tracePath: string, startedAt: number): AgentResult {
+export function stubResult(role: Role, model: string, tracePath: string, startedAt: number): AgentResult {
   return {
     role,
     ok: true,
@@ -276,13 +309,14 @@ function stubResult(role: Role, model: string, tracePath: string, startedAt: num
     text: `[dry-run] ${role} would run here.`,
     tokens: zeroTokens(),
     costUsd: 0,
+    sawError: false,
     tracePath,
     startedAt,
     endedAt: Date.now(),
   };
 }
 
-const zeroTokens = (): AgentResult["tokens"] => ({
+export const zeroTokens = (): AgentResult["tokens"] => ({
   input: 0,
   output: 0,
   reasoning: 0,
@@ -290,7 +324,55 @@ const zeroTokens = (): AgentResult["tokens"] => ({
   cacheWrite: 0,
   total: 0,
 });
-const emptyStream = (): ParsedStream => ({ text: "", sessionID: null, tokens: zeroTokens(), costUsd: 0, sawError: true });
+export const emptyStream = (): ParsedStream => ({ text: "", sessionID: null, tokens: zeroTokens(), costUsd: 0, sawError: true });
+
+/**
+ * Bridge worker stream events into `opts.onEvent` so runtimes share one
+ * forwarding path. The ctx/role/backend args keep the call site self-describing.
+ */
+export function makeEventBridge(
+  ctx: RunContext,
+  role: Role,
+  backend: Backend,
+  opts: RunWorkerOpts | undefined,
+): (ev: Record<string, unknown>) => void {
+  void ctx;
+  void role;
+  void backend;
+  return (ev) => opts?.onEvent?.(ev);
+}
+
+/**
+ * Fire-and-forget `wakeup` SOR write from a worker spawn. Non-fatal by
+ * contract: any failure logs a warning and never aborts the run. No-op in
+ * dry-run mode.
+ */
+export function emitWakeup(
+  ctx: RunContext,
+  backend: Backend,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  if (ctx.dryRun) return Promise.resolve();
+  void (async () => {
+    try {
+      await ensureChain(pool);
+      await appendAuditEvent(pool, {
+        run_id: null,
+        event_type: "wakeup",
+        actor: "manager",
+        backend,
+        tool_name: null,
+        tool_input: null,
+        tool_output: null,
+        payload,
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn(`[sor] wakeup skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  })();
+  return Promise.resolve();
+}
 
 /**
  * Live-tails the per-attempt trace file while the worker is running so `opts.onText`
@@ -415,6 +497,7 @@ export function aggregateAgentResults(results: AgentResult[]): AgentResult {
     text: text.join("\n"),
     tokens,
     costUsd,
+    sawError: results.some((r) => r.sawError ?? false),
     error,
     tracePath: first.tracePath,
     startedAt: first.startedAt,

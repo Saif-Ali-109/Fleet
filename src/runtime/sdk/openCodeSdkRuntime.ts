@@ -1,5 +1,5 @@
-import type { Role, RolePolicy, RunContext, AgentResult } from "../../../types.ts";
-import { AgentRuntime, AgentRunInput } from "../../agentRuntime.ts";
+import type { Role, RolePolicy, RunContext, AgentResult } from "../../types.ts";
+import { AgentRuntime, AgentRunInput } from "../agentRuntime.ts";
 
 /** OpenCode SDK runtime (placeholder for implementation) */
 export class OpenCodeSdkRuntime implements AgentRuntime {

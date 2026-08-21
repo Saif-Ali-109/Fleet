@@ -1,5 +1,5 @@
 // AgentRuntime interface and AgentRunInput types
-import type { Role, RolePolicy, RunContext, AgentResult } from "../../types.ts";
+import type { Role, RolePolicy, RunContext, AgentResult } from "../types.ts";
 
 /** Input to AgentRuntime.run(), matching the runWorker contract exactly. */
 export interface AgentRunInput {

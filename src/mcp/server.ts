@@ -1,6 +1,6 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.ts";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.ts";
-import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.ts";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { db, pool } from "../db/client.ts";
 
 const server = new Server(

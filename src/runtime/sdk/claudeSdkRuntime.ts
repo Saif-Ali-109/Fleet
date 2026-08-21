@@ -1,5 +1,5 @@
-import type { Role, RolePolicy, RunContext, AgentResult } from "../../../types.ts";
-import { AgentRuntime, AgentRunInput } from "../../agentRuntime.ts";
+import type { Role, RolePolicy, RunContext, AgentResult } from "../../types.ts";
+import { AgentRuntime, AgentRunInput } from "../agentRuntime.ts";
 import type { Backend } from "../../types.ts";
 
 /** Claude SDK runtime that uses the Claude Agent SDK (with fallback to CLI) */
@@ -29,8 +29,9 @@ export class ClaudeSdkRuntime implements AgentRuntime {
         );
       } catch (error) {
         // Fall back to CLI runtime if SDK fails
+        const message = error instanceof Error ? error.message : String(error);
         console.warn(
-          `[Claude SDK] Failed to use Claude Agent SDK: ${error.message}. Falling back to CLI runtime.`
+          `[Claude SDK] Failed to use Claude Agent SDK: ${message}. Falling back to CLI runtime.`
         );
         return await this.runViaCliRuntime(
           role,
@@ -90,7 +91,7 @@ export class ClaudeSdkRuntime implements AgentRuntime {
     startedAt: number,
     opts: AgentRunInput["opts"]
   ): Promise<AgentResult> {
-    const { ClaudeCliRuntime } = await import("./cli/claudeCliRuntime.ts");
+    const { ClaudeCliRuntime } = await import("../cli/claudeCliRuntime.ts");
     const runtime = new ClaudeCliRuntime();
     return runtime.run({ role, task, ctx, policy, opts });
   }

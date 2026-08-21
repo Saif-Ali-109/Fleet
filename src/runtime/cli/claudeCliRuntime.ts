@@ -1,6 +1,6 @@
 import { AgentRuntime, AgentRunInput } from "../agentRuntime.ts";
 import { spawnOnce, type ParsedStream, finalize, stubResult, zeroTokens, emptyStream, emitWakeup, makeEventBridge, buildBackendEnv, resolveRolePrompt } from "../../agentRunner.ts";
-import type { Role, RolePolicy, RunContext, AgentResult, NonNullable } from "../../types.ts";
+import type { Role, RolePolicy, RunContext, AgentResult } from "../../types.ts";
 
 /** Claude Code CLI runtime that delegates to existing spawnOnce logic */
 export class ClaudeCliRuntime implements AgentRuntime {
@@ -30,7 +30,7 @@ export class ClaudeCliRuntime implements AgentRuntime {
     for (const model of models) {
       lastModel = model;
       emitWakeup(ctx, backend, { kind: "spawn", role, model });
-      const parsed = await spawnOnce(backend, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt, bridge);
+      const parsed = await spawnOnce(backend, role, task, ctx, model, policy, tracePath, { ...opts, onEvent: bridge }, env, rolePrompt);
       last = parsed;
       const ok = !parsed.sawError && parsed.text.trim().length > 0;
       attempts.push({ model, ok, error: parsed.errorMsg });

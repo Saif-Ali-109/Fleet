@@ -22,6 +22,7 @@ function makeCtx(overrides: Partial<RunContext> = {}): RunContext {
       title: "Test issue",
       body: "Reproduce the bug",
       url: "https://github.com/owner/repo/issues/42",
+      state: "open",
       labels: [],
       author: "dev",
     },

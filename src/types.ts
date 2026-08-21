@@ -52,6 +52,7 @@ export interface AgentResult {
   text: string; // final assembled assistant text (the worker's "return value")
   tokens: { input: number; output: number; reasoning: number; cached: number; cacheWrite: number; total: number };
   costUsd: number;
+  sawError?: boolean; // true if the worker stream contained an error event
   error?: string;
   tracePath: string; // .runs/<id>/traces/<role>.jsonl
   startedAt: number;
