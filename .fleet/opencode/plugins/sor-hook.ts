@@ -2,7 +2,7 @@
  * System of Record (SOR) hook plugin for opencode.
  *
  * COMMITTED SOURCE — never generated, never edited by build:config. Referenced
- * from the generated opencode.json `plugin` array as `.opencode/plugins/sor-hook.ts`
+ * from the generated .fleet/opencode.json `plugin` array as `./opencode/plugins/sor-hook.ts`
  * (relative to the config file), so workers spawned in foreign git worktrees
  * via OPENCODE_CONFIG still load it.
  *

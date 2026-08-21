@@ -8,17 +8,20 @@
  * `check:config` drift detection.
  */
 
-const CLAUDE_HOOK_COMMAND = "bash .claude/hooks/sor-hook.sh";
+const CLAUDE_HOOK_COMMAND = 'bash "$FLEET_SOR_HOOK"';
 const CLAUDE_HOOK_EVENTS = ["PreToolUse", "PostToolUse", "SessionStart", "Stop"] as const;
 
 /**
- * Emits the JSON value for the `hooks` member of `.claude/settings.json`.
+ * Emits the JSON value for the `hooks` member of the generated Claude settings
+ * JSON (.fleet/claude/settings.json).
  *
  * Each event name (PascalCase, per Claude Code docs) maps to an array of
  * matcher groups; each group is `{ "matcher": "*", "hooks": [{ "type":
- * "command", "command": "bash .claude/hooks/sor-hook.sh" }] }`. The returned
- * string is the map to place under the top-level "hooks" key — Claude Code
- * discovers it from project `.claude/settings.json`.
+ * "command", "command": "bash \"$FLEET_SOR_HOOK\"" }] }`. The hook command is
+ * env-var indirection: FLEET_SOR_HOOK (set by the Manager in
+ * src/runner/backends.ts per worker at spawn) points at the sor-hook.sh
+ * script, making hooks cwd- and location-independent. The returned string is
+ * the map to place under the top-level "hooks" key.
  */
 export function emitClaudeSettingsHooks(): string {
   const hooks: Record<string, unknown> = Object.fromEntries(
@@ -31,10 +34,11 @@ export function emitClaudeSettingsHooks(): string {
 }
 
 const CODEX_HOOK_EVENTS = ["PreToolUse", "PostToolUse"] as const;
-const CODEX_HOOK_COMMAND = "bash .codex/hooks/sor-hook.sh";
+const CODEX_HOOK_COMMAND = 'bash "$FLEET_SOR_HOOK"';
 
 /**
- * Emits the TOML hook section + feature flag for `.codex/config.toml`:
+ * Emits the TOML hook section + feature flag for the generated Codex config
+ * (.fleet/codex/config.toml):
  *
  *   [hooks]
  *   [[hooks.PreToolUse]]  [[hooks.PreToolUse.hooks]]  type/command ...
@@ -43,7 +47,9 @@ const CODEX_HOOK_COMMAND = "bash .codex/hooks/sor-hook.sh";
  *   codex_hooks = true
  *
  * Follows the OpenAI Codex inline-hooks schema: `[[hooks.<Event>]]` is a
- * matcher group and `[[hooks.<Event>.hooks]]` is a command handler.
+ * matcher group and `[[hooks.<Event>.hooks]]` is a command handler. The hook
+ * command uses FLEET_SOR_HOOK (set by the Manager in src/runner/backends.ts
+ * per worker at spawn) so it is cwd- and location-independent.
  */
 export function emitCodexConfigHooks(): string {
   const group = (event: string): string =>
@@ -107,7 +113,10 @@ export function buildHookEventJson(extra: Record<string, unknown>): string {
 
 /**
  * POSIX-sh hook script written by the Claude Code and Codex adapters to
- * `.claude/hooks/sor-hook.sh` / `.codex/hooks/sor-hook.sh`.
+ * `.fleet/claude/hooks/sor-hook.sh` / `.fleet/codex/hooks/sor-hook.sh`.
+ * Generated hook configs invoke it via `bash "$FLEET_SOR_HOOK"` (env var set
+ * by the Manager in src/runner/backends.ts), so the script's on-disk location
+ * is decoupled from the config content.
  *
  * Reads SOR_EVENT_DIR/SOR_EVENT_TYPE/SOR_ACTOR/SOR_BACKEND/SOR_RUN_ID from the
  * environment and appends one key-sorted, single-line JSON record (same shape

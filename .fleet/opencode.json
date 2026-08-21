@@ -86,7 +86,7 @@
     "coder": {
       "description": "Implementer. Edits files and commits changes to the fix branch (only inside the assigned worktree).",
       "mode": "all",
-      "model": "opencode/mimo-v2.5-free",
+      "model": "x-preview-f-free",
       "steps": 12,
       "tools": {
         "read": true,
@@ -109,7 +109,7 @@
     "tester": {
       "description": "Test writer and validator. Adds/updates tests for the fix and runs the suite.",
       "mode": "all",
-      "model": "opencode/mimo-v2.5-free",
+      "model": "x-preview-f-free",
       "steps": 10,
       "tools": {
         "read": true,
@@ -159,7 +159,7 @@
     "pr": {
       "description": "Pushes the fix branch and opens a pull request against the base branch (only after Reviewer approval).",
       "mode": "all",
-      "model": "opencode/mimo-v2.5-free",
+      "model": "x-preview-f-free",
       "steps": 10,
       "tools": {
         "bash": true,
@@ -194,6 +194,6 @@
     "max_bytes": 8192
   },
   "plugin": [
-    ".opencode/plugins/sor-hook.ts"
+    "./opencode/plugins/sor-hook.ts"
   ]
 }

@@ -1,7 +1,7 @@
 /**
  * Codex CLI adapter.
  *
- * Emits .codex/agents/<role>.toml — Codex's custom-agent format (TOML, not
+ * Emits .fleet/codex/agents/<role>.toml — Codex's custom-agent format (TOML, not
  * markdown+frontmatter). Fields: name, description, developer_instructions
  * (= the prompt), sandbox_mode, and optionally model / model_reasoning_effort.
  *
@@ -51,19 +51,19 @@ function renderToml(r: CanonicalRole): string {
 export const codexAdapter: Adapter = (config: CanonicalConfig): GeneratedFile[] => {
   return [
     ...config.roles.map((r) => ({
-      path: join(ROOT, ".codex", "agents", `${r.role}.toml`),
+      path: join(ROOT, ".fleet", "codex", "agents", `${r.role}.toml`),
       contents: renderToml(r),
     })),
-    // The SOR hooks live in .codex/config.toml (the only config.toml this
+    // The SOR hooks live in .fleet/codex/config.toml (the only config.toml this
     // adapter emits). emitCodexConfigHooks() is self-contained today; if a
     // future adapter emits additional config.toml sections, merge them here
     // rather than replacing the file.
     {
-      path: join(ROOT, ".codex", "config.toml"),
+      path: join(ROOT, ".fleet", "codex", "config.toml"),
       contents: emitCodexConfigHooks(),
     },
     {
-      path: join(ROOT, ".codex", "hooks", "sor-hook.sh"),
+      path: join(ROOT, ".fleet", "codex", "hooks", "sor-hook.sh"),
       contents: emitSorHookScript(),
     },
   ];

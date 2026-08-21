@@ -1,8 +1,15 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
+import { join, isAbsolute } from "node:path";
 
 const exec = promisify(execFile);
 
@@ -166,6 +173,67 @@ async function refreshReusedClone(repoDir: string, branch: string, worktreeDir: 
   }
 }
 
+const FLEET_SKILLS_SRC = join(".fleet", "opencode", "skills");
+
+/**
+ * Copy fleet skill dirs into every backend's native discovery location inside
+ * the worktree (opencode reads `.opencode/skills`, Claude Code reads
+ * `.claude/skills`; codex has no skill system and is handled elsewhere).
+ */
+function copyFleetSkills(worktreeDir: string): boolean {
+  const src = join(process.cwd(), FLEET_SKILLS_SRC);
+  if (!existsSync(src)) return false;
+  if (readdirSync(src).length === 0) return false;
+  const dests = [join(worktreeDir, ".opencode", "skills"), join(worktreeDir, ".claude", "skills")];
+  for (const dest of dests) {
+    mkdirSync(dest, { recursive: true });
+    cpSync(src, dest, { recursive: true });
+  }
+  return true;
+}
+
+/** Paths that must never show up in worker commits, as `info/exclude` lines. */
+const SKILL_EXCLUDE_LINES = [".opencode/", ".claude/skills/"];
+
+/**
+ * Append skill paths to the linked worktree's PRIVATE exclude file. A worktree
+ * contains a `.git` FILE (`gitdir: <path>`) pointing at the per-worktree git
+ * dir under the clone; only that dir's `info/exclude` may be written — the
+ * clone's shared `.git/info/exclude` is never touched.
+ */
+function excludeSkillsFromCommits(repoDir: string, worktreeDir: string): void {
+  const raw = readFileSync(join(worktreeDir, ".git"), "utf8").trim();
+  if (!raw.startsWith("gitdir:")) return;
+  let gitDir = raw.slice("gitdir:".length).trim();
+  if (!isAbsolute(gitDir)) gitDir = join(worktreeDir, gitDir);
+  // Safety: only write when this really is a per-worktree git dir of our clone.
+  const privatePrefix = join(repoDir, ".git");
+  if (!gitDir.startsWith(privatePrefix) || !gitDir.includes("worktrees")) return;
+
+  const excludePath = join(gitDir, "info", "exclude");
+  mkdirSync(join(gitDir, "info"), { recursive: true });
+  const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+  const present = new Set(existing.split("\n"));
+  const missing = SKILL_EXCLUDE_LINES.filter((l) => !present.has(l));
+  if (missing.length === 0) return;
+  let out = existing;
+  if (out.length > 0 && !out.endsWith("\n")) out += "\n";
+  writeFileSync(excludePath, out + missing.join("\n") + "\n");
+}
+
+/**
+ * Deliver fleet skills into the worktree and keep them out of worker commits.
+ * Entirely best-effort: a failure here never aborts the run.
+ */
+function provisionFleetSkills(repoDir: string, worktreeDir: string): void {
+  try {
+    copyFleetSkills(worktreeDir);
+    excludeSkillsFromCommits(repoDir, worktreeDir);
+  } catch (e) {
+    console.warn(`[worktree] fleet skill delivery failed (non-fatal): ${String(e)}`);
+  }
+}
+
 /**
  * Prepare a run's linked git worktree.
  *
@@ -195,6 +263,8 @@ export async function setupWorktree(
 
   // Fresh branch off the base, checked out in a linked worktree.
   await git(["worktree", "add", "-b", branch, worktreeDir, baseBranch], repoDir);
+
+  provisionFleetSkills(repoDir, worktreeDir);
 
   return { repoDir, worktreeDir, branch, baseBranch };
 }

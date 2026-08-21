@@ -1,7 +1,7 @@
 /**
  * Claude Code adapter.
  *
- * Emits .claude/agents/<role>.md — Claude Code's native custom-subagent
+ * Emits .fleet/claude/agents/<role>.md — Claude Code's native custom-subagent
  * format: YAML frontmatter (name, description, tools, optional model) plus
  * the prompt as the markdown body.
  *
@@ -61,7 +61,7 @@ function renderFrontmatter(r: CanonicalRole): string {
 /**
  * Embeds the hooks map from emitClaudeSettingsHooks() (an indented JSON object
  * starting/ending with braces) under the top-level "hooks" key of
- * `.claude/settings.json`, re-indenting the body by two spaces.
+ * `.fleet/claude/settings.json`, re-indenting the body by two spaces.
  */
 function embedHooks(hooksJson: string): string {
   const body = hooksJson
@@ -75,15 +75,15 @@ function embedHooks(hooksJson: string): string {
 export const claudeCodeAdapter: Adapter = (config: CanonicalConfig): GeneratedFile[] => {
   return [
     ...config.roles.map((r) => ({
-      path: join(ROOT, ".claude", "agents", `${r.role}.md`),
+      path: join(ROOT, ".fleet", "claude", "agents", `${r.role}.md`),
       contents: `---\n${renderFrontmatter(r)}\n---\n${r.prompt}\n`,
     })),
     {
-      path: join(ROOT, ".claude", "settings.json"),
+      path: join(ROOT, ".fleet", "claude", "settings.json"),
       contents: embedHooks(emitClaudeSettingsHooks()),
     },
     {
-      path: join(ROOT, ".claude", "hooks", "sor-hook.sh"),
+      path: join(ROOT, ".fleet", "claude", "hooks", "sor-hook.sh"),
       contents: emitSorHookScript(),
     },
   ];
