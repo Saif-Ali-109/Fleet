@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Backend, Role } from "../types.js";
+import type { Backend, Role } from "../types.ts";
 import {
   availableModels,
   BACKENDS,
@@ -16,7 +16,7 @@ import {
   resetModelOverrides,
   saveModelOverrides,
   setModelOverride,
-} from "../models/modelPolicy.js";
+} from "../models/modelPolicy.ts";
 
 describe("modelPolicy", () => {
   const roles: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
@@ -25,15 +25,15 @@ describe("modelPolicy", () => {
   beforeEach(() => resetModelOverrides());
 
   describe("policyFor (opencode default)", () => {
-    it("returns the deepseek model for reasoning-heavy roles", () => {
+    it("returns the x-preview model for reasoning-heavy roles", () => {
       for (const role of ["analyzer", "planner", "reviewer"] as Role[]) {
-        expect(policyFor(role).model).toBe("opencode/deepseek-v4-flash-free");
+        expect(policyFor(role).model).toBe("opencode/x-preview-f-free");
       }
     });
 
-    it("returns the laguna model for building roles", () => {
+    it("returns the mimo model for building roles", () => {
       for (const role of ["coder", "tester", "pr"] as Role[]) {
-        expect(policyFor(role).model).toBe("opencode/laguna-s-2.1-free");
+        expect(policyFor(role).model).toBe("opencode/mimo-v2.5-free");
       }
     });
 
@@ -53,11 +53,12 @@ describe("modelPolicy", () => {
   describe("policyFor (claude backend)", () => {
     it("defaults to the claude builder model for every role", () => {
       for (const role of roles) {
-        expect(policyFor(role, "claude").model).toBe("sonnet");
+        expect(policyFor(role, "claude").model).toBe("anthropic/claude-3.5-sonnet");
       }
     });
 
     it("keeps bare (non-prefixed) model ids", () => {
+      setModelOverride("analyzer", "sonnet", "claude");
       expect(policyFor("analyzer", "claude").model).toBe("sonnet");
     });
   });
@@ -65,11 +66,12 @@ describe("modelPolicy", () => {
   describe("policyFor (codex backend)", () => {
     it("defaults to the codex builder model for every role", () => {
       for (const role of roles) {
-        expect(policyFor(role, "codex").model).toBe("gpt-5.1-codex");
+        expect(policyFor(role, "codex").model).toBe("openai/gpt-4o-mini");
       }
     });
 
     it("keeps bare (non-prefixed) model ids", () => {
+      setModelOverride("coder", "gpt-5.1-codex", "codex");
       expect(policyFor("coder", "codex").model).toBe("gpt-5.1-codex");
     });
   });
@@ -102,14 +104,15 @@ describe("modelPolicy", () => {
       setModelOverride("analyzer", "opus", "claude");
       expect(policyFor("analyzer", "claude").model).toBe("opus");
       // opencode untouched
-      expect(policyFor("analyzer").model).toBe("opencode/deepseek-v4-flash-free");
+      expect(policyFor("analyzer").model).toBe("opencode/x-preview-f-free");
     });
 
-    it("rejects invalid models per backend", () => {
-      expect(() => setModelOverride("analyzer", "gpt-5.1-codex", "claude")).toThrow();
-      expect(() => setModelOverride("analyzer", "sonnet", "codex")).toThrow();
-      expect(() => setModelOverride("analyzer", "opencode/deepseek-v4-flash-free")).toThrow();
-      expect(getModelOverrides().claude).toBeUndefined();
+    it("accepts custom/free-text model ids per backend", () => {
+      expect(() => setModelOverride("analyzer", "anthropic/claude-3-7-sonnet-20250219", "claude")).not.toThrow();
+      expect(getModelOverrides().claude?.analyzer).toBe("anthropic/claude-3-7-sonnet-20250219");
+      expect(() => setModelOverride("analyzer", "openai/gpt-4o-mini", "codex")).not.toThrow();
+      expect(() => setModelOverride("coder", "anthropic/claude-3-5-sonnet-20241022", "opencode")).not.toThrow();
+      expect(() => setModelOverride("analyzer", "", "opencode")).toThrow();
     });
 
     it("accepts a valid model without throwing", () => {
@@ -159,28 +162,28 @@ describe("modelPolicy", () => {
       expect(existsSync(path)).toBe(true);
       const seeded = JSON.parse(readFileSync(path, "utf8"));
       expect(seeded.opencode).toEqual({
-        analyzer: "deepseek-v4-flash-free",
-        planner: "deepseek-v4-flash-free",
-        coder: "laguna-s-2.1-free",
-        tester: "laguna-s-2.1-free",
-        reviewer: "deepseek-v4-flash-free",
-        pr: "laguna-s-2.1-free",
+        analyzer: "x-preview-f-free",
+        planner: "x-preview-f-free",
+        coder: "mimo-v2.5-free",
+        tester: "mimo-v2.5-free",
+        reviewer: "x-preview-f-free",
+        pr: "mimo-v2.5-free",
       });
       expect(seeded.claude).toEqual({
-        analyzer: "sonnet",
-        planner: "sonnet",
-        coder: "sonnet",
-        tester: "sonnet",
-        reviewer: "sonnet",
-        pr: "sonnet",
+        analyzer: "anthropic/claude-3.5-sonnet",
+        planner: "anthropic/claude-3.5-sonnet",
+        coder: "anthropic/claude-3.5-sonnet",
+        tester: "anthropic/claude-3.5-sonnet",
+        reviewer: "anthropic/claude-3.5-sonnet",
+        pr: "anthropic/claude-3.5-sonnet",
       });
       expect(seeded.codex).toEqual({
-        analyzer: "gpt-5.1-codex",
-        planner: "gpt-5.1-codex",
-        coder: "gpt-5.1-codex",
-        tester: "gpt-5.1-codex",
-        reviewer: "gpt-5.1-codex",
-        pr: "gpt-5.1-codex",
+        analyzer: "openai/gpt-4o-mini",
+        planner: "openai/gpt-4o-mini",
+        coder: "openai/gpt-4o-mini",
+        tester: "openai/gpt-4o-mini",
+        reviewer: "openai/gpt-4o-mini",
+        pr: "openai/gpt-4o-mini",
       });
       rmSync(root, { recursive: true, force: true });
     });
@@ -199,7 +202,7 @@ describe("modelPolicy", () => {
       const policies = allPolicies(["opencode", "claude"]);
       expect(policies).toHaveLength(12);
       const byKey = new Map(policies.map((p) => [`${p.model}-${p.role}`, p]));
-      expect(byKey.get("sonnet-analyzer")).toBeDefined();
+      expect(byKey.get("anthropic/claude-3.5-sonnet-analyzer")).toBeDefined();
     });
   });
 });

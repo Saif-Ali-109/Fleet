@@ -4,13 +4,13 @@ import {
   eventToRecord,
   truncateValue,
   type SorEvent,
-} from "../events.js";
+} from "../events.ts";
 import {
   canonicalJson,
   computeHash,
   signEvent,
   GENESIS_HASH,
-} from "../signer.js";
+} from "../signer.ts";
 
 function makeEvent(overrides: Partial<SorEvent> = {}): SorEvent {
   return {

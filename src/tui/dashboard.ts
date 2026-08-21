@@ -1,5 +1,5 @@
-import type { Backend, Role } from "../types.js";
-import type { AgentResult } from "../types.js";
+import type { Backend, Role } from "../types.ts";
+import type { AgentResult } from "../types.ts";
 
 type PhaseName = "idle" | "gate1" | "analyze" | "plan" | "gate2" | "implement" | "review" | "gate3" | "pr" | "done" | "aborted" | "failed";
 
@@ -55,18 +55,20 @@ export function renderDashboard(d: DashboardState): string {
     const a = d.agents[r];
     const model = a.model.split("/").pop() ?? "";
     const sp = spinner(a.state);
-    const bar = a.state === "done" ? renderBar(1) : a.state === "failed" ? renderBar(0) : renderBar(0);
+    const bar = a.state === "done" ? renderBar(1) : a.state === "running" ? renderBar(0.5) : renderBar(0);
     const meta =
-      a.state === "done" && a.costUsd !== undefined
-        ? ` $${a.costUsd.toFixed(3)} ${a.tokens?.total?.toLocaleString() ?? ""} tok`
-        : a.state === "failed"
-          ? ` ✗ ${a.error ?? "failed"}`
-          : ` ${model}`;
+      a.state === "done" && a.costUsd !== undefined && a.tokens
+        ? ` $${a.costUsd.toFixed(3)} · ${a.tokens.total.toLocaleString()} tok (in ${a.tokens.input.toLocaleString()} / out ${a.tokens.output.toLocaleString()}${a.tokens.reasoning ? ` / r:${a.tokens.reasoning.toLocaleString()}` : ""} / cached ${a.tokens.cached.toLocaleString()})`
+        : a.state === "done" && a.costUsd !== undefined
+          ? ` $${a.costUsd.toFixed(3)} ${a.tokens?.total?.toLocaleString() ?? ""} tok`
+          : a.state === "failed"
+            ? ` ✗ ${a.error ?? "failed"}`
+            : ` ${model}`;
     const flag = a.state === "done" ? "✓" : a.state === "failed" ? "✗" : a.state === "running" ? "▸" : "·";
     return `  ${flag} ${r.padEnd(9)} [${bar}] ${sp}${meta}`;
   });
 
-  const phasePct = d.phase === "done" ? 1 : d.phase === "aborted" ? 0 : 0.5;
+  const phasePct = d.phase === "done" ? 1 : d.phase === "aborted" || d.phase === "failed" ? 0 : 0.5;
 
   return [
     `\n┌─ Multi-Orchestration ─ run ${d.runId} ─ ${d.repo}#${d.issue} ─ ${d.backend ?? "opencode"} ────────┐`,

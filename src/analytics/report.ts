@@ -5,7 +5,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pool } from "../db/client.js";
+import { pool } from "../db/client.ts";
 import {
   costPerRole,
   costPerBackend,
@@ -15,7 +15,7 @@ import {
   type BackendRow,
   type IterationRow,
   type FailingRoleRow,
-} from "./queries.js";
+} from "./queries.ts";
 
 function formatCost(value: number): string {
   return `$${value.toFixed(2)}`;
@@ -78,12 +78,16 @@ function failingRoleTable(rows: FailingRoleRow[]): string {
 }
 
 /** Build a full analytics markdown report for the given date window. */
-export async function generateReport(from: string, to: string): Promise<string> {
+export async function generateReport(
+  from: string,
+  to: string,
+  repo?: string
+): Promise<string> {
   const [roles, backends, iterations, failing] = await Promise.all([
-    costPerRole(from, to),
-    costPerBackend(from, to),
-    costPerIteration(from, to),
-    topFailingRoles(from, to, 10),
+    costPerRole(from, to, repo),
+    costPerBackend(from, to, repo),
+    costPerIteration(from, to, repo),
+    topFailingRoles(from, to, repo, 10),
   ]);
 
   const sections = [

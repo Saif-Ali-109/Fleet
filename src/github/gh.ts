@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import type { Issue } from "../types.js";
+import type { Issue } from "../types.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,7 +22,7 @@ export function toRepoSlug(repoUrlOrSlug: string): string {
 
 /** Offline stub issue for --dry-run (no gh, no network). */
 export function stubIssue(repoSlug: string, number: number): Issue {
-  return { repo: toRepoSlug(repoSlug), number, title: "[dry-run] stub", body: "", url: "", labels: [], author: "stub" };
+  return { repo: toRepoSlug(repoSlug), number, title: "[dry-run] stub", body: "", url: "", state: "open", labels: [], author: "stub" };
 }
 
 /** List open issues of a repo (max 100), sorted ascending by number. Rejects on bad repo/auth. */
@@ -45,16 +45,20 @@ export async function listOpenIssues(repoUrlOrSlug: string): Promise<{ number: n
   return items.sort((a, b) => a.number - b.number);
 }
 
-/** True if a repo already has an OPEN pull request for the given head branch. */
-export async function hasOpenPrForBranch(repoUrlOrSlug: string, branch: string): Promise<boolean> {
-  try {
-    const repo = toRepoSlug(repoUrlOrSlug);
-    const raw = await gh(["pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "number"]);
-    const j = JSON.parse(raw);
-    return Array.isArray(j) && j.length > 0;
-  } catch {
-    return false;
+/**
+ * True when a repo already has an OPEN pull request for the given head branch,
+ * null when gh succeeded and there is genuinely no open PR. Throws when the gh
+ * command fails (auth/rate-limit/network) so callers can tell "no PR" apart
+ * from "couldn't check".
+ */
+export async function hasOpenPrForBranch(repoUrlOrSlug: string, branch: string): Promise<boolean | null> {
+  const repo = toRepoSlug(repoUrlOrSlug);
+  const raw = await gh(["pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "number"]);
+  const j = JSON.parse(raw);
+  if (!Array.isArray(j)) {
+    throw new Error(`gh pr list returned an unexpected payload: ${JSON.stringify(j).slice(0, 200)}`);
   }
+  return j.length > 0 ? true : null;
 }
 
 /** Intake: fetch the issue via `gh issue view --json`. */
@@ -67,7 +71,7 @@ export async function fetchIssue(repoUrlOrSlug: string, number: number): Promise
     "--repo",
     repo,
     "--json",
-    "number,title,body,url,labels,author",
+    "number,title,body,url,state,labels,author",
   ]);
   const j = JSON.parse(raw);
   return {
@@ -76,9 +80,103 @@ export async function fetchIssue(repoUrlOrSlug: string, number: number): Promise
     title: j.title ?? "",
     body: j.body ?? "",
     url: j.url ?? "",
+    state: j.state ?? "open",
     labels: Array.isArray(j.labels) ? j.labels.map((l: any) => l.name).filter(Boolean) : [],
     author: j.author?.login ?? "unknown",
   };
+}
+
+/** Issue lifecycle labels (0.1) — managed runs mark issues started / done via labels. */
+export const ISSUE_LABEL_IN_PROGRESS = "multi-orch/in-progress";
+export const ISSUE_LABEL_DONE = "multi-orch/done";
+
+/** Split an `owner/name` slug (or any accepted repo URL) into its owner/repo parts. */
+export function splitRepoSlug(repoUrlOrSlug: string): { owner: string; repo: string } {
+  const slug = toRepoSlug(repoUrlOrSlug);
+  const [owner, repo] = slug.split("/");
+  return { owner: owner ?? "", repo: repo ?? "" };
+}
+
+/**
+ * Run a `gh` command best-effort: any failure is swallowed with a warning so a
+ * gh error can never abort a run (all lifecycle calls are non-fatal by design).
+ */
+async function ghBestEffort(args: string[], what: string): Promise<void> {
+  try {
+    await gh(args);
+  } catch (e) {
+    const err = e as Error & { stderr?: string };
+    console.warn(`[gh] ${what} failed (non-fatal): ${err?.stderr?.trim() || err?.message || String(e)}`);
+  }
+}
+
+/** Add a label to an issue. Never throws — a gh failure only warns. */
+export async function addIssueLabel(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  label: string,
+): Promise<void> {
+  await ghBestEffort(
+    ["issue", "edit", String(issueNumber), "--repo", `${owner}/${repo}`, "--add-label", label],
+    `add label "${label}" to #${issueNumber}`,
+  );
+}
+
+/** Remove a label from an issue. Never throws — a gh failure only warns. */
+export async function removeIssueLabel(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  label: string,
+): Promise<void> {
+  await ghBestEffort(
+    ["issue", "edit", String(issueNumber), "--repo", `${owner}/${repo}`, "--remove-label", label],
+    `remove label "${label}" from #${issueNumber}`,
+  );
+}
+
+/** True if the issue currently carries `label`. Returns false on any gh failure. */
+export async function hasIssueLabel(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  label: string,
+): Promise<boolean> {
+  try {
+    const raw = await gh(["issue", "view", String(issueNumber), "--repo", `${owner}/${repo}`, "--json", "labels"]);
+    const j = JSON.parse(raw) as { labels?: { name?: string }[] };
+    return Array.isArray(j.labels) && j.labels.some((l) => l.name === label);
+  } catch {
+    return false;
+  }
+}
+
+/** Post a comment on an issue. Never throws — a gh failure only warns. */
+export async function commentOnIssue(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  body: string,
+): Promise<void> {
+  await ghBestEffort(
+    ["issue", "comment", String(issueNumber), "--repo", `${owner}/${repo}`, "--body", body],
+    `comment on #${issueNumber}`,
+  );
+}
+
+/**
+ * Best-effort creation of repo labels so `addIssueLabel` never hits a missing
+ * label. Uses `--force` so an existing label is simply updated, not rejected.
+ * Never throws — a gh failure only warns.
+ */
+export async function ensureLabels(owner: string, repo: string, labels: string[]): Promise<void> {
+  for (const label of labels) {
+    await ghBestEffort(
+      ["label", "create", label, "--repo", `${owner}/${repo}`, "--force"],
+      `create label "${label}"`,
+    );
+  }
 }
 
 export interface CreatePrResult {

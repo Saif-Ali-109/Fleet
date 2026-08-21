@@ -4,8 +4,8 @@
 // it is the identifier shared by hooks, agentRunner, and orchestrator.
 
 import type { Pool } from "pg";
-import type { SorEvent, SorEventType } from "../sor/events.js";
-import { GENESIS_HASH, signEvent } from "../sor/signer.js";
+import type { SorEvent, SorEventType } from "../sor/events.ts";
+import { GENESIS_HASH, signEvent } from "../sor/signer.ts";
 
 export interface AgentRegistryRow {
   role: string;

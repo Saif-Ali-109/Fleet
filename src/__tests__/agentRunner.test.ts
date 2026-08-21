@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { writeFileSync, mkdirSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildArgs, parseTrace, readStderrTail, runWorker } from "../agentRunner.js";
-import type { RunContext, Role, RolePolicy } from "../types.js";
+import { buildArgs, parseTrace, readStderrTail, runWorker } from "../agentRunner.ts";
+import type { RunContext, Role, RolePolicy } from "../types.ts";
 
 // ---- Shared fixtures ----
 
@@ -103,6 +103,15 @@ describe("buildArgs", () => {
     const args = buildArgs("tester", "My special task with spaces", ctx, "m", policy, {});
     expect(args[args.length - 1]).toBe("My special task with spaces");
   });
+
+  it("inserts -s <sessionID> after --format json when opts.resumeSessionID is set", () => {
+    const ctx = makeCtx();
+    const policy = makePolicy();
+    const args = buildArgs("coder", "Task", ctx, "m", policy, { resumeSessionID: "sess-42" });
+    expect(args[args.indexOf("--format") + 2]).toBe("-s");
+    expect(args[args.indexOf("--format") + 3]).toBe("sess-42");
+    expect(args[args.length - 1]).toBe("Task");
+  });
 });
 
 // ---- runWorker tests ----
@@ -166,7 +175,8 @@ describe("parseTrace", () => {
     expect(result.tokens.output).toBe(13);
     expect(result.tokens.reasoning).toBe(2);
     expect(result.tokens.cached).toBe(150);
-    expect(result.tokens.total).toBe(45);
+    expect(result.tokens.cacheWrite).toBe(0);
+    expect(result.tokens.total).toBe(195);
     expect(result.costUsd).toBe(0.03);
   });
 

@@ -1,7 +1,7 @@
-import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Backend, Role, RolePolicy, RunContext } from "../types.js";
+import type { Backend, Role, RolePolicy, RunContext } from "../types.ts";
 
 export interface BackendDef {
   name: Backend;
@@ -19,10 +19,67 @@ export function backendDef(backend: Backend): BackendDef {
   return { name: backend, binary: BIN[backend] };
 }
 
+/** Split a shell command string into argv tokens (whitespace split; no quote handling). */
+export function splitTestCommand(command: string): string[] {
+  return command.trim().split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Detect the test command for a repo worktree so coder/tester workers actually
+ * run/verify tests instead of treating the step as a no-op:
+ *  1. `package.json` `scripts.test` → the script verbatim (e.g. "vitest run").
+ *  2. pytest config (`pytest.ini`, `[tool.pytest]` in `pyproject.toml`, or
+ *     `requirements.txt` + a `tests/` dir) → "pytest".
+ *  3. Fallback → `git status --porcelain` (a "nothing changed" check that the
+ *     commit step can still treat as a pass), with a logged warning.
+ */
+export function detectTestCommand(worktreeDir: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(worktreeDir, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const script = pkg.scripts?.test;
+    if (typeof script === "string" && script.trim()) {
+      return script.trim();
+    }
+  } catch {
+    // no package.json or unparseable JSON → fall through to pytest detection
+  }
+  if (detectPytest(worktreeDir)) {
+    return "pytest";
+  }
+  console.warn(
+    `[backends] no test command detected in ${worktreeDir}; falling back to \`git status --porcelain\` (a clean diff is the only pass condition)`,
+  );
+  return "git status --porcelain";
+}
+
+function detectPytest(worktreeDir: string): boolean {
+  if (existsSync(join(worktreeDir, "pytest.ini"))) return true;
+  try {
+    const pyproject = readFileSync(join(worktreeDir, "pyproject.toml"), "utf8");
+    if (/\[tool\.pytest/.test(pyproject)) return true;
+  } catch {
+    // no pyproject.toml
+  }
+  return (
+    existsSync(join(worktreeDir, "requirements.txt")) &&
+    isDirectory(join(worktreeDir, "tests"))
+  );
+}
+
+function isDirectory(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export interface BackendTrace {
   text: string;
   sessionID: string | null;
-  tokens: { input: number; output: number; reasoning: number; cached: number; total: number };
+  tokens: { input: number; output: number; reasoning: number; cached: number; cacheWrite: number; total: number };
   costUsd: number;
   sawError: boolean;
   errorMsg?: string;
@@ -55,12 +112,13 @@ export function buildBackendArgs(
   ctx: RunContext,
   model: string,
   policy: RolePolicy,
-  opts: { variant?: RolePolicy["variant"] },
+  opts: { variant?: RolePolicy["variant"]; resumeSessionID?: string },
   rolePrompt: string,
 ): BackendArgs {
   switch (backend) {
     case "opencode": {
       const args = ["run", "--agent", role, "-m", model, "--dir", ctx.worktreeDir, "--format", "json"];
+      if (opts.resumeSessionID) args.push("-s", opts.resumeSessionID);
       const variant = opts.variant ?? policy.variant;
       if (variant) args.push("--variant", variant);
       args.push(task);
@@ -72,6 +130,7 @@ export function buildBackendArgs(
         task,
         "--output-format",
         "stream-json",
+        "--verbose",
         "--model",
         model,
         "--append-system-prompt",
@@ -79,12 +138,15 @@ export function buildBackendArgs(
         "--permission-mode",
         claudeMode(role),
       ];
+      if (opts.resumeSessionID) args.push("--fork-session", "--resume", opts.resumeSessionID);
       return { args, cwd: ctx.worktreeDir };
     }
     case "codex": {
       const sandbox = codexSandbox(role);
       const lastmsgPath = join(ctx.tracesDir, `${role}.lastmsg`);
-      const args = ["exec", "--cd", ctx.worktreeDir, "-m", model, "-s", sandbox, "--json", "-o", lastmsgPath];
+      const args = ["exec"];
+      if (opts.resumeSessionID) args.push("resume", opts.resumeSessionID);
+      args.push("--cd", ctx.worktreeDir, "-m", model, "-s", sandbox, "--json", "-o", lastmsgPath);
       if (MUTATE_ROLES.includes(role)) args.push("--approve-for-me");
       args.push("--", `${rolePrompt}\n\n${task}`);
       return { args, cwd: ctx.worktreeDir };
@@ -101,7 +163,7 @@ export function buildBackendEnv(backend: Backend, ctx: RunContext): NodeJS.Proce
   } catch {
     // non-fatal: the hook scripts/plugin create it lazily if needed
   }
-  const base: NodeJS.ProcessEnv = { ...process.env, SOR_EVENT_DIR: sorEventDir };
+  const base: NodeJS.ProcessEnv = { ...process.env, SOR_EVENT_DIR: sorEventDir, SOR_BACKEND: backend };
   if (backend !== "opencode") return base;
   const dataHome = join(ctx.runDir, ".opencode-data");
   try {
@@ -201,7 +263,8 @@ function parseOpencodeLine(ev: any, acc: BackendTrace): void {
       acc.tokens.output += part.tokens.output ?? 0;
       acc.tokens.reasoning += part.tokens.reasoning ?? 0;
       acc.tokens.cached += part.tokens.cache?.read ?? part.tokens.cacheRead ?? 0;
-      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning;
+      acc.tokens.cacheWrite += part.tokens.cache?.write ?? part.tokens.cacheWrite ?? 0;
+      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning + acc.tokens.cached;
     }
     acc.costUsd += part.cost ?? 0;
   } else if (ev.type === "error" || part.type === "error") {
@@ -232,8 +295,9 @@ function parseClaudeLine(ev: any, acc: BackendTrace): void {
       acc.tokens.input += usage.input_tokens ?? 0;
       acc.tokens.output += usage.output_tokens ?? 0;
       acc.tokens.reasoning += usage.reasoning_tokens ?? 0;
-      acc.tokens.cached += (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
-      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning;
+      acc.tokens.cached += usage.cache_read_input_tokens ?? 0;
+      acc.tokens.cacheWrite += usage.cache_creation_input_tokens ?? 0;
+      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning + acc.tokens.cached;
     }
     if (ev.session_id) acc.sessionID = ev.session_id;
   }
@@ -267,11 +331,13 @@ function parseCodexLine(ev: any, acc: BackendTrace): void {
       acc.tokens.output += ev.usage.output_tokens ?? ev.usage.completion_tokens ?? 0;
       acc.tokens.reasoning += ev.usage.reasoning_tokens ?? 0;
       acc.tokens.cached +=
+        ev.usage.cache_read_input_tokens ??
         ev.usage.prompt_tokens_details?.cached_tokens ??
         ev.usage.input_tokens_details?.cached_tokens ??
         ev.usage.cached_tokens ??
         0;
-      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning;
+      acc.tokens.cacheWrite += ev.usage.cache_creation_input_tokens ?? 0;
+      acc.tokens.total = acc.tokens.input + acc.tokens.output + acc.tokens.reasoning + acc.tokens.cached;
     }
     if (ev.session_id || ev.sessionId) acc.sessionID = ev.session_id ?? ev.sessionId;
   }
@@ -280,7 +346,7 @@ function parseCodexLine(ev: any, acc: BackendTrace): void {
 const emptyTrace = (): BackendTrace => ({
   text: "",
   sessionID: null,
-  tokens: { input: 0, output: 0, reasoning: 0, cached: 0, total: 0 },
+  tokens: { input: 0, output: 0, reasoning: 0, cached: 0, cacheWrite: 0, total: 0 },
   costUsd: 0,
   sawError: false,
 });

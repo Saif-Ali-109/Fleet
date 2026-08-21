@@ -1,26 +1,26 @@
 {
   "opencode": {
-    "analyzer": "north-mini-code-free",
-    "planner": "north-mini-code-free",
-    "coder": "laguna-s-2.1-free",
-    "tester": "laguna-s-2.1-free",
-    "reviewer": "mimo-v2.5-free",
-    "pr": "laguna-s-2.1-free"
+    "analyzer": "x-preview-f-free",
+    "planner": "x-preview-f-free",
+    "coder": "opencode/mimo-v2.5-free",
+    "tester": "opencode/mimo-v2.5-free",
+    "reviewer": "x-preview-f-free",
+    "pr": "opencode/mimo-v2.5-free"
   },
   "claude": {
-    "analyzer": "deepseek-v4-flash-free",
-    "planner": "deepseek-v4-flash-free",
-    "coder": "laguna-s-2.1-free",
-    "tester": "laguna-s-2.1-free",
-    "reviewer": "deepseek-v4-flash-free",
-    "pr": "laguna-s-2.1-free"
+    "analyzer": "nvidia/nemotron-3-ultra-550b-a55b",
+    "planner": "nvidia/nemotron-3-ultra-550b-a55b",
+    "coder": "openai/gpt-oss-20b",
+    "tester": "openai/gpt-oss-20b",
+    "reviewer": "openai/gpt-oss-20b",
+    "pr": "openai/gpt-oss-20b"
   },
   "codex": {
-    "analyzer": "deepseek-v4-flash-free",
-    "planner": "deepseek-v4-flash-free",
-    "coder": "laguna-s-2.1-free",
-    "tester": "laguna-s-2.1-free",
-    "reviewer": "deepseek-v4-flash-free",
-    "pr": "laguna-s-2.1-free"
+    "analyzer": "nvidia/nemotron-3-ultra-550b-a55b",
+    "planner": "nvidia/nemotron-3-ultra-550b-a55b",
+    "coder": "openai/gpt-oss-20b",
+    "tester": "openai/gpt-oss-20b",
+    "reviewer": "openai/gpt-oss-20b",
+    "pr": "openai/gpt-oss-20b"
   }
 }

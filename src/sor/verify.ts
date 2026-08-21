@@ -3,7 +3,7 @@
 // passes the pool in; this module never constructs one.
 
 import type { Pool } from "pg";
-import { verifyChain } from "../db/audit.js";
+import { verifyChain } from "../db/audit.ts";
 
 /** Run verifyChain against the db pool, print a readable report (counts by event_type,
  *  total, ok/fail, first bad seq) to stdout, and return the process exit code (0 ok, 1 fail). */

@@ -1,13 +1,13 @@
 import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import { randomUUID } from "node:crypto";
-import { db, pool } from "../db/client.js";
+import { db, pool } from "../db/client.ts";
 import {
   costPerRole,
   costPerBackend,
   costPerIteration,
   topFailingRoles,
-} from "../analytics/queries.js";
-import { generateReport } from "../analytics/report.js";
+} from "../analytics/queries.ts";
+import { generateReport } from "../analytics/report.ts";
 
 const REPO = "test/analytics";
 const FROM = "2000-01-01";
@@ -88,7 +88,7 @@ afterAll(async () => {
 
 describe("analytics queries", () => {
   it("costPerRole aggregates runs, cost, and success", async () => {
-    const rows = await costPerRole(FROM, TO);
+    const rows = await costPerRole(FROM, TO, REPO);
     const analyzer = rows.find((r) => r.role === "analyzer");
     expect(analyzer).toBeDefined();
     expect(analyzer?.model).toBe("deepseek-v4");
@@ -104,7 +104,7 @@ describe("analytics queries", () => {
   });
 
   it("costPerBackend joins run_outcomes for backend", async () => {
-    const rows = await costPerBackend(FROM, TO);
+    const rows = await costPerBackend(FROM, TO, REPO);
     const opencode = rows.find((r) => r.backend === "opencode");
     expect(opencode).toBeDefined();
     expect(opencode?.count).toBe(2);
@@ -115,7 +115,7 @@ describe("analytics queries", () => {
   });
 
   it("costPerIteration groups by iterations_used", async () => {
-    const rows = await costPerIteration(FROM, TO);
+    const rows = await costPerIteration(FROM, TO, REPO);
     const one = rows.find((r) => r.iteration === 1);
     expect(one).toBeDefined();
     expect(one?.count).toBe(1);
@@ -126,15 +126,24 @@ describe("analytics queries", () => {
   });
 
   it("topFailingRoles lists failing roles by failure count", async () => {
-    const rows = await topFailingRoles(FROM, TO, 10);
+    const rows = await topFailingRoles(FROM, TO, REPO, 10);
     const coder = rows.find((r) => r.role === "coder");
     expect(coder?.failure_count).toBe(1);
     expect(coder?.model).toBe("laguna");
     expect(coder?.failure_rate).toBeCloseTo(100 * (1 / 3), 5);
   });
 
+  it("includes the full `to` day (exclusive upper bound)", async () => {
+    const atNoon = await seedRun("test", 4, "completed", 0.5, "2026-05-10T12:00:00Z");
+    const nextDay = await seedRun("test", 5, "completed", 0.5, "2026-05-11T00:00:00Z");
+
+    const rows = await costPerIteration("2026-05-10", "2026-05-10", REPO);
+    expect(rows.find((r) => r.iteration === 4)?.count).toBe(1);
+    expect(rows.find((r) => r.iteration === 5)?.count).toBeUndefined();
+  });
+
   it("generateReport returns a markdown report", async () => {
-    const report = await generateReport(FROM, TO);
+    const report = await generateReport(FROM, TO, REPO);
     expect(report).toContain("# Analytics Report:");
     expect(report).toContain("## Cost by Role");
     expect(report).toContain("## Cost by Backend");

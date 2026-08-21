@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { pool } from "../db/client.js";
-import type { WorkforcePolicy } from "../workforce/policy.js";
-import { defaultPolicy } from "../workforce/policy.js";
+import { pool } from "../db/client.ts";
+import type { WorkforcePolicy } from "../workforce/policy.ts";
+import { defaultPolicy } from "../workforce/policy.ts";
 import {
   canHire,
   hireWorker,
   retireWorker,
   updateWorkerStatus,
-} from "../workforce/hiring.js";
+} from "../workforce/hiring.ts";
 
 const TEST_PREFIX = "test/";
 

@@ -1,7 +1,7 @@
 // Checkpoint API — durable per-step status tracking for pause/resume.
 // Wraps the shared pool from ./client.js backed by the agent_steps table.
 
-import { pool } from "./client.js";
+import { pool } from "./client.ts";
 
 interface StepIdRow {
   step_id: string;
@@ -17,21 +17,31 @@ async function startStep(
   iteration: number,
   step_name: string
 ): Promise<string> {
-  const inserted = await pool.query<StepIdRow>(
-    `INSERT INTO agent_steps (run_id, role, iteration, step_name, status, started_at)
-     VALUES ($1, $2, $3, $4, 'pending', now())
-     RETURNING step_id`,
-    [run_id, role, iteration, step_name]
-  );
-  const row = inserted.rows[0];
-  if (!row) {
-    throw new Error("startStep failed to retrieve step_id");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const inserted = await client.query<StepIdRow>(
+      `INSERT INTO agent_steps (run_id, role, iteration, step_name, status, started_at)
+       VALUES ($1, $2, $3, $4, 'pending', now())
+       RETURNING step_id`,
+      [run_id, role, iteration, step_name]
+    );
+    const row = inserted.rows[0];
+    if (!row) {
+      throw new Error("startStep failed to retrieve step_id");
+    }
+    await client.query(
+      "UPDATE agent_steps SET status = 'running' WHERE step_id = $1",
+      [row.step_id]
+    );
+    await client.query("COMMIT");
+    return row.step_id;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-  await pool.query(
-    "UPDATE agent_steps SET status = 'running' WHERE step_id = $1",
-    [row.step_id]
-  );
-  return row.step_id;
 }
 
 async function markStepSuccess(step_id: string): Promise<void> {

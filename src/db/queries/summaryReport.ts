@@ -1,11 +1,22 @@
 // Summary report generator — builds MEMORY.md from the run_outcomes table.
 // Exported as a library function (used by src/orchestrator.ts) and also runnable
 // directly via `npm run generate-memory` (tsx src/db/queries/summaryReport.ts).
+//
+// MEMORY.md is merged, not overwritten:
+// - `generateMemoryMarkdown` builds the run-log section delimited by
+//   `<!-- run-log-start -->` / `<!-- run-log-end -->` comments.
+// - `generateMemory` reads any existing MEMORY.md and replaces ONLY the block
+//   between those delimiters, preserving hand-curated sections (`## Next` …).
+// - If the file is missing or lacks the delimiters, it falls back to a full
+//   overwrite of the regenerated markdown.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pool } from "../client.js";
+import { pool } from "../client.ts";
+
+export const RUN_LOG_START = "<!-- run-log-start -->";
+export const RUN_LOG_END = "<!-- run-log-end -->";
 
 interface RunOutcomeRow {
   repo: string;
@@ -52,6 +63,34 @@ function formatRunLine(row: RunOutcomeRow): string | null {
   return `- ${datePart}${row.repo}#${row.issue_number} ${row.issue_title} PR: ${pr} $${cost} [${row.status}]`;
 }
 
+/**
+ * Replace the run-log block in `existing` (delimited by `RUN_LOG_START` and
+ * `RUN_LOG_END`, delimiters inclusive) with `newBlock` (which must itself be
+ * delimiter-wrapped). Everything outside the block is preserved verbatim.
+ * Returns null when `existing` lacks a valid block so callers can fall back to
+ * a full overwrite.
+ */
+export function mergeRunLogBlock(existing: string, newBlock: string): string | null {
+  const startIdx = existing.indexOf(RUN_LOG_START);
+  const endIdx = existing.indexOf(RUN_LOG_END);
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+    return null;
+  }
+  const before = existing.slice(0, startIdx);
+  const after = existing.slice(endIdx + RUN_LOG_END.length);
+  return before + newBlock + after;
+}
+
+/** Extract the delimiter-wrapped run-log block (delimiters inclusive) from `md`. */
+function extractRunLogBlock(md: string): string {
+  const startIdx = md.indexOf(RUN_LOG_START);
+  const endIdx = md.indexOf(RUN_LOG_END);
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+    return md;
+  }
+  return md.slice(startIdx, endIdx + RUN_LOG_END.length);
+}
+
 /** Build the full MEMORY.md markdown from the run_outcomes table. */
 export async function generateMemoryMarkdown(_rootDir: string): Promise<string> {
   const rows = await queryRunOutcomes();
@@ -59,14 +98,17 @@ export async function generateMemoryMarkdown(_rootDir: string): Promise<string> 
     .map(formatRunLine)
     .filter((line): line is string => line !== null);
 
-  const header = [
-    "# Run log",
-    "",
+  const header = ["# Run log", ""];
+
+  const block = [
+    RUN_LOG_START,
     `_Regenerated from the database on ${new Date().toISOString()} — do not hand-edit._`,
     "",
+    ...lines,
+    RUN_LOG_END,
   ];
 
-  return [...header, ...lines, ""].join("\n");
+  return [...header, ...block, ""].join("\n");
 }
 
 /** CLI entrypoint: writes MEMORY.md to the project root (process.cwd()). */
@@ -78,8 +120,18 @@ export async function generateMemory(rootDir = process.cwd()): Promise<string> {
 
   const md = await generateMemoryMarkdown(rootDir);
   const outPath = path.join(rootDir, "MEMORY.md");
+
+  let finalMd = md;
+  const existing = await readFile(outPath, "utf8").catch(() => null);
+  if (existing !== null) {
+    const merged = mergeRunLogBlock(existing, extractRunLogBlock(md));
+    if (merged !== null) {
+      finalMd = merged;
+    }
+  }
+
   await mkdir(path.dirname(outPath), { recursive: true });
-  await writeFile(outPath, md, "utf8");
+  await writeFile(outPath, finalMd, "utf8");
   console.log(`[generate-memory] wrote ${outPath} (${applied} migrations applied)`);
   return outPath;
 }

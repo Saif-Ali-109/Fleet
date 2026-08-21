@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Backend, Role, RolePolicy } from "../types.js";
+import type { Backend, Role, RolePolicy } from "../types.ts";
 
 // Per-backend model policy.
 // The Manager is plain TypeScript (not an LLM); the 6 spawned workers call models.
@@ -11,53 +11,49 @@ import type { Backend, Role, RolePolicy } from "../types.js";
 // subscription supports.
 
 // ---- opencode ----
-const BIG = "opencode/deepseek-v4-flash-free";
-const LAGUNA = "opencode/laguna-s-2.1-free";
+const BIG = "opencode/x-preview-f-free";
+const MIMO = "opencode/mimo-v2.5-free";
 
 // Free fallback pool (verified present in `opencode models`).
 const OPENCODE_FALLBACKS = [
-  "opencode/deepseek-v4-flash-free",
-  "opencode/north-mini-code-free",
+  "opencode/x-preview-f-free",
   "opencode/mimo-v2.5-free",
   "opencode/nemotron-3-ultra-free",
+  "opencode/nemotron-3.5-lightning-free",
 ] as const;
 
 // Free OpenCode model ids, as bare names (the form used in models.json and by `opencode models`).
 export const FREE_OPCODE_MODELS: readonly string[] = Object.freeze([
-  "deepseek-v4-flash-free",
-  "laguna-s-2.1-free",
-  "ling-3.0-tiny-free",
-  "longcat-2.0-free",
+  "hy3-free",
   "mimo-v2.5-free",
+  "muse-spark-1.2-contributor-free",
   "nemotron-3-ultra-free",
-  "north-mini-code-free",
+  "nemotron-3.5-lightning-free",
+  "x-preview-f-free",
 ]);
 
 // ---- claude code ----
-// Curated catalog (aliases Claude Code accepts via --model). Not exhaustive;
-// the dashboard's free-text input lets users type any supported id.
+// Curated catalog of OpenRouter free-tier claude model IDs (provider/model format).
+// The dashboard's free-text input lets users type any supported id.
 export const CLAUDE_MODELS: readonly string[] = Object.freeze([
-  "opus",
-  "sonnet",
-  "fable",
-  "haiku",
-  "claude-fable-5",
-  "claude-sonnet-4-5",
-  "claude-3-7-sonnet",
-  "claude-opus-4",
-  "claude-haiku-4-5",
+  "anthropic/claude-3.5-sonnet",
+  "anthropic/claude-3.5-sonnet-20241022",
+  "anthropic/claude-3-opus",
+  "anthropic/claude-3-haiku",
+  "anthropic/claude-3.5-haiku",
 ]);
 
 // ---- codex ----
+// Curated catalog of OpenRouter free-tier codex/coding model IDs (provider/model format).
+// The dashboard's free-text input lets users type any supported id.
 export const CODEX_MODELS: readonly string[] = Object.freeze([
-  "gpt-5.4-codex",
-  "gpt-5.1-codex",
-  "gpt-5.2-codex",
-  "gpt-5-codex",
-  "gpt-5.1-mini",
-  "gpt-5-mini",
-  "o3",
-  "o4-mini",
+  "openai/gpt-4o-mini",
+  "openai/gpt-4o",
+  "openai/gpt-4.1-mini",
+  "google/gemini-2.0-flash",
+  "google/gemini-2.5-flash",
+  "meta-llama/llama-3.1-405b-instruct",
+  "mistralai/codestral-2501",
 ]);
 
 export const BACKENDS: readonly Backend[] = Object.freeze(["opencode", "claude", "codex"]);
@@ -77,41 +73,41 @@ export function availableModels(backend: Backend): readonly string[] {
 // Default per-role model mapping (bare names) per backend — mirrors agents/*.md
 // frontmatter and self-seeds modelPolicyDefaults.
 const DEFAULT_OVERRIDES: Record<Role, string> = {
-  analyzer: "deepseek-v4-flash-free",
-  planner: "deepseek-v4-flash-free",
-  coder: "laguna-s-2.1-free",
-  tester: "laguna-s-2.1-free",
-  reviewer: "deepseek-v4-flash-free",
-  pr: "laguna-s-2.1-free",
+  analyzer: "x-preview-f-free",
+  planner: "x-preview-f-free",
+  coder: "mimo-v2.5-free",
+  tester: "mimo-v2.5-free",
+  reviewer: "x-preview-f-free",
+  pr: "mimo-v2.5-free",
 };
 
 // Default models for claude + codex backends (the "use any sensible default" choice).
 // Reasoning-heavy roles get a frontier model; building roles get a solid builder.
 const CLAUDE_DEFAULTS: Record<Role, string> = {
-  analyzer: "sonnet",
-  planner: "sonnet",
-  coder: "sonnet",
-  tester: "sonnet",
-  reviewer: "sonnet",
-  pr: "sonnet",
+  analyzer: "anthropic/claude-3.5-sonnet",
+  planner: "anthropic/claude-3.5-sonnet",
+  coder: "anthropic/claude-3.5-sonnet",
+  tester: "anthropic/claude-3.5-sonnet",
+  reviewer: "anthropic/claude-3.5-sonnet",
+  pr: "anthropic/claude-3.5-sonnet",
 };
 
 const CODEX_DEFAULTS: Record<Role, string> = {
-  analyzer: "gpt-5.1-codex",
-  planner: "gpt-5.1-codex",
-  coder: "gpt-5.1-codex",
-  tester: "gpt-5.1-codex",
-  reviewer: "gpt-5.1-codex",
-  pr: "gpt-5.1-codex",
+  analyzer: "openai/gpt-4o-mini",
+  planner: "openai/gpt-4o-mini",
+  coder: "openai/gpt-4o-mini",
+  tester: "openai/gpt-4o-mini",
+  reviewer: "openai/gpt-4o-mini",
+  pr: "openai/gpt-4o-mini",
 };
 
 const POLICIES: Record<Role, RolePolicy> = {
   analyzer: { role: "analyzer", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "low" },
   planner: { role: "planner", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "low" },
   reviewer: { role: "reviewer", model: BIG, fallbacks: [...OPENCODE_FALLBACKS], variant: "low" },
-  coder: { role: "coder", model: LAGUNA, fallbacks: [...OPENCODE_FALLBACKS] },
-  tester: { role: "tester", model: LAGUNA, fallbacks: [...OPENCODE_FALLBACKS] },
-  pr: { role: "pr", model: LAGUNA, fallbacks: [...OPENCODE_FALLBACKS] },
+  coder: { role: "coder", model: MIMO, fallbacks: [...OPENCODE_FALLBACKS] },
+  tester: { role: "tester", model: MIMO, fallbacks: [...OPENCODE_FALLBACKS] },
+  pr: { role: "pr", model: MIMO, fallbacks: [...OPENCODE_FALLBACKS] },
 };
 
 // Mutable override layer: backend → (role → bare model name), merged over POLICIES at read time.
@@ -120,9 +116,14 @@ let overrides: Partial<Record<Backend, Partial<Record<Role, string>>>> = {};
 // opencode's `-m` requires the `provider/model` form. POLICIES store prefixed ids while
 // overrides/models.json store bare ids; normalize for opencode so runWorker always gets a
 // valid `-m` argument. claude/codex accept bare ids via their own --model flags.
+// OpenRouter models have format "provider/model" (e.g., "nvidia/nemotron-3-ultra-550b-a55b")
+// and need "openrouter/" prefix. Native opencode models are bare names and need "opencode/" prefix.
 function normalizeModel(backend: Backend, name: string): string {
   if (backend === "opencode") {
-    return name.startsWith("opencode/") ? name : `opencode/${name}`;
+    if (name.startsWith("opencode/") || name.startsWith("openrouter/")) {
+      return name;
+    }
+    return name.includes("/") ? `openrouter/${name}` : `opencode/${name}`;
   }
   return name;
 }
@@ -171,20 +172,8 @@ export function getModelOverrides(): Partial<Record<Backend, Partial<Record<Role
 }
 
 export function setModelOverride(role: Role, model: string, backend: Backend = "opencode"): void {
-  if (backend === "opencode" && !FREE_OPCODE_MODELS.includes(model)) {
-    throw new Error(
-      `Invalid model "${model}" for opencode. Must be one of: ${FREE_OPCODE_MODELS.join(", ")}`,
-    );
-  }
-  if (backend === "claude" && !CLAUDE_MODELS.includes(model)) {
-    throw new Error(
-      `Invalid model "${model}" for claude. Must be one of: ${CLAUDE_MODELS.join(", ")}`,
-    );
-  }
-  if (backend === "codex" && !CODEX_MODELS.includes(model)) {
-    throw new Error(
-      `Invalid model "${model}" for codex. Must be one of: ${CODEX_MODELS.join(", ")}`,
-    );
+  if (typeof model !== "string" || !model.trim()) {
+    throw new Error(`Invalid model id for ${backend}`);
   }
   const existing = overrides[backend] ?? {};
   existing[role] = model;

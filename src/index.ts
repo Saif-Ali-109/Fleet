@@ -1,19 +1,38 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { WebDashboard } from "./dashboard/webDashboard.js";
-import { db, pool } from "./db/client.js";
-import { appendAuditEvent, ensureChain } from "./db/audit.js";
-import type { SorEvent } from "./sor/events.js";
-import { fixBranchName, shouldSkipIssue } from "./daemon/dedup.js";
-import { fetchIssue, ghAuthInfo, hasOpenPrForBranch, listOpenIssues, stubIssue, toRepoSlug } from "./github/gh.js";
-import { runOrchestrator, type WebFeed } from "./orchestrator.js";
-import type { DashboardState } from "./tui/dashboard.js";
-import type { Issue, RunContext } from "./types.js";
-import { loadModelOverrides } from "./models/modelPolicy.js";
-import type { Backend } from "./types.js";
+import { WebDashboard, type WebhookHandler } from "./dashboard/webDashboard.ts";
+import { db, pool } from "./db/client.ts";
+import { appendAuditEvent, ensureChain } from "./db/audit.ts";
+import type { SorEvent } from "./sor/events.ts";
+import { fixBranchName, shouldSkipIssue } from "./daemon/dedup.ts";
+import {
+  addIssueLabel,
+  commentOnIssue,
+  ensureLabels,
+  fetchIssue,
+  ghAuthInfo,
+  hasIssueLabel,
+  hasOpenPrForBranch,
+  ISSUE_LABEL_DONE,
+  ISSUE_LABEL_IN_PROGRESS,
+  listOpenIssues,
+  splitRepoSlug,
+  stubIssue,
+  toRepoSlug,
+} from "./github/gh.ts";
+import { verifyWebhookSignature, parseIssueEvent } from "./daemon/webhook.ts";
+import { runOrchestrator, type WebFeed } from "./orchestrator.ts";
+import { killActiveWorkers, resetWorkerAbort } from "./agentRunner.ts";
+import type { DashboardState } from "./tui/dashboard.ts";
+import type { Issue, RunContext } from "./types.ts";
+import { loadModelOverrides } from "./models/modelPolicy.ts";
+import type { Backend } from "./types.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Session-level clone reuse (0.7 worktree hygiene): repoSlug → shared clone dir. */
+const sessionClones = new Map<string, string>();
 
 process.on("SIGINT", () => process.exit(130));
 
@@ -43,6 +62,38 @@ const scanIntervalMinutes = Math.max(1, Number(process.env.SCAN_INTERVAL_MINUTES
 const scanIntervalMs = scanIntervalMinutes * 60_000;
 let stopRequested = false;
 let daemonActive = false;
+
+// Webhook intake (hybrid trigger): issues accepted by POST /webhook wait here
+// until the daemon loop drains them at the top of the next cycle. The loop
+// atomically swaps in a fresh map before draining, so arrivals mid-drain are
+// picked up next cycle instead of being lost. wakeScan short-circuits the
+// 5-min poll sleep; single-slot resolver coalesces mid-scan wakes.
+type WebhookAction = "opened" | "reopened";
+let pendingWebhookIssues = new Map<string, Map<number, WebhookAction>>();
+let wakeResolve: (() => void) | null = null;
+const wakeScan = (): void => {
+  if (!wakeResolve) return;
+  const r = wakeResolve;
+  wakeResolve = null;
+  r();
+};
+
+/** Action-aware dedup shared by webhook intake and drain. Reopened issues
+ * bypass the done-label + completed-row checks (a reopen means "fix was
+ * wrong") but keep the open-PR guard. Throws on gh/db failure — callers
+ * decide whether that means skip or process. */
+const eligibleForWebhookRun = async (
+  slug: string,
+  num: number,
+  action: WebhookAction,
+): Promise<boolean> => {
+  if (action === "reopened") {
+    return (await hasOpenPrForBranch(slug, fixBranchName(num))) !== true;
+  }
+  const run = await db.getRunByRepoIssue(slug, num);
+  const completedRun = run?.status === "completed";
+  return !(await shouldSkipIssue({ repoUrlOrSlug: slug, issueNumber: num, completedRun }));
+};
 
 const readVersion = (): string => {
   try {
@@ -123,6 +174,7 @@ async function bootWeb(port: number): Promise<BootedWeb> {
         pushState: (d) => web?.pushState(d),
         pushOutput: (role, text) => web?.pushOutput(role, text),
         pushAgentEvent: (role, ev) => web?.pushAgentEvent(role, ev),
+        pushFinal: (phase, prUrl) => web?.pushFinal(phase, prUrl),
       },
     };
   }
@@ -168,6 +220,23 @@ async function runSingleIssue(args: {
     if (ghInfo.ok) console.log("▶ GitHub: signed in as @" + ghInfo.username + " — starting run");
 
     issue = await fetchIssue(repo, issueNumber);
+
+    // 0.8: warn (don't block) when the issue already carries the done label —
+    // it may have been resolved elsewhere, but the user asked for this run.
+    try {
+      const { owner, repo: repoName } = splitRepoSlug(repo);
+      const alreadyDone = await hasIssueLabel(owner, repoName, issueNumber, ISSUE_LABEL_DONE);
+      if (alreadyDone) {
+        console.warn(
+          `⚠ Issue #${issueNumber} already has the \`${ISSUE_LABEL_DONE}\` label — it may already be fixed. Re-running anyway.`,
+        );
+        web?.pushNotice(`⚠ Issue #${issueNumber} already has \`${ISSUE_LABEL_DONE}\` — re-running anyway.`);
+      }
+    } catch (err: unknown) {
+      console.warn(
+        `[lifecycle] done-label check for #${issueNumber} failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   const ctx: RunContext = {
@@ -230,9 +299,10 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
       }
       watched.add(slug);
       stopRequested = false;
+      resetWorkerAbort();
       if (!daemonActive) {
         daemonActive = true;
-        void runDaemonLoop(watched, dryRun, effectiveBackend, web, webFeed).catch((err: unknown) => {
+        void runDaemonLoop(watched, dryRun, effectiveBackend, web, webFeed, port).catch((err: unknown) => {
           daemonActive = false;
           console.error(err);
           web?.pushNotice("Daemon crashed: " + (err instanceof Error ? err.message : err));
@@ -246,10 +316,59 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
     }
   };
 
+  /** Action-aware dedup shared by webhook intake and drain. Reopened issues
+   * bypass the done-label + completed-row checks (a reopen means "fix was
+   * wrong") but keep the open-PR guard. Throws on gh/db failure — callers
+   * decide whether that means skip or process. */
+  const onWebhook: WebhookHandler = async (headers, rawBody) => {
+    const secret = process.env.WEBHOOK_SECRET;
+    if (!secret) return { status: 503, body: { error: "webhook not configured" } };
+    const sigHeader = Array.isArray(headers["x-hub-signature-256"])
+      ? headers["x-hub-signature-256"][0]
+      : headers["x-hub-signature-256"];
+    if (!verifyWebhookSignature(rawBody, sigHeader, secret)) {
+      return { status: 401, body: { error: "invalid signature" } };
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawBody);
+    } catch {
+      return { status: 200, body: { ignored: true } };
+    }
+    const ev = parseIssueEvent(parsed);
+    if (!ev) return { status: 200, body: { ignored: true } };
+    // Whitelist against the LIVE watched set (repos can be added at runtime).
+    if (!watched.has(ev.slug)) return { status: 200, body: { ignored: true } };
+    try {
+      if (!(await eligibleForWebhookRun(ev.slug, ev.number, ev.action))) {
+        return { status: 200, body: { ignored: true } };
+      }
+    } catch {
+      // gh/db hiccup during intake — safest to ignore; the poll loop re-checks.
+      return { status: 200, body: { ignored: true } };
+    }
+    const bySlug = pendingWebhookIssues.get(ev.slug) ?? new Map<number, WebhookAction>();
+    bySlug.set(ev.number, ev.action);
+    pendingWebhookIssues.set(ev.slug, bySlug);
+    emitWakeupNonFatal("webhook", {
+      kind: "issue",
+      repo: ev.slug,
+      issue: ev.number,
+      action: ev.action,
+    });
+    wakeScan();
+    return { status: 200, body: { queued: true } };
+  };
+
   web = new WebDashboard(port, rootDir, startHandler, backend, () => {
     stopRequested = true;
-    web?.pushNotice("Stop requested — finishing current issue…");
-  });
+    const killed = killActiveWorkers();
+    web?.pushNotice(
+      killed > 0
+        ? `Stop requested — aborted current issue (${killed} worker${killed === 1 ? "" : "s"} killed).`
+        : "Stop requested — daemon stopping.",
+    );
+  }, onWebhook);
   const info = await web.start();
   if (info) {
     console.log(`\n▶ Dashboard: ${info.url} (live)`);
@@ -258,6 +377,7 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
       pushState: (d) => web?.pushState(d),
       pushOutput: (role, text) => web?.pushOutput(role, text),
       pushAgentEvent: (role, ev) => web?.pushAgentEvent(role, ev),
+      pushFinal: (phase, prUrl) => web?.pushFinal(phase, prUrl),
     };
   } else {
     console.log(`\n▶ Dashboard: (disabled: could not bind 127.0.0.1:${port})`);
@@ -281,12 +401,56 @@ async function runDaemonLoop(
   backend: Backend,
   web: WebDashboard | null,
   webFeed: WebFeed | undefined,
+  port: number,
 ): Promise<void> {
   let scanCycle = 0;
   try {
     while (!stopRequested) {
       scanCycle += 1;
       emitWakeupNonFatal("daemon", { kind: "scan", cycle: scanCycle });
+      // Drain webhook-queued issues first (hybrid trigger). Atomic swap so
+      // arrivals during the drain land in the fresh map for the next cycle
+      // instead of being lost. Drain-time re-check is authoritative.
+      const batch = pendingWebhookIssues;
+      pendingWebhookIssues = new Map();
+      for (const [slug, nums] of batch) {
+        if (stopRequested) break;
+        for (const [num, action] of nums) {
+          if (stopRequested) break;
+          let title = "";
+          if (!dryRun) {
+            try {
+              const issue = await fetchIssue(slug, num);
+              if (issue.state === "closed") {
+                web?.pushNotice(`Skipping webhook #${num} (closed since intake).`);
+                continue;
+              }
+              title = issue.title ?? "";
+              if (!(await eligibleForWebhookRun(slug, num, action))) {
+                web?.pushNotice(`Skipping webhook #${num} (already fixed).`);
+                continue;
+              }
+            } catch (err: unknown) {
+              web?.pushNotice(
+                `⚠ webhook re-check for #${num} failed: ${err instanceof Error ? err.message : err}`,
+              );
+              continue;
+            }
+          }
+          try {
+            const res = await runSingleIssueFromQueue(slug, num, title, dryRun, backend, web, webFeed);
+            if (res.status === "completed") {
+              web?.pushNotice(`✓ Webhook issue #${num} → PR: ${res.prUrl ?? "(none)"}`);
+            } else {
+              web?.pushNotice(`✗ Webhook issue #${num} failed: ${res.failure ?? res.status}`);
+            }
+          } catch (err: unknown) {
+            // Per-issue isolation: one bad issue never blocks the rest of the
+            // batch; the poll loop re-picks it if still eligible.
+            web?.pushNotice(`⛔ Webhook #${num} failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
       for (const slug of repos) {
         if (stopRequested) break;
         let issues: { number: number; title: string }[];
@@ -305,8 +469,7 @@ async function runDaemonLoop(
             try {
               const run = await db.getRunByRepoIssue(slug, num);
               const completedRun = run?.status === "completed";
-              const openPr = await hasOpenPrForBranch(slug, fixBranchName(num));
-              if (shouldSkipIssue({ completedRun, openPrOnBranch: openPr })) {
+              if (await shouldSkipIssue({ repoUrlOrSlug: slug, issueNumber: num, completedRun })) {
                 web?.pushNotice(`Skipping #${num} (already fixed).`);
                 continue;
               }
@@ -329,7 +492,7 @@ async function runDaemonLoop(
             web?.pushNotice(`⛔ #${num} failed: ${errMsg}`);
             // Check if this is a model limit error and POST to dashboard
             if (isModelLimitError(errMsg) && web) {
-              fetch("/api/model-limit-error", {
+              fetch(`http://127.0.0.1:${port}/api/model-limit-error`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -344,13 +507,25 @@ async function runDaemonLoop(
           }
         }
         web?.pushNotice(
-          `Scan ${slug} — ${issues.length} issue${issues.length === 1 ? "" : "s"} processed. Next scan in ${scanIntervalMinutes} min.`,
+          `Scan ${slug} — ${issues.length} issue${issues.length === 1 ? "" : "s"} processed.`,
         );
       }
-      const nextScanAt = Date.now() + scanIntervalMs;
-      while (!stopRequested && Date.now() < nextScanAt) {
-        await sleep(5000);
-      }
+      // Wakeable poll sleep: a webhook intake short-circuits the wait via
+      // wakeScan(); the timeout keeps the 5-min safety-net cadence. The
+      // dashboard gets the deadline for its live countdown.
+      web?.pushNextScanAt(Date.now() + scanIntervalMs);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          wakeResolve = null;
+          resolve();
+        }, scanIntervalMs);
+        wakeResolve = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+      wakeResolve = null;
+      web?.pushNextScanAt(null);
     }
   } finally {
     daemonActive = false;
@@ -370,6 +545,23 @@ async function runSingleIssueFromQueue(
   web?.pushNotice(`Fixing issue — #${num}: ${title}`);
   const issue = await fetchIssue(slug, num);
   const runId = newRunId();
+
+  // Session-level clone reuse (0.7): the first run for a repo clones into its
+  // runDir and records it here; later runs reuse that clone (fetch + worktree
+  // add — no second clone). Dry-run never clones, so the map is untouched.
+  // A stale entry (previous run failed before the clone materialized) self-heals
+  // via the `.git` existence check → fresh clone.
+  let sharedClone: string | undefined;
+  if (!dryRun) {
+    const known = sessionClones.get(slug);
+    if (known && existsSync(join(known, ".git"))) {
+      sharedClone = known;
+    } else {
+      sessionClones.set(slug, join(rootDir, ".runs", runId, "repo"));
+      sharedClone = undefined;
+    }
+  }
+
   const ctx: RunContext = {
     runId,
     issue,
@@ -381,7 +573,24 @@ async function runSingleIssueFromQueue(
     branch: fixBranchName(num),
     dryRun,
     backend,
+    cloneDir: sharedClone,
   };
+
+  // Issue lifecycle mark-started (0.1): non-fatal and dry-run safe. A gh
+  // failure here only warns — it must never abort the run.
+  if (!dryRun) {
+    const { owner, repo } = splitRepoSlug(slug);
+    try {
+      await ensureLabels(owner, repo, [ISSUE_LABEL_IN_PROGRESS, ISSUE_LABEL_DONE]);
+      await addIssueLabel(owner, repo, num, ISSUE_LABEL_IN_PROGRESS);
+      await commentOnIssue(owner, repo, num, `Started managed run \`${runId}\` (backend: ${backend}).`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[lifecycle] mark-started #${num} failed (non-fatal): ${msg}`);
+      web?.pushNotice(`⚠ lifecycle mark-started failed (non-fatal): ${msg}`);
+    }
+  }
+
   const s = await runOrchestrator(ctx, { interactive: false, web: webFeed });
   console.log("\n┌─ Issue #" + num + " finished ───────────────────────");
   console.log(`│ status:      ${s.status}`);
@@ -390,6 +599,13 @@ async function runSingleIssueFromQueue(
   console.log(`│ total cost:  $${s.totalCostUsd.toFixed(4)}`);
   if (s.failure) console.log(`│ failure:     ${s.failure}`);
   console.log("└─────────────────────────────────────────────");
+
+  if (webFeed?.pushFinal) {
+    const phase: DashboardState["phase"] =
+      s.status === "completed" ? "done" : s.status === "aborted" ? "aborted" : "failed";
+    webFeed.pushFinal(phase, s.prUrl);
+  }
+
   return { status: s.status, prUrl: s.prUrl, failure: s.failure };
 }
 

@@ -5,23 +5,27 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { DashboardState } from "../tui/dashboard.js";
-import type { Backend, Role } from "../types.js";
-import { ghAuthInfo, type GhAuthInfo } from "../github/gh.js";
-import { startDeviceLogin, pollDeviceToken, storeGhToken } from "../github/gh.js";
+import type { DashboardState } from "../tui/dashboard.ts";
+import type { Backend, Role } from "../types.ts";
+import { ghAuthInfo, type GhAuthInfo } from "../github/gh.ts";
+import { startDeviceLogin, pollDeviceToken, storeGhToken } from "../github/gh.ts";
 import {
   availableModels,
   BACKENDS,
   getModelOverrides,
   setModelOverride,
   saveModelOverrides,
-} from "../models/modelPolicy.js";
+} from "../models/modelPolicy.ts";
+
+export interface WebhookResponse { status: number; body?: unknown }
+export type WebhookHandler = (headers: Record<string, string | string[] | undefined>, rawBody: string) => Promise<WebhookResponse>;
 
 const DEFAULT_PORT = 3456;
 const HOST = "127.0.0.1";
 const MAX_CHUNKS = 200;
 const MAX_BYTES = 30 * 1024;
 const HEARTBEAT_MS = 25_000;
+const WEBHOOK_MAX_BYTES = 256 * 1024;
 
 interface SseClient {
   res: ServerResponse;
@@ -44,9 +48,11 @@ export class WebDashboard {
   private readonly rootDir: string;
   private onStartRequest: ((repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
   private onStopRequest: (() => void) | null = null;
+  private onWebhook: WebhookHandler | null = null;
   private runActive = false;
   private stopRequested = false;
   private notice: string | null = null;
+  private nextScanAt: number | null = null;
   private errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }> = [];
   private loginInProgress = false;
   private backend: Backend = "opencode";
@@ -64,12 +70,14 @@ export class WebDashboard {
     onStartRequest?: (repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>,
     initialBackend: Backend = "opencode",
     onStopRequest: (() => void) | null = null,
+    onWebhook?: WebhookHandler,
   ) {
     this.port = port;
     this.rootDir = rootDir;
     this.onStartRequest = onStartRequest ?? null;
     this.backend = initialBackend;
     this.onStopRequest = onStopRequest;
+    this.onWebhook = onWebhook ?? null;
   }
 
   /** Bind the HTTP server. Resolves `null` (never throws) when the port is unavailable. */
@@ -120,6 +128,7 @@ export class WebDashboard {
   pushFinal(phase: DashboardState["phase"], prUrl?: string): void {
     if (!this.dash) return;
     this.runActive = false;
+    this.stopRequested = false;
     this.dash.phase = phase;
     if (prUrl !== undefined) this.dash.prUrl = prUrl;
     this.lastEventId += 1;
@@ -136,6 +145,13 @@ export class WebDashboard {
   /** Store a status/notice line and broadcast it with the state snapshot. */
   pushNotice(msg: string): void {
     this.notice = msg;
+    this.lastEventId += 1;
+    this.broadcast(this.lastEventId, "state", this.snapshot());
+  }
+
+  /** Publish/clear the next daemon scan deadline (epoch ms) for the live countdown. */
+  pushNextScanAt(ts: number | null): void {
+    this.nextScanAt = ts;
     this.lastEventId += 1;
     this.broadcast(this.lastEventId, "state", this.snapshot());
   }
@@ -200,41 +216,57 @@ export class WebDashboard {
     agentEvents: Record<Role, Record<string, unknown>[]>;
     gh: GhAuthInfo | null;
     notice: string | null;
+    nextScanAt: number | null;
     runActive: boolean;
     queueMode: boolean;
     backend: Backend;
     stopRequested: boolean;
     errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }>;
   } {
-    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.backend, stopRequested: this.stopRequested, errorLog: this.errorLog };
+    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, nextScanAt: this.nextScanAt, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.backend, stopRequested: this.stopRequested, errorLog: this.errorLog };
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
-    if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/start") {
-      this.handleStart(req, res);
+    const path = new URL(req.url ?? "/", `http://${HOST}`).pathname;
+    if (req.method === "OPTIONS") {
+      this.handlePreflight(req, res);
       return;
     }
-    if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/stop") {
-      this.handleStop(res);
-      return;
-    }
-    if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/login") {
-      this.handleLogin(res);
-      return;
-    }
-    if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/models") {
-      this.handleModels(req, res);
-      return;
-    }
-    if (req.method === "POST" && new URL(req.url ?? "/", `http://${HOST}`).pathname === "/api/backend") {
-      this.handleBackend(req, res);
-      return;
+    if (req.method === "POST") {
+      if (path === "/webhook") {
+        this.handleWebhook(req, res);
+        return;
+      }
+      if (!this.guardMutation(req, res)) return;
+      if (path === "/api/start") {
+        this.handleStart(req, res);
+        return;
+      }
+      if (path === "/api/stop") {
+        this.handleStop(res);
+        return;
+      }
+      if (path === "/api/login") {
+        this.handleLogin(res);
+        return;
+      }
+      if (path === "/api/models") {
+        this.handleModels(req, res);
+        return;
+      }
+      if (path === "/api/backend") {
+        this.handleBackend(req, res);
+        return;
+      }
+      if (path === "/api/model-limit-error") {
+        this.handleModelLimitError(req, res);
+        return;
+      }
     }
     if ((req.method ?? "GET") !== "GET") {
       this.sendJson(res, 404, { error: "not found" });
       return;
     }
-    const path = new URL(req.url ?? "/", `http://${HOST}`).pathname;
     if (path === "/") {
       this.sendHtml(res);
       return;
@@ -271,7 +303,7 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/model-limit-error") {
-      this.handleModelLimitError(req, res);
+      this.sendJson(res, 200, { ok: true, errorLog: this.errorLog });
       return;
     }
     if (path === "/api/session-log") {
@@ -279,6 +311,49 @@ export class WebDashboard {
       return;
     }
     this.sendJson(res, 404, { error: "not found" });
+  }
+
+  /** Answer CORS preflight so a browser can still POST after the JSON-only rule below. */
+  private handlePreflight(req: IncomingMessage, res: ServerResponse): void {
+    const origin = req.headers.origin;
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": origin ?? "*",
+      "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    });
+    res.end();
+  }
+
+  /** CSRF guard: mutating POSTs must be JSON and come from the local dashboard host. */
+  private guardMutation(req: IncomingMessage, res: ServerResponse): boolean {
+    const origin = req.headers.origin;
+    if (origin !== undefined) {
+      let o: URL;
+      try {
+        o = new URL(origin);
+      } catch {
+        this.sendJson(res, 403, { ok: false, error: "forbidden: bad Origin header" });
+        return false;
+      }
+      if (o.hostname !== HOST && o.hostname !== "localhost") {
+        this.sendJson(res, 403, { ok: false, error: "forbidden: origin not allowed" });
+        return false;
+      }
+    }
+    const host = req.headers.host ?? "";
+    const hostName = host.split(":")[0];
+    if (hostName !== HOST && hostName !== "localhost") {
+      this.sendJson(res, 403, { ok: false, error: "forbidden: bad Host header" });
+      return false;
+    }
+    const rawCt = req.headers["content-type"];
+    const ct = (Array.isArray(rawCt) ? rawCt[0] : rawCt) ?? "";
+    if (ct.split(";")[0].trim() !== "application/json") {
+      this.sendJson(res, 415, { ok: false, error: "content-type must be application/json" });
+      return false;
+    }
+    return true;
   }
 
   private handleStart(req: IncomingMessage, res: ServerResponse): void {
@@ -353,11 +428,53 @@ export class WebDashboard {
   }
 
   private handleStop(res: ServerResponse): void {
+    if (!this.onStopRequest) {
+      this.sendJson(res, 200, { ok: false, error: "no run to stop" });
+      return;
+    }
+    this.runActive = false;
     this.stopRequested = true;
-    this.onStopRequest?.();
+    this.onStopRequest();
     this.lastEventId += 1;
     this.broadcast(this.lastEventId, "state", this.snapshot());
     this.sendJson(res, 200, { ok: true });
+  }
+
+  private handleWebhook(req: IncomingMessage, res: ServerResponse): void {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let done = false;
+    req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > WEBHOOK_MAX_BYTES) {
+        done = true;
+        this.sendJson(res, 413, { error: "body too large" });
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (done) return;
+      const rawBody = Buffer.concat(chunks).toString("utf8");
+      if (!this.onWebhook) {
+        this.sendJson(res, 503, { error: "webhook not configured" });
+        return;
+      }
+      void this.onWebhook(req.headers as Record<string, string | string[] | undefined>, rawBody)
+        .then((result) => {
+          this.sendJson(res, result.status, result.body ?? { ok: true });
+        })
+        .catch((err) => {
+          this.sendJson(res, 500, { error: String(err instanceof Error ? err.message : err) });
+        });
+    });
+    req.on("error", () => {
+      if (!done) {
+        done = true;
+        this.sendJson(res, 400, { error: "request error" });
+      }
+    });
   }
   private handleModelLimitError(req: IncomingMessage, res: ServerResponse): void {
     const chunks: Buffer[] = [];
@@ -446,7 +563,7 @@ export class WebDashboard {
         this.sendJson(res, 400, { ok: false, error: "invalid role" });
         return;
       }
-      if (typeof model !== "string" || !availableModels(backend).includes(model)) {
+      if (typeof model !== "string" || !model.trim()) {
         this.sendJson(res, 400, { ok: false, error: "invalid model" });
         return;
       }
@@ -460,8 +577,23 @@ export class WebDashboard {
         this.sendJson(res, 400, { ok: false, error: String(err instanceof Error ? err.message : err) });
         return;
       }
-      saveModelOverrides(join(this.rootDir, "models.json"));
-      this.sendJson(res, 200, { ok: true, models: getModelOverrides()[backend] ?? {} });
+      try {
+        saveModelOverrides(join(this.rootDir, "models.json"));
+      } catch (err) {
+        this.sendJson(res, 500, {
+          ok: false,
+          error: "failed to persist model overrides: " + String(err instanceof Error ? err.message : err),
+        });
+        return;
+      }
+      const models = getModelOverrides()[backend] ?? {};
+      this.lastEventId += 1;
+      this.broadcast(this.lastEventId, "models", {
+        backend,
+        models,
+        available: [...availableModels(backend)],
+      });
+      this.sendJson(res, 200, { ok: true, models });
     });
     req.on("error", () => {
       if (!done) {
@@ -499,6 +631,10 @@ export class WebDashboard {
       const backend = (body as { backend?: unknown }).backend;
       if (typeof backend !== "string" || !(BACKENDS as readonly string[]).includes(backend)) {
         this.sendJson(res, 400, { ok: false, error: `invalid backend; must be one of: ${BACKENDS.join(", ")}` });
+        return;
+      }
+      if (this.runActive) {
+        this.sendJson(res, 409, { ok: false, error: "a run is in progress; cannot change backend" });
         return;
       }
       this.backend = backend as Backend;
@@ -762,6 +898,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   <button id="startbtn">Start</button>
   <button id="stopbtn" disabled style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Stop</button>
   <span id="notice" class="meta" style="flex-basis:100%"></span>
+  <span id="scantimer" class="meta" style="flex-basis:100%;color:var(--accent)"></span>
   <span class="meta" style="flex-basis:100%;display:block;margin-top:4px">Backend:
     <button class="backend-btn" data-backend="opencode" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenCode</button>
     <button class="backend-btn" data-backend="claude" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Claude</button>
@@ -801,7 +938,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       <div id="sessionlog-content" class="empty">No session started yet.</div>
     </div>
     <div id="errorlog-tab" class="tab-content">
-      <div class="empty" style="padding: 20px; text-align: center;">No model limit errors.</div>
+      <div id="errorlog-empty" class="empty" style="padding: 20px; text-align: center;">No model limit errors.</div>
       <div id="errorlog-content" style="overflow-y: auto; height: 300px; padding: 12px;"></div>
     </div>
   </div>
@@ -814,10 +951,23 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   var dash = null, log = [], es = null, pollT = null, stick = true;
   var connEl = null, logEl = null, metaEl = null;
   var noticeEl = null, runActive = false;
+  var scantimerEl = null, nextScanAt = null;
+  function renderScanTimer() {
+    if (!scantimerEl) return;
+    if (!nextScanAt) { scantimerEl.textContent = ""; return; }
+    var ms = nextScanAt - Date.now();
+    if (ms <= 0) { scantimerEl.textContent = "⏳ Next scan due…"; return; }
+    var totalSec = Math.floor(ms / 1000);
+    var m = Math.floor(totalSec / 60), s = totalSec % 60;
+    scantimerEl.textContent = "⏳ Next scan in " + m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  setInterval(renderScanTimer, 1000);
   var stopRequested = false;
   var queueMode = false, modelsLoaded = false;
   var backend = "opencode", backends = ["opencode", "claude", "codex"];
   var agentEvents = {};
+  var errorLog = [], logSeeded = false;
+  var reconnectT = null, sseRetries = 0, modelsRetryT = null;
   var curTab = "transcript";
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -865,7 +1015,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     var b = $("stopbtn");
     if (!b) return;
     if (runActive || stopRequested) {
-      b.textContent = "Stopping after current run…";
+      b.textContent = stopRequested ? "Stopping…" : "Stop";
       b.disabled = stopRequested;
     } else {
       b.textContent = "Stop";
@@ -874,9 +1024,19 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   }
   function requestStop() {
     if (stopRequested) return;
+    var resolving = false;
+    if (dash && dash.agents) {
+      ROLES.forEach(function (r) {
+        if (dash.agents[r] && dash.agents[r].state === "running") resolving = true;
+      });
+    }
+    var msg = resolving
+      ? "⚠ An issue is currently being resolved. Do you really want to stop now?"
+      : "Do you want to stop?";
+    if (!confirm(msg)) return;
     stopRequested = true;
     renderStop();
-    fetch("/api/stop", { method: "POST" })
+    fetch("/api/stop", { method: "POST", headers: { "Content-Type": "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok) renderNotice((d && d.error) || "stop failed");
@@ -929,7 +1089,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     var banner = $("ghbanner"), err = $("gherr");
     err.textContent = "Starting login…";
     $("ghlogin").disabled = true;
-    fetch("/api/login", { method: "POST" })
+    fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         $("ghlogin").disabled = false;
@@ -955,13 +1115,15 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
         err.textContent = "login failed — network error";
       });
   }
-  function fmtCost(c) { return c == null ? "" : "$" + c.toFixed(4); }
+  function fmtCost(c) { var n = Number(c); return c == null || !isFinite(n) ? "" : "$" + n.toFixed(4); }
   function fmtTokens(t) {
     if (!t) return "";
     var parts = [];
     if (t.input) parts.push("in:" + t.input.toLocaleString());
     if (t.output) parts.push("out:" + t.output.toLocaleString());
     if (t.reasoning) parts.push("r:" + t.reasoning.toLocaleString());
+    if (t.cached) parts.push("cached:" + t.cached.toLocaleString());
+    if (t.cacheWrite) parts.push("cacheW:" + t.cacheWrite.toLocaleString());
     if (t.total) parts.push("total:" + t.total.toLocaleString());
     return parts.length ? parts.join(" ") + " tok" : "";
   }
@@ -997,44 +1159,50 @@ function fetchSessionLog() {
       })
        .catch(function () { el.textContent = "Error loading SESSION_LOG.md"; });
    }
+   function renderErrorLog() {
+    var box = $("errorlog-content"), empty = $("errorlog-empty");
+    if (!box) return;
+    if (empty) empty.hidden = errorLog.length > 0;
+    box.innerHTML = "";
+    if (!errorLog.length) {
+      var none = document.createElement("div");
+      none.className = "empty";
+      none.style.padding = "20px";
+      none.style.textAlign = "center";
+      none.textContent = "No model limit errors.";
+      box.appendChild(none);
+      return;
+    }
+    errorLog.forEach(function (err) {
+      var div = document.createElement("div");
+      div.style = "margin-bottom: 8px; padding: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 4px;";
+      var strong = document.createElement("strong");
+      strong.textContent = "[" + (err.type || "error") + "] ";
+      div.appendChild(strong);
+      var span = document.createElement("span");
+      span.textContent = err.message;
+      div.appendChild(span);
+      if (err.issue !== undefined) {
+        var issueSpan = document.createElement("span");
+        issueSpan.textContent = " Issue #" + err.issue;
+        div.appendChild(issueSpan);
+      }
+      var timeSpan = document.createElement("span");
+      timeSpan.style = "color: var(--muted); font-size: 11px;";
+      timeSpan.textContent = " @ " + new Date(err.timestamp).toLocaleTimeString();
+      div.appendChild(timeSpan);
+      box.appendChild(div);
+    });
+  }
    function fetchErrorLog() {
-    var el = $("errorlog-content");
-    if (!el) return;
-    el.textContent = "Loading…";
+    if (curTab !== "errorlog") return;
+    if (errorLog.length) { renderErrorLog(); return; }
     fetch("/api/model-limit-error").then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || d.ok) {
-          var errors = el;
-          errors.textContent = "";
-          // Render error log entries from dashboard state
-          // Errors are available via SSE state
-          if (window.dashboardState && window.dashboardState.errorLog) {
-            window.dashboardState.errorLog.forEach(function (err) {
-              var div = document.createElement("div");
-              div.style = "margin-bottom: 8px; padding: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 4px;";
-              var strong = document.createElement("strong");
-              strong.textContent = "[" + err.type + "] ";
-              div.appendChild(strong);
-              var span = document.createElement("span");
-              span.textContent = err.message;
-              div.appendChild(span);
-              if (err.issue !== undefined) {
-                var issueSpan = document.createElement("span");
-                issueSpan.textContent = " Issue #" + err.issue;
-                div.appendChild(issueSpan);
-              }
-              var timeSpan = document.createElement("span");
-              timeSpan.style = "color: var(--muted); font-size: 11px;";
-              timeSpan.textContent = " @ " + new Date(err.timestamp).toLocaleTimeString();
-              div.appendChild(timeSpan);
-              errors.appendChild(div);
-            });
-          }
-        } else {
-          el.textContent = "Error loading error log: " + (d && d.error);
-        }
+        if (d && Array.isArray(d.errorLog)) errorLog = d.errorLog;
+        renderErrorLog();
       })
-       .catch(function () { el.textContent = "Error loading error log"; });
+      .catch(function () { renderErrorLog(); });
    }
    function setModelSelectsDisabled(disabled) {
      ROLES.forEach(function (r) {
@@ -1093,22 +1261,32 @@ function fetchSessionLog() {
        if (msg) msg.textContent = "update failed — network error";
      });
    }
-   function fetchModels() {
-     fetch("/api/models?backend=" + encodeURIComponent(backend)).then(function (r) { return r.json(); })
-       .then(function (d) { renderModels(d); })
-       .catch(function () { });
-   }
-   function syncModelsPanel() {
-     var p = $("modelspanel");
-     if (!p) return;
-     p.hidden = !queueMode;
-     if (queueMode && !modelsLoaded) {
-       modelsLoaded = true;
-       fetchModels();
-     }
-     setModelSelectsDisabled(runActive);
-     renderBackend();
-   }
+function fetchModels() {
+      fetch("/api/models?backend=" + encodeURIComponent(backend)).then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
+          renderModels(d);
+        })
+        .catch(function () {
+          if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
+          modelsRetryT = setTimeout(fetchModels, 2000);
+        });
+    }
+function syncModelsPanel() {
+      var p = $("modelspanel");
+      if (!p) return;
+      p.hidden = !queueMode;
+      if (queueMode && !modelsLoaded) {
+        modelsLoaded = true;
+        fetchModels();
+      }
+      setModelSelectsDisabled(runActive);
+      renderBackend();
+    }
+   function syncStartPanel() {
+      var sp = $("startpanel");
+      if (sp) sp.hidden = !queueMode;
+    }
    function renderMeta() {
     if (!dash) {
       metaEl.textContent = "phase not started · waiting for GitHub auth / run start";
@@ -1186,13 +1364,6 @@ function fetchSessionLog() {
       });
       html += "</div>";
     });
-    if (log.length) {
-      html += '<hr style="border-color:var(--border)">';
-      log.forEach(function (L) {
-        html += '<div class="line"><span class="lrole l-' + L.r + '">' +
-          esc(L.r) + "</span><span>" + esc(L.t) + "</span></div>";
-      });
-    }
     box.innerHTML = html;
     if (stick) box.scrollTop = box.scrollHeight;
   }
@@ -1205,21 +1376,34 @@ function fetchSessionLog() {
   function formatAgentEvent(ev) {
     var type = ev.type || "unknown";
     var part = ev.part || {};
+    if (type === "step_start") return "";
     var html = '<div class="activity-item"><span class="a-type">' + esc(type) + '</span>';
     if (type === "text" && typeof part.text === "string") {
       html += '<div class="a-text">' + esc(part.text.slice(0, 500)) + '</div>';
-    } else if (type === "tool_call" || (part && part.type === "tool_call")) {
-      var name = part.name || part.toolName || "";
+    } else if (type === "tool_use" || part.type === "tool") {
+      var name = "⚙ " + (part.tool || "");
       html += ' <span class="a-tool">' + esc(name) + '</span>';
-      if (part.input) html += '<div class="a-text">' + esc(JSON.stringify(part.input).slice(0, 300)) + '</div>';
-    } else if (type === "tool_result" || part.type === "tool_result") {
-      var success = part.success !== false;
-      html += ' <span class="a-result">' + (success ? "✓" : "✗") + '</span>';
-      if (part.output) html += '<div class="a-text">' + esc(String(part.output).slice(0, 300)) + '</div>';
-    } else if (type === "step_finish" || type === "step_start") {
-      html += '<div class="a-text">' + esc(JSON.stringify(part).slice(0, 300)) + '</div>';
+      var status = part.state && part.state.status === "completed" ? "✓" : "✗";
+      html += ' <span class="a-result">' + status + '</span>';
+      var input = part.state && part.state.input || {};
+      var preview = input.command || input.filePath || input.pattern || input.url || input.query || "";
+      if (!preview && Object.keys(input).length) {
+        try { preview = JSON.stringify(input); } catch (_) { preview = ""; }
+      }
+      if (preview) html += '<div class="a-text">' + esc(preview.slice(0, 120)) + '</div>';
+      if (status === "✗" && part.state && part.state.output) {
+        html += '<div class="a-text">' + esc(String(part.state.output).slice(0, 200)) + '</div>';
+      }
+    } else if (type === "step_finish") {
+      var tokens = part.tokens || {};
+      var cost = typeof part.cost === "number" ? part.cost : 0;
+      var summary = "";
+      if (tokens.input) summary += "in " + tokens.input;
+      if (tokens.output) summary += (summary ? " · " : "") + "out " + tokens.output;
+      if (cost) summary += (summary ? " · " : "") + "$" + cost.toFixed(6);
+      if (summary) html += ' <span class="a-result">·</span> ' + esc(summary);
     } else {
-      html += '<code>' + esc(JSON.stringify(part).slice(0, 200)) + '</code>';
+      html += '<code>' + esc(JSON.stringify(part).slice(0, 120)) + '</code>';
     }
     html += '</div>';
     return html;
@@ -1231,14 +1415,23 @@ function fetchSessionLog() {
       agentEvents = s.agentEvents;
       if (curTab === "transcript") renderAgentEvents();
     }
-    if (s.outputs) {
+    if (s.outputs && !logSeeded) {
       log = [];
       ROLES.forEach(function (r) {
         (s.outputs[r] || []).forEach(function (chunk) {
-          pushText(r, chunk);
+          String(chunk).split(String.fromCharCode(10)).forEach(function (t) {
+            if (t === "") return;
+            log.push({ r: r, t: t });
+            if (log.length > 200) log.shift();
+          });
         });
       });
+      logSeeded = true;
       renderLog();
+    }
+    if (Array.isArray(s.errorLog)) {
+      errorLog = s.errorLog;
+      if (curTab === "errorlog") renderErrorLog();
     }
     if (typeof s.runActive === "boolean") runActive = s.runActive;
     if (typeof s.queueMode === "boolean") queueMode = s.queueMode;
@@ -1249,8 +1442,15 @@ function fetchSessionLog() {
       if (prev !== backend && modelsLoaded) fetchModels();
     }
     if (typeof s.notice !== "undefined") renderNotice(s.notice);
+    if (typeof s.nextScanAt !== "undefined") { nextScanAt = s.nextScanAt; renderScanTimer(); }
     renderStop();
     syncModelsPanel();
+    syncStartPanel();
+  }
+  function resync() {
+    fetch("/api/state").then(function (r) { return r.json(); })
+      .then(function (s) { applyState(s); })
+      .catch(function () { });
   }
   function startQueue() {
     if (runActive) return;
@@ -1267,17 +1467,24 @@ function fetchSessionLog() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repo: value, backend: backend })
-    }).then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && d.ok) {
-          renderNotice("Queue started…");
-        } else {
-          runActive = false;
-          stopRequested = false;
-          renderStop();
-          renderNotice((d && d.error) || "start failed");
-        }
-      })
+    }).then(function (r) {
+      if (r.status >= 400) {
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          return { ok: false, error: (d && d.error) || "start rejected (" + r.status + ")" };
+        });
+      }
+      return r.json();
+    }).then(function (d) {
+      if (d && d.ok) {
+        renderNotice("Queue started…");
+      } else {
+        runActive = false;
+        stopRequested = false;
+        renderStop();
+        renderNotice((d && d.error) || "start failed");
+        resync();
+      }
+    })
       .catch(function () {
         runActive = false;
         stopRequested = false;
@@ -1288,22 +1495,45 @@ function fetchSessionLog() {
   function stopPoll() { if (pollT) { clearInterval(pollT); pollT = null; } }
   function startPoll() {
     stopPoll();
+    if (reconnectT) { clearTimeout(reconnectT); reconnectT = null; }
     setConn(false, "reconnecting (polling)");
+    logSeeded = false;
     pollT = setInterval(function () {
       fetch("/api/state").then(function (r) { return r.json(); })
         .then(function (s) { applyState(s); })
         .catch(function () { });
     }, 2000);
   }
+  function parseEv(e) {
+    try { return JSON.parse(e.data); } catch (err) { return null; }
+  }
   function startSSE() {
     if (es) { es.close(); es = null; }
     es = new EventSource("/api/events");
-    es.addEventListener("snapshot", function (e) { applyState(JSON.parse(e.data)); });
-    es.addEventListener("state", function (e) { applyState(JSON.parse(e.data)); });
-    es.addEventListener("gh", function (e) { renderGh(JSON.parse(e.data)); });
+    es.addEventListener("snapshot", function (e) {
+      var d = parseEv(e);
+      if (d) { logSeeded = false; applyState(d); }
+    });
+    es.addEventListener("state", function (e) {
+      var d = parseEv(e);
+      if (d) applyState(d);
+    });
+    es.addEventListener("gh", function (e) {
+      var d = parseEv(e);
+      if (d) renderGh(d);
+    });
+    es.addEventListener("models", function (e) {
+      var d = parseEv(e);
+      if (!d) return;
+      if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
+      modelsLoaded = true;
+      if (d.backend && backends.indexOf(d.backend) !== -1) backend = d.backend;
+      renderModels(d);
+      renderBackend();
+    });
     es.addEventListener("backend", function (e) {
-      var d = JSON.parse(e.data);
-      if (d.backend && backends.indexOf(d.backend) !== -1) {
+      var d = parseEv(e);
+      if (d && d.backend && backends.indexOf(d.backend) !== -1) {
         var prev = backend;
         backend = d.backend;
         renderBackend();
@@ -1311,24 +1541,32 @@ function fetchSessionLog() {
       }
     });
     es.addEventListener("output", function (e) {
-      var d = JSON.parse(e.data);
-      pushText(d.role, d.text);
+      var d = parseEv(e);
+      if (d) pushText(d.role, d.text);
     });
     es.addEventListener("agent-event", function (e) {
-      var d = JSON.parse(e.data);
-      pushAgentEvent(d.role, d.event);
+      var d = parseEv(e);
+      if (d) pushAgentEvent(d.role, d.event);
     });
-    es.onopen = function () { setConn(true, "live"); };
+    es.onopen = function () {
+      setConn(true, "live");
+      stopPoll();
+      sseRetries = 0;
+    };
     es.onerror = function () {
       setConn(false, "reconnecting…");
       if (es) { es.close(); es = null; }
-      startPoll();
+      if (reconnectT) { clearTimeout(reconnectT); reconnectT = null; }
+      if (sseRetries >= 5) { startPoll(); return; }
+      sseRetries += 1;
+      reconnectT = setTimeout(startSSE, 2000);
     };
   }
   function onLoad() {
-    connEl = $("conn"); logEl = $("log"); metaEl = $("meta"); noticeEl = $("notice");
+    connEl = $("conn"); logEl = $("log"); metaEl = $("meta"); noticeEl = $("notice"); scantimerEl = $("scantimer");
     renderMeta();
     renderStop();
+    syncStartPanel();
     $("ghrecheck").addEventListener("click", fetchGh);
     $("ghlogin").addEventListener("click", startLogin);
     $("ghcodecopy").addEventListener("click", function () {

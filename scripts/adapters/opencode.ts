@@ -41,6 +41,7 @@ export const opencodeAdapter: Adapter = (config: CanonicalConfig): GeneratedFile
     ...(config.schema ? { $schema: config.schema } : {}),
     agent,
     ...(config.globalPermission ? { permission: config.globalPermission } : {}),
+    ...(config.tool_output ? { tool_output: config.tool_output } : {}),
     plugin: [SOR_HOOK_PLUGIN],
   };
 

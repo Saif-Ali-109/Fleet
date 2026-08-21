@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { planRoute, MAX_IMPL_ITERATIONS } from "../router.js";
-import type { Issue } from "../types.js";
+import { planRoute, MAX_IMPL_ITERATIONS } from "../router.ts";
+import type { Issue } from "../types.ts";
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
   return {

@@ -1,8 +1,8 @@
 // Canonical JSON + HMAC-SHA256 hash chaining for the signed System of Record.
 
 import { createHmac } from "node:crypto";
-import type { SorEvent } from "./events.js";
-import { eventToRecord } from "./events.js";
+import type { SorEvent } from "./events.ts";
+import { eventToRecord } from "./events.ts";
 
 export const GENESIS_HASH = "6d756c74692d6f726368657374726174696f6e2d736f722d67656e65736973";
 

@@ -3,7 +3,7 @@ description: >-
   Read-only fix designer. Emits a JSON Plan (approach, steps, filesToChange,
   testsToAddOrUpdate, acceptanceCriteria, outOfScope).
 mode: all
-model: opencode/big-pickle
+model: opencode/x-preview-f-free
 claude_model: sonnet
 codex_model: gpt-5.1-codex
 codex_reasoning_effort: medium

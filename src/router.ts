@@ -1,4 +1,4 @@
-import type { Issue, Role } from "./types.js";
+import type { Issue, Role } from "./types.ts";
 
 export type StepKind = "single" | "parallel" | "loop";
 

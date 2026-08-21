@@ -7,8 +7,8 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
-import { pool } from "../db/client.js";
-import { ensureChain, syncAgentRegistry, type AgentRegistryRow } from "../db/audit.js";
+import { pool } from "../db/client.ts";
+import { ensureChain, syncAgentRegistry, type AgentRegistryRow } from "../db/audit.ts";
 
 const AGENTS_DIR = join(process.cwd(), "agents");
 const GLOBAL_FILE = "_global.md";

@@ -1,117 +1,61 @@
 # Multi-Orchestration
 
-TypeScript Manager (not an LLM) driving 6 headless `opencode` workers to take
-a GitHub issue to a real PR, gated by 3 human approvals.
+TypeScript Manager (not an LLM) driving 6 headless `opencode` workers to take a GitHub issue to a real PR, gated by 3 human approvals.
 
 ## Stack
 
-Node >=22, TypeScript, `tsx`, `vitest`. Dashboard = hand-rolled `node:http`.
-
-## Layout
-
-- `src/orchestrator.ts` — Manager: routing, 3 gates, git worktrees.
-- `src/agentRunner.ts` — spawns headless `opencode run` workers, parses NDJSON.
-- `src/models/modelPolicy.ts` — authoritative model tiers + fallback pool;
-  overrides `opencode.json`'s model at spawn via `-m`.
-- `agents/<role>.md` — single canonical source for every fleet role; frontmatter
-  = config, body = prompt verbatim. `agents/_global.md` = non-per-agent keys.
-- `scripts/generate-configs.ts` — runs adapters in `scripts/adapters/` against
-  `agents/*.md` → each tool's native format:
-  - `scripts/adapters/opencode.ts` → `opencode.json` (inline `agent` block;
-    must stay inline for `OPENCODE_CONFIG` discovery from foreign worktrees)
-  - `scripts/adapters/claude-code.ts` → `.claude/agents/<role>.md`
-  - `scripts/adapters/codex.ts` → `.codex/agents/<role>.toml`
-  New CLI agent = one adapter implementing `Adapter` (`scripts/lib/adapter.ts`),
-  registered in `scripts/generate-configs.ts`.
-
-## Rules file
-
-`AGENTS.md` is canonical. Codex/OpenCode read it directly; Claude Code reads
-`CLAUDE.md`, a **symlink** to `AGENTS.md` — never replace it with a real file
-or add content only to `CLAUDE.md`.
-
-## Critical rules
-
-- Never hand-edit generated configs (`opencode.json`, `.claude/agents/*.md`,
-  `.codex/agents/*.toml`). Edit `agents/<role>.md`, run `npm run build:config`,
-  commit both. CI fails the build on drift.
-- Per-tool fields (`codex_model`, `codex_reasoning_effort`, `claude_model`) are
-  opt-in, only in that tool's output when set. Never infer a Claude/Codex model
-  id from opencode's `model` field — different providers, silent mismapping is
-  wrong.
-- `src/*` is plain TypeScript, not an LLM — never add model calls to
-  `orchestrator.ts`; only the 6 spawned workers call models.
-- coder/tester must never `git push`; pr must never merge. **Prompt-enforced,
-  not permission-enforced** — preserve when editing those prompts.
-- Workers run in isolated git worktrees; never touch files outside their
-  assigned worktree.
-- `gh` auth required for real PRs. `--dry-run` stubs every worker (no `gh`, no
-  spawns) — don't assume it exercises real spawns.
+Node ≥22, TypeScript, `tsx`, `vitest`. Dashboard = hand-rolled `node:http`.
 
 ## Commands
 
-- `npm start -- --repo <url> --issue <n>` — one issue → PR.
-- `npm run dry` — no tokens/API calls, stubs workers.
-- `npm run build:config` / `npm run check:config` — regenerate / verify
-  generated configs from `agents/*.md`.
-- `npm test` — vitest.
+- `npm start -- --repo <url> --issue <n>` — one issue → PR
+- `npm run dry` — no tokens/API calls, stubs workers
+- `npm run build:config` / `npm run check:config` — regenerate / verify generated configs from `agents/*.md`
+- `npm test` — vitest
+- `npm run sor:verify` — replay SOR hash chain
+- `npm run sor:sync-registry` — refresh `agent_registry` from `agents/*.md`
 
-### Daemon mode (24/7)
+## Code Style
 
-`npm start` with no `--repo` = dashboard in queue/daemon mode: watches repos,
-auto-scans for open issues every `SCAN_INTERVAL_MINUTES` (default 5), skips
-issues with a completed run (`run_outcomes.status = 'completed'`) or an open PR
-on the fix branch, keeps going until Stop (finishing the current issue first).
+- Plain TypeScript in `src/*` — **never add model calls** to `orchestrator.ts`; only spawned workers call models
+- Per-tool fields (`codex_model`, `claude_model`, etc.) are opt-in; never infer one provider's model ID from another
+- Edit `agents/<role>.md`, run `npm run build:config`, commit both — never hand-edit generated configs (`opencode.json`, `.claude/agents/*.md`, `.codex/agents/*.toml`)
+- Workers run in isolated git worktrees; never touch files outside assigned worktree
 
-Backend per fix: `ORCHESTRATOR_BACKEND` in `.env` (opencode | claude | codex;
-default opencode; `--backend` overrides). Failures log to dashboard; scan
-continues.
+## Security
 
-### PostgreSQL
+- `gh` auth required for real PRs; `--dry-run` stubs every worker
+- `SOR_SIGNING_KEY` required (`openssl rand -hex 32`) for tamper-evident audit log
+- All SOR writes are non-fatal — never abort a run
+- coder/tester must never `git push`; pr must never merge (prompt-enforced, not permission-enforced)
 
-`npm test`/`npm start` are DB-backed: PostgreSQL 16 up, `DATABASE_URL` set
-(`.env` or export), schema migrated (`npm run migrate:up`). CI provisions
-postgres and migrates before tests.
+## Architecture
 
-## System of Record (SOR)
+- `src/orchestrator.ts` — Manager: routing, 3 gates, git worktrees
+- `src/agentRunner.ts` — spawns headless `opencode run` workers, parses NDJSON
+- `src/models/modelPolicy.ts` — authoritative model tiers + fallback pool; overrides `opencode.json`'s model at spawn via `-m`
+- `agents/<role>.md` — single canonical source for every fleet role; frontmatter = config, body = prompt verbatim
+- `scripts/generate-configs.ts` — runs adapters in `scripts/adapters/` against `agents/*.md` → each tool's native format
+- PostgreSQL 16 backed; `DATABASE_URL` set, schema migrated (`npm run migrate:up`)
 
-Append-only, tamper-evident Postgres audit log. Hash chain:
-`hash_i = HMAC(SOR_SIGNING_KEY, prev_hash || canonical_json(event_i))`,
-genesis = fixed hex constant (`6d756c74692d…6e65736973`; ASCII
-"multi-orchestration-sor-genesis"); single-writer tail in `sor_chain`
-singleton (id=1), row-locked `FOR UPDATE` per insert
-(`src/db/audit.ts`, `src/sor/signer.ts`, `migrations/004_sor.sql`).
+## Boundaries
 
-Canonical JSON: deep-sorted keys, stable stringify, numbers→String(),
-undefined/NaN dropped. Verify: `npm run sor:verify` (replays the chain,
-reports counts per event_type/actor; fails on first mismatched hash).
+### Always
 
-- Event types: `tool_call | wakeup | phase | registry_sync | finalize`.
-- `run_id` column holds the run-directory name (`ctx.runId`), NOT the
-  `run_outcomes` UUID.
-- Writers:
-  - Per-tool hooks append one JSON line to `$SOR_EVENT_DIR/events.jsonl`
-    (default `<runDir>/events`): opencode plugin `.opencode/plugins/sor-hook.ts`
-    (committed source; `tool.execute.before/after` + `event`→`session.created`),
-    `.claude/hooks/sor-hook.sh` (PreToolUse/PostToolUse/SessionStart/Stop),
-    `.codex/hooks/sor-hook.sh` (PreToolUse/PostToolUse). Hook *configs*
-    (`.claude/settings.json`, `.codex/config.toml`, opencode.json plugin block)
-    are GENERATED by `build:config` — never hand-edit (same drift rule as
-    generated configs).
-  - Manager wakeups write directly via `src/db/audit.ts`: boot, config.load,
-    daemon scan, worker spawn, phases, finalize.
-- `agent_registry` mirrors `agents/*.md` (metadata + rules); canonical truth is
-  `agents/*.md`. `npm run sor:sync-registry` refreshes it.
-- Env: `SOR_SIGNING_KEY` (required; `openssl rand -hex 32`), `SOR_EVENT_DIR`
-  (optional override).
+- Run `npm run build:config` after editing any `agents/*.md`
+- Commit both source (`agents/*.md`) and generated configs together
+- Use `npm run check:config` in CI to fail on drift
+- Workers receive `-m <model>` override at spawn from `modelPolicy.ts`
 
-Commands: `npm run sor:verify`, `npm run sor:sync-registry`.
+### Ask First
 
-### SOR caveats
+- Adding new agent roles (requires `agents/<role>.md` + adapter registration)
+- Changing SOR event types or hash chain logic
+- Modifying the 3-gate approval flow in `orchestrator.ts`
 
-- Codex hooks fire for the `Bash` tool only today (requires
-  `[features] codex_hooks = true`); non-Bash calls fall back to NDJSON/trace.
-- If `SOR_EVENT_DIR` is unset, hooks no-op safely.
-- All SOR writes are non-fatal — never abort a run.
-- `--dry-run` still records boot/phase/finalize events (chain verifies, no
-  API/tokens).
+### Never
+
+- Hand-edit `opencode.json`, `.claude/agents/*.md`, `.codex/agents/*.toml`
+- Add model calls to `src/orchestrator.ts` or any `src/*` manager code
+- Have coder/tester workers `git push` or pr worker `merge`
+- Assume `--dry-run` exercises real worker spawns

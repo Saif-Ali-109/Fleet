@@ -9,8 +9,8 @@ import {
   parseBackendTrace,
   resolveRolePrompt,
   type BackendTrace,
-} from "../runner/backends.js";
-import type { Role, RolePolicy, RunContext } from "../types.js";
+} from "../runner/backends.ts";
+import type { Role, RolePolicy, RunContext } from "../types.ts";
 
 function makeCtx(overrides: Partial<RunContext> = {}): RunContext {
   return {
@@ -47,7 +47,7 @@ function makePolicy(overrides: Partial<RolePolicy> = {}): RolePolicy {
 const empty = (): BackendTrace => ({
   text: "",
   sessionID: null,
-  tokens: { input: 0, output: 0, reasoning: 0, cached: 0, total: 0 },
+  tokens: { input: 0, output: 0, reasoning: 0, cached: 0, cacheWrite: 0, total: 0 },
   costUsd: 0,
   sawError: false,
 });
@@ -107,6 +107,53 @@ describe("buildBackendArgs", () => {
   it("uses danger-full-access sandbox for the pr role (network for gh)", () => {
     const { args } = buildBackendArgs("codex", "pr", "Task", makeCtx(), "gpt-5.1-codex", makePolicy(), {}, "");
     expect(args[args.indexOf("-s") + 1]).toBe("danger-full-access");
+  });
+
+  it("opencode: inserts -s <sessionID> after --format json when resuming", () => {
+    const ctx = makeCtx();
+    const { args } = buildBackendArgs("opencode", "coder", "Task", ctx, "m", makePolicy(), { resumeSessionID: "sess-9" }, "");
+    expect(args[args.indexOf("--format") + 1]).toBe("json");
+    expect(args[args.indexOf("--format") + 2]).toBe("-s");
+    expect(args[args.indexOf("--format") + 3]).toBe("sess-9");
+    expect(args[args.length - 1]).toBe("Task");
+  });
+
+  it("claude: appends --fork-session --resume <id> when resuming", () => {
+    const ctx = makeCtx();
+    const { args } = buildBackendArgs("claude", "coder", "Task", ctx, "sonnet", makePolicy(), { resumeSessionID: "sess-9" }, "");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+    expect(args[args.indexOf("--permission-mode") + 2]).toBe("--fork-session");
+    expect(args[args.indexOf("--fork-session") + 1]).toBe("--resume");
+    expect(args[args.indexOf("--resume") + 1]).toBe("sess-9");
+    expect(args[1]).toBe("Task");
+  });
+
+  it("codex: restructures argv to exec resume <id> ... when resuming", () => {
+    const ctx = makeCtx();
+    const { args } = buildBackendArgs("codex", "coder", "Task", ctx, "gpt-5.1-codex", makePolicy(), { resumeSessionID: "sess-9" }, "");
+    expect(args[0]).toBe("exec");
+    expect(args[1]).toBe("resume");
+    expect(args[2]).toBe("sess-9");
+    expect(args).toContain("--cd");
+    expect(args[args.indexOf("--cd") + 1]).toBe(ctx.worktreeDir);
+    const last = args[args.length - 1];
+    expect(last).toContain("Task");
+  });
+
+  it("without resumeSessionID, args are unchanged from the fresh-spawn shape", () => {
+    const ctx = makeCtx();
+    for (const backend of ["opencode", "claude", "codex"] as const) {
+      const { args } = buildBackendArgs(backend, "coder", "Task", ctx, "m", makePolicy(), {}, "");
+      expect(args).not.toContain("--fork-session");
+      expect(args).not.toContain("--resume");
+      if (backend === "opencode") {
+        expect(args).not.toContain("-s");
+      }
+      if (backend === "codex") {
+        expect(args[0]).toBe("exec");
+        expect(args[1]).toBe("--cd");
+      }
+    }
   });
 });
 
@@ -179,8 +226,9 @@ describe("parseBackendTrace (claude)", () => {
     expect(acc.costUsd).toBe(0.05);
     expect(acc.tokens.input).toBe(100);
     expect(acc.tokens.output).toBe(50);
-    expect(acc.tokens.cached).toBe(30);
-    expect(acc.tokens.total).toBe(150);
+    expect(acc.tokens.cached).toBe(20);
+    expect(acc.tokens.cacheWrite).toBe(10);
+    expect(acc.tokens.total).toBe(170);
     expect(acc.sawError).toBe(false);
   });
 
@@ -205,7 +253,8 @@ describe("parseBackendTrace (codex)", () => {
     expect(acc.tokens.input).toBe(10);
     expect(acc.tokens.output).toBe(20);
     expect(acc.tokens.cached).toBe(7);
-    expect(acc.tokens.total).toBe(30);
+    expect(acc.tokens.cacheWrite).toBe(0);
+    expect(acc.tokens.total).toBe(37);
     expect(acc.sawError).toBe(false);
   });
 

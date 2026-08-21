@@ -3,13 +3,13 @@
 // that happens later, in the DB layer).
 
 import { readFileSync } from "node:fs";
-import type { SorEvent } from "./events.js";
+import type { SorEvent } from "./events.ts";
 import {
   TOOL_INPUT_CAP,
   TOOL_OUTPUT_CAP,
   normalizeEvent,
   truncateValue,
-} from "./events.js";
+} from "./events.ts";
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
