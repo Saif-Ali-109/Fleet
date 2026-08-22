@@ -140,11 +140,9 @@ Annotated repo map for Multi-Orchestration. Generated fleet configs live under `
 # user-personal tool content only. All generated fleet configs live in .fleet/.
 ├── .fleet/
 │   ├── opencode.json                       # GENERATED opencode config (inline agents); workers find it via OPENCODE_CONFIG
-│   ├── opencode/                           # Fleet opencode project config (moved from root .opencode/)
+│   ├── opencode/                           # Fleet opencode project dir (moved from root .opencode/)
 │   │   ├── plugins/
 │   │   │   └── sor-hook.ts                 # COMMITTED plugin (tool.execute.before/after, session.created via event)
-│   │   ├── opencode.json                   # GENERATED opencode project config (hook bindings)
-│   │   ├── agent/                          # GENERATED opencode agent defs (.md)
 │   │   └── skills/
 │   │       └── fleet-schemas/SKILL.md      # Canonical JSON schemas — source of truth; Manager copies into each worktree
 │   ├── claude/                             # Fleet Claude Code config (was root .claude/); passed via --settings flag
