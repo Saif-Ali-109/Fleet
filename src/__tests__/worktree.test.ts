@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupWorktree, setupWorktree } from "../git/worktree.ts";
@@ -110,6 +110,47 @@ describe("setupWorktree", () => {
     } finally {
       rmSync(run1, { recursive: true, force: true });
       rmSync(run2, { recursive: true, force: true });
+    }
+  });
+
+  it("provisions .fleet skills into the worktree and keeps them out of commits", async () => {
+    const { remote } = mkRemote();
+    const run = newRunDir("skills");
+    const originalCwd = process.cwd();
+    const fleetRoot = mkdtempSync(join(tmpdir(), "worktree-fleet-"));
+    mkdirSync(join(fleetRoot, ".fleet", "opencode", "skills", "demo-skill"), { recursive: true });
+    writeFileSync(
+      join(fleetRoot, ".fleet", "opencode", "skills", "demo-skill", "SKILL.md"),
+      "demo skill body\n",
+      "utf8",
+    );
+    try {
+      // copyFleetSkills sources skills from process.cwd(); run from a temp root
+      // that owns the demo skill (each vitest file runs in its own fork).
+      process.chdir(fleetRoot);
+      const h = await setupWorktree(remote, run, "fix-issue-12");
+
+      expect(existsSync(join(h.worktreeDir, ".opencode", "skills", "demo-skill", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(h.worktreeDir, ".claude", "skills", "demo-skill", "SKILL.md"))).toBe(true);
+
+      // Exclusions land in the per-worktree git dir (resolved via the .git FILE), never the shared clone.
+      const raw = readFileSync(join(h.worktreeDir, ".git"), "utf8").trim();
+      expect(raw.startsWith("gitdir:")).toBe(true);
+      const perWorktreeGitDir = raw.slice("gitdir:".length).trim();
+      const exclude = readFileSync(join(perWorktreeGitDir, "info", "exclude"), "utf8");
+      expect(exclude).toContain(".opencode/");
+      expect(exclude).toContain(".claude/skills/");
+
+      const sharedExcludePath = join(h.repoDir, ".git", "info", "exclude");
+      if (existsSync(sharedExcludePath)) {
+        const shared = readFileSync(sharedExcludePath, "utf8");
+        expect(shared).not.toContain(".opencode/");
+        expect(shared).not.toContain(".claude/skills/");
+      }
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(run, { recursive: true, force: true });
+      rmSync(fleetRoot, { recursive: true, force: true });
     }
   });
 });

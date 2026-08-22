@@ -85,6 +85,13 @@ describe("buildBackendArgs", () => {
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("plan");
   });
 
+  it("claude: passes --settings pointing at the .fleet settings.json", () => {
+    const ctx = makeCtx();
+    const { args } = buildBackendArgs("claude", "coder", "Task", ctx, "sonnet", makePolicy(), {}, "");
+    expect(args).toContain("--settings");
+    expect(args[args.indexOf("--settings") + 1]).toBe(join(ctx.rootDir, ".fleet", "claude", "settings.json"));
+  });
+
   it("builds codex exec args embedding the role prompt in the message", () => {
     const ctx = makeCtx();
     const { args, cwd } = buildBackendArgs("codex", "coder", "Task", ctx, "gpt-5.1-codex", makePolicy(), {}, "You are the CODER");
@@ -174,7 +181,7 @@ describe("buildBackendEnv", () => {
     const env = buildBackendEnv("opencode", ctx);
     expect(env.SOR_EVENT_DIR).toBe(join(ctx.runDir, "events"));
     expect(env.SOR_EVENT_DIR?.endsWith("events")).toBe(true);
-    expect(env.OPENCODE_CONFIG).toBe(join(ctx.rootDir, "opencode.json"));
+    expect(env.OPENCODE_CONFIG).toBe(join(ctx.rootDir, ".fleet", "opencode.json"));
   });
 
   it("sets SOR_EVENT_DIR for claude and codex too", () => {
@@ -184,6 +191,25 @@ describe("buildBackendEnv", () => {
       expect(env.SOR_EVENT_DIR).toBe(join(ctx.runDir, "events"));
       expect(env).toHaveProperty("PATH");
     }
+  });
+
+  it("points claude at its .fleet SOR hook", () => {
+    const ctx = makeCtx();
+    const env = buildBackendEnv("claude", ctx);
+    expect(env.FLEET_SOR_HOOK).toBe(join(ctx.rootDir, ".fleet", "claude", "hooks", "sor-hook.sh"));
+    expect(env.CODEX_HOME).toBeUndefined();
+  });
+
+  it("points codex at its .fleet SOR hook + CODEX_HOME", () => {
+    const ctx = makeCtx();
+    const env = buildBackendEnv("codex", ctx);
+    expect(env.FLEET_SOR_HOOK).toBe(join(ctx.rootDir, ".fleet", "codex", "hooks", "sor-hook.sh"));
+    expect(env.CODEX_HOME).toBe(join(ctx.rootDir, ".fleet", "codex"));
+  });
+
+  it("opencode has no FLEET_SOR_HOOK (its hook lives in the .fleet plugin)", () => {
+    const env = buildBackendEnv("opencode", makeCtx());
+    expect(env.FLEET_SOR_HOOK).toBeUndefined();
   });
 });
 
@@ -208,6 +234,45 @@ describe("resolveRolePrompt", () => {
     const ctx = makeCtx({ rootDir: dir });
     expect(resolveRolePrompt("claude", "coder", ctx)).toBe("You are the CODER.\n");
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("codex appends .fleet skills; claude prompt stays skill-free", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rp-skills-"));
+    try {
+      mkdirSync(join(dir, "agents"), { recursive: true });
+      writeFileSync(
+        join(dir, "agents", "coder.md"),
+        "---\ndescription: Implementer\n---\nYou are the CODER.\n",
+        "utf8",
+      );
+      mkdirSync(join(dir, ".fleet", "opencode", "skills", "test-skill"), { recursive: true });
+      writeFileSync(
+        join(dir, ".fleet", "opencode", "skills", "test-skill", "SKILL.md"),
+        "Use the test skill.\n",
+        "utf8",
+      );
+      const ctx = makeCtx({ rootDir: dir });
+      const codexPrompt = resolveRolePrompt("codex", "coder", ctx);
+      expect(codexPrompt.startsWith("You are the CODER.\n")).toBe(true);
+      expect(codexPrompt).toContain("\n\n# Available skills\n\n## test-skill\n\nUse the test skill.\n");
+      const claudePrompt = resolveRolePrompt("claude", "coder", ctx);
+      expect(claudePrompt).toBe("You are the CODER.\n");
+      expect(claudePrompt).not.toContain("Available skills");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("codex skips the skills section entirely when no .fleet skills exist", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rp-noskills-"));
+    try {
+      mkdirSync(join(dir, "agents"), { recursive: true });
+      writeFileSync(join(dir, "agents", "coder.md"), "---\ndescription: Implementer\n---\nYou are the CODER.\n", "utf8");
+      const ctx = makeCtx({ rootDir: dir });
+      expect(resolveRolePrompt("codex", "coder", ctx)).toBe("You are the CODER.\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -16,7 +16,9 @@ import matter from "gray-matter";
 export const ROOT = join(import.meta.dirname, "..", "..");
 export const AGENTS_DIR = join(ROOT, "agents");
 const GLOBAL_FILE = "_global.md";
-export const MODELS_JSON = join(ROOT, "models.json");
+// Runtime artifacts (incl. models.json) live in manager/ — see src/memory/paths.ts
+export const MANAGER_DIR = join(ROOT, "manager");
+export const MODELS_JSON = join(MANAGER_DIR, "models.json");
 
 // Fixed pipeline order (analyzer -> planner -> scout -> coder -> tester ->
 // reviewer -> pr), not alphabetical. Roles present on disk but absent here
@@ -100,9 +102,11 @@ export function loadCanonicalConfig(): CanonicalConfig {
   if (existsSync(MODELS_JSON)) {
     try {
       modelOverrides = JSON.parse(readFileSync(MODELS_JSON, "utf8")) as Record<string, Record<string, string>>;
-    } catch {
-      // If models.json is invalid, fall back to agent frontmatter
+    } catch (err) {
+      console.warn(`Warning: ${MODELS_JSON} is invalid JSON (${(err as Error).message}); falling back to agent frontmatter models.`);
     }
+  } else {
+    console.warn(`Warning: ${MODELS_JSON} not found; falling back to agent frontmatter models.`);
   }
 
   const roles: CanonicalRole[] = loadRoleFiles().map((file) => {

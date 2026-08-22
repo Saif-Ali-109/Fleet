@@ -1,6 +1,6 @@
 # Multi-Orchestration
 
-TypeScript Manager (not an LLM) driving 6 headless `opencode` workers to take a GitHub issue to a real PR, gated by 3 human approvals.
+TypeScript Manager driving 6 headless `opencode` workers to take a GitHub issue to a real PR, gated by 3 human approvals.
 
 ## Stack
 
@@ -19,7 +19,7 @@ Node ≥22, TypeScript, `tsx`, `vitest`. Dashboard = hand-rolled `node:http`.
 
 - Plain TypeScript in `src/*` — **never add model calls** to `orchestrator.ts`; only spawned workers call models
 - Per-tool fields (`codex_model`, `claude_model`, etc.) are opt-in; never infer one provider's model ID from another
-- Edit `agents/<role>.md`, run `npm run build:config`, commit both — never hand-edit generated configs (`opencode.json`, `.claude/agents/*.md`, `.codex/agents/*.toml`)
+- Edit `agents/<role>.md`, run `npm run build:config`, commit both — never hand-edit generated configs (`.fleet/**`, incl. `.fleet/opencode.json`, `.fleet/claude/agents/*.md`, `.fleet/codex/agents/*.toml`)
 - Workers run in isolated git worktrees; never touch files outside assigned worktree
 
 ## Security
@@ -33,7 +33,7 @@ Node ≥22, TypeScript, `tsx`, `vitest`. Dashboard = hand-rolled `node:http`.
 
 - `src/orchestrator.ts` — Manager: routing, 3 gates, git worktrees
 - `src/agentRunner.ts` — spawns headless `opencode run` workers, parses NDJSON
-- `src/models/modelPolicy.ts` — authoritative model tiers + fallback pool; overrides `opencode.json`'s model at spawn via `-m`
+- `src/models/modelPolicy.ts` — authoritative model tiers + fallback pool; overrides `.fleet/opencode.json`'s model at spawn via `-m`
 - `agents/<role>.md` — single canonical source for every fleet role; frontmatter = config, body = prompt verbatim
 - `scripts/generate-configs.ts` — runs adapters in `scripts/adapters/` against `agents/*.md` → each tool's native format
 - PostgreSQL 16 backed; `DATABASE_URL` set, schema migrated (`npm run migrate:up`)
@@ -55,7 +55,7 @@ Node ≥22, TypeScript, `tsx`, `vitest`. Dashboard = hand-rolled `node:http`.
 
 ### Never
 
-- Hand-edit `opencode.json`, `.claude/agents/*.md`, `.codex/agents/*.toml`
+- Hand-edit `.fleet/**` or any generated config (`.fleet/opencode.json`, `.fleet/claude/agents/*.md`, `.fleet/codex/agents/*.toml`)
 - Add model calls to `src/orchestrator.ts` or any `src/*` manager code
 - Have coder/tester workers `git push` or pr worker `merge`
 - Assume `--dry-run` exercises real worker spawns

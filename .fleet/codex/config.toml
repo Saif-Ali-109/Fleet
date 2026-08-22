@@ -2,11 +2,11 @@
 [[hooks.PreToolUse]]
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "bash .codex/hooks/sor-hook.sh"
+command = "bash \"$FLEET_SOR_HOOK\""
 [[hooks.PostToolUse]]
 [[hooks.PostToolUse.hooks]]
 type = "command"
-command = "bash .codex/hooks/sor-hook.sh"
+command = "bash \"$FLEET_SOR_HOOK\""
 
 [features]
 codex_hooks = true

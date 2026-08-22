@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Backend, Role, RolePolicy, RunContext } from "../types.ts";
@@ -139,6 +139,7 @@ export function buildBackendArgs(
         claudeMode(role),
       ];
       if (opts.resumeSessionID) args.push("--fork-session", "--resume", opts.resumeSessionID);
+      args.push("--settings", join(ctx.rootDir, ".fleet", "claude", "settings.json"));
       return { args, cwd: ctx.worktreeDir };
     }
     case "codex": {
@@ -164,7 +165,18 @@ export function buildBackendEnv(backend: Backend, ctx: RunContext): NodeJS.Proce
     // non-fatal: the hook scripts/plugin create it lazily if needed
   }
   const base: NodeJS.ProcessEnv = { ...process.env, SOR_EVENT_DIR: sorEventDir, SOR_BACKEND: backend };
-  if (backend !== "opencode") return base;
+  if (backend === "claude") {
+    return { ...base, FLEET_SOR_HOOK: join(ctx.rootDir, ".fleet", "claude", "hooks", "sor-hook.sh") };
+  }
+  if (backend === "codex") {
+    return {
+      ...base,
+      FLEET_SOR_HOOK: join(ctx.rootDir, ".fleet", "codex", "hooks", "sor-hook.sh"),
+      CODEX_HOME: join(ctx.rootDir, ".fleet", "codex"),
+    };
+  }
+  // opencode's SOR hook is a TS plugin inside .fleet/opencode.json, not a shell script,
+  // so there is no FLEET_SOR_HOOK to point it at.
   const dataHome = join(ctx.runDir, ".opencode-data");
   try {
     mkdirSync(join(dataHome, "opencode"), { recursive: true });
@@ -177,7 +189,7 @@ export function buildBackendEnv(backend: Backend, ctx: RunContext): NodeJS.Proce
   }
   return {
     ...base,
-    OPENCODE_CONFIG: join(ctx.rootDir, "opencode.json"),
+    OPENCODE_CONFIG: join(ctx.rootDir, ".fleet", "opencode.json"),
     XDG_DATA_HOME: dataHome,
   };
 }
@@ -204,7 +216,29 @@ export function resolveRolePrompt(backend: Backend, role: Role, ctx: RunContext)
     }
   }
   if (first === -1 || second === -1) return content;
-  return lines.slice(second + 1).join("\n");
+  const prompt = lines.slice(second + 1).join("\n");
+  if (backend !== "codex") return prompt;
+  // codex can't load opencode skills via a tool, so inline them into the prompt
+  const skillsDir = join(ctx.rootDir, ".fleet", "opencode", "skills");
+  let skillDirs: string[] = [];
+  try {
+    skillDirs = readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return prompt;
+  }
+  let skills = "";
+  for (const name of skillDirs) {
+    try {
+      const skill = readFileSync(join(skillsDir, name, "SKILL.md"), "utf8");
+      skills += `\n\n# Available skills\n\n## ${name}\n\n${skill}`;
+    } catch {
+      // no SKILL.md in this dir → skip
+    }
+  }
+  return skills ? `${prompt}${skills}` : prompt;
 }
 
 /** Parse a trace body into a normalized shape. `opts.lastmsgPath` is the codex `-o` fallback file. */

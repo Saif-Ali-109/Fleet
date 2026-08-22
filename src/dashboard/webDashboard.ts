@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { resolveManagerPath } from "../memory/paths.ts";
 import type { DashboardState } from "../tui/dashboard.ts";
 import type { Backend, Role } from "../types.ts";
 import { ghAuthInfo, type GhAuthInfo } from "../github/gh.ts";
@@ -299,7 +300,7 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/memory") {
-      void this.sendFile(res, join(this.rootDir, "MEMORY.md"));
+      void this.sendFile(res, resolveManagerPath(this.rootDir, "MEMORY.md"));
       return;
     }
     if (path === "/api/model-limit-error") {
@@ -307,7 +308,7 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/session-log") {
-      void this.sendFile(res, join(this.rootDir, "SESSION_LOG.md"));
+      void this.sendFile(res, resolveManagerPath(this.rootDir, "SESSION_LOG.md"));
       return;
     }
     this.sendJson(res, 404, { error: "not found" });
@@ -578,7 +579,7 @@ export class WebDashboard {
         return;
       }
       try {
-        saveModelOverrides(join(this.rootDir, "models.json"));
+        saveModelOverrides(resolveManagerPath(this.rootDir, "models.json"));
       } catch (err) {
         this.sendJson(res, 500, {
           ok: false,

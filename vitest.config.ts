@@ -9,7 +9,7 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
-    include: ["src/**/*.test.ts", "src/**/__tests__/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "src/**/__tests__/**/*.test.ts", "scripts/**/__tests__/**/*.test.ts"],
     typecheck: {
       enabled: false,
     },

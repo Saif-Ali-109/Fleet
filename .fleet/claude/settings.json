@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/sor-hook.sh"
+            "command": "bash \"$FLEET_SOR_HOOK\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/sor-hook.sh"
+            "command": "bash \"$FLEET_SOR_HOOK\""
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/sor-hook.sh"
+            "command": "bash \"$FLEET_SOR_HOOK\""
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/sor-hook.sh"
+            "command": "bash \"$FLEET_SOR_HOOK\""
           }
         ]
       }

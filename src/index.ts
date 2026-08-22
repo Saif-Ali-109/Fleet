@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebDashboard, type WebhookHandler } from "./dashboard/webDashboard.ts";
+import { resolveManagerPath } from "./memory/paths.ts";
 import { db, pool } from "./db/client.ts";
 import { appendAuditEvent, ensureChain } from "./db/audit.ts";
 import type { SorEvent } from "./sor/events.ts";
@@ -695,7 +696,7 @@ async function main(): Promise<void> {
     }
   }
 
-  loadModelOverrides(join(rootDir, "models.json"));
+  loadModelOverrides(resolveManagerPath(rootDir, "models.json"));
 
   const mode = repo !== undefined && issueNumber !== undefined ? "single" : "queue";
   bootSOR(mode);

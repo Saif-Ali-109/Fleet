@@ -1,25 +1,24 @@
 name: Check agent config is up to date
 
 # agents/*.md is the single source of truth for every CLI agent's config
-# (opencode.json, .claude/agents/*.md, .codex/agents/*.toml). This workflow
-# fails if any generated file was hand-edited, or if agents/*.md changed
-# without regenerating, so they can never silently drift apart.
+# (.fleet/opencode.json, .fleet/claude/**, .fleet/codex/**). This workflow
+# fails if any generated file was hand-edited, or if agents/*.md (or the
+# model overrides in manager/models.json) changed without regenerating,
+# so they can never silently drift apart.
 
 on:
   push:
     paths:
       - "agents/**"
-      - "opencode.json"
-      - ".claude/agents/**"
-      - ".codex/agents/**"
+      - ".fleet/**"
+      - "manager/models.json"
       - "scripts/**"
       - ".github/workflows/check-agent-config.yml"
   pull_request:
     paths:
       - "agents/**"
-      - "opencode.json"
-      - ".claude/agents/**"
-      - ".codex/agents/**"
+      - ".fleet/**"
+      - "manager/models.json"
       - "scripts/**"
       - ".github/workflows/check-agent-config.yml"
 

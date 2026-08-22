@@ -2,9 +2,11 @@
 
 TypeScript Manager drives a fleet of 6 headless workers to take a GitHub issue to a real PR, with 3 human approval gates. The fleet can run on **opencode**, **Claude Code**, or **Codex** — chosen once per run (`--backend` flag or a dashboard toggle).
 
+> **Tested live:** this fleet was exercised end-to-end against [Saif-Ali-109/demo-repo](https://github.com/Saif-Ali-109/demo-repo) — real issues were filed there and the agents picked them up, cleared all 3 gates, and opened fix PRs. Use it as a reference for what a target repo looks like, or fork it to try the flow yourself.
+
 ## Architecture
 
-The **Manager** is plain TypeScript — not an LLM. It owns routing, the 3 gates, git worktrees, `gh`, memory, logging, SOR, durable execution, workforce hiring, and analytics. Each of the 6 workers is a separate headless CLI process with its own least-privilege config, spawned via `node:child_process.spawn` (no SDK, no shell). The runner is backend-agnostic: `src/runner/backends.ts` maps each backend to its binary, argv, env, and stream parser, and `src/agentRunner.ts` dispatches on the run's `backend`. Agent discovery is wired through `OPENCODE_CONFIG` for opencode; Claude Code and Codex read their agents from `.claude/agents/` and `.codex/agents/` respectively (regenerated from `agents/*.md`).
+The **Manager** is plain TypeScript — not an LLM. It owns routing, the 3 gates, git worktrees, `gh`, memory, logging, SOR, durable execution, workforce hiring, and analytics. Each of the 6 workers is a separate headless CLI process with its own least-privilege config, spawned via `node:child_process.spawn` (no SDK, no shell). The runner is backend-agnostic: `src/runner/backends.ts` maps each backend to its binary, argv, env, and stream parser, and `src/agentRunner.ts` dispatches on the run's `backend`. Agent discovery is wired through `OPENCODE_CONFIG` for opencode (pointing at `.fleet/opencode.json`); Claude Code and Codex read their agents from `.fleet/claude/agents/` and `.fleet/codex/agents/` respectively (regenerated from `agents/*.md`).
 
 ```
 GitHub issue ──▶ TS MANAGER (orchestrator, not an LLM)
@@ -35,7 +37,7 @@ Workers are spawned per backend — e.g. `opencode run --agent <role> -m opencod
 
 ## The 6 Workers
 
-All 6 agents live in one project-level `opencode.json` (`mode: "all"`, `webfetch` disabled). Read-only roles have `write`/`edit`/`patch` off and `permission.bash/edit` denied; build roles may write and commit; the PR role has bash (`git push`, `gh pr create`) but `grep`/`glob`/`write`/`edit`/`patch` off. See note below on prompt- vs permission-enforced guarantees.
+All 6 agents live in one generated `.fleet/opencode.json` (`mode: "all"`, `webfetch` disabled). Read-only roles have `write`/`edit`/`patch` off and `permission.bash/edit` denied; build roles may write and commit; the PR role has bash (`git push`, `gh pr create`) but `grep`/`glob`/`write`/`edit`/`patch` off. See note below on prompt- vs permission-enforced guarantees.
 
 | Role | Model | Permission gist |
 |---|---|---|
@@ -48,7 +50,7 @@ All 6 agents live in one project-level `opencode.json` (`mode: "all"`, `webfetch
 
 Reasoning-heavy roles (analyzer/planner/reviewer) use `opencode/x-preview-f-free` with `variant: "low"`; build roles (coder/tester/pr) use `opencode/mimo-v2.5-free` (no variant). Fallback pool (tried in order on 5xx/quota/empty output): `opencode/x-preview-f-free`, `opencode/mimo-v2.5-free`, `opencode/nemotron-3-ultra-free`, `opencode/nemotron-3.5-lightning-free`.
 
-> **Model split to know:** the model each worker actually runs is resolved by `src/models/modelPolicy.ts` (the Manager passes it via `-m`, which overrides the agent's config). `opencode.json` still declares the per-agent frontmatter model, but that value is superseded at spawn time by the policy — `modelPolicy.ts` is authoritative.
+> **Model split to know:** the model each worker actually runs is resolved by `src/models/modelPolicy.ts` (the Manager passes it via `-m`, which overrides the agent's config). `.fleet/opencode.json` still declares the per-agent frontmatter model, but that value is superseded at spawn time by the policy — `modelPolicy.ts` is authoritative.
 
 > **Prompt-enforced vs permission-enforced:** the coder/tester "no push" and the pr "no merge" guarantees are enforced by the agent **prompts**, not by the CLI permission system. The permission system restricts *tools*; push-vs-no-push behavior relies on the role being told not to do it.
 
@@ -121,8 +123,8 @@ Flags:
 Each backend runs the same 6 roles via its own CLI. `src/runner/backends.ts` owns the binary/argv/env and stream parsing for each.
 
 - **opencode** (default) — free OpenCode Zen models. `opencode run --agent <role> -m opencode/<model> --dir <worktree> --format json [--variant <n>] "<task>"`. Uses the fallback pool and the `modelPolicy` overrides (`models.json`).
-- **claude** — `claude -p "<task>" --output-format stream-json --model <m> --append-system-prompt "<role prompt>" --permission-mode plan|acceptEdits` (cwd = worktree). The role prompt is read from `agents/<role>.md` (frontmatter stripped). Reads the `.claude/agents/*.md` configs (model default `sonnet`).
-- **codex** — `codex exec --cd <worktree> -m <m> -s <sandbox> --json -- [--approve-for-me] "<role prompt>\n\n<task>"`. The role prompt is embedded in the message (codex 0.147 has no `--agent` flag). Sandbox is `read-only` for analyzer/planner/reviewer, `workspace-write` for coder/tester, and `danger-full-access` for the pr role (it must `git push` + `gh pr create`, which need network). `--json` output is parsed tolerantly; the `-o <traceDir>/<role>.lastmsg` file is a fallback text source. Reads the `.codex/agents/*.toml` configs (model default `gpt-5.1-codex`).
+- **claude** — `claude -p "<task>" --output-format stream-json --model <m> --append-system-prompt "<role prompt>" --permission-mode plan|acceptEdits` (cwd = worktree). The role prompt is read from `agents/<role>.md` (frontmatter stripped). Reads the generated configs under `.fleet/claude/`, passed to the CLI via `--settings <project>/.fleet/claude/settings.json` (agents in `.fleet/claude/agents/*.md`, model default `sonnet`).
+- **codex** — `codex exec --cd <worktree> -m <m> -s <sandbox> --json -- [--approve-for-me] "<role prompt>\n\n<task>"`. The role prompt is embedded in the message (codex 0.147 has no `--agent` flag). Sandbox is `read-only` for analyzer/planner/reviewer, `workspace-write` for coder/tester, and `danger-full-access` for the pr role (it must `git push` + `gh pr create`, which need network). `--json` output is parsed tolerantly; the `-o <traceDir>/<role>.lastmsg` file is a fallback text source. Runs with `CODEX_HOME=<project>/.fleet/codex`, reading `.fleet/codex/config.toml` + `.fleet/codex/agents/*.toml` (model default `gpt-5.1-codex`).
 
 Per-backend model defaults live in `src/models/modelPolicy.ts`; override them per role per backend in the dashboard Models panel or directly in `models.json` (nested per-backend object). The dashboard Model picker offers a curated catalog per backend plus **free-text entry**, so you can type any model id your subscription supports.
 
@@ -169,20 +171,21 @@ The dashboard exposes a small JSON/SSE API used by its own UI:
 
 ## Fleet Skills & Subagents
 
-- RO roles (`analyzer`/`planner`/`reviewer`) emit their JSON artifacts against the canonical schemas held in the `fleet-schemas` skill (`.opencode/skills/fleet-schemas/SKILL.md`), not inlined in prompts.
+- RO roles (`analyzer`/`planner`/`reviewer`) emit their JSON artifacts against the canonical schemas held in the `fleet-schemas` skill (`.fleet/opencode/skills/fleet-schemas/SKILL.md` — the source of truth), not inlined in prompts.
+- **Skill delivery per backend** — the Manager copies `fleet-schemas` into each run's worktree at spawn: `<worktree>/.opencode/skills/` for opencode workers and `<worktree>/.claude/skills/` for claude workers (both kept out of commits via a per-worktree `.git/info/exclude`). Codex has no skill loader, so its skill content is appended directly to each role prompt instead.
 - `analyzer`/`planner`/`reviewer` delegate raw repo reads/greps to the free-model `scout` subagent via the `task` tool (`task: true`, `permission.task: "allow"`, `permission.external_directory: "allow"` covering `.runs/**` and `.git/worktrees/**`).
 - `pr-helper.md` was previously an unwired subagent; it has been **removed** — the orchestrator builds the PR title/body itself via `src/github/gh.ts`.
 - The `scout` subagent pins `opencode/big-pickle` (free). RO roles run at `variant: "low"`.
 
 ## Config
 
-- **`opencode.json`** — all 6 fleet agents. Per-agent schema: `description`, `mode` (`"all"`), `model`, `steps` (per-agent step cap: analyzer 12, planner 10, scout 15, coder 12, tester 10, reviewer 8, pr 10), `tools` (`read`/`grep`/`glob`/`bash`/`list`/`write`/`edit`/`patch`/`task`/`skill`/`webfetch` booleans), `permission` (`bash`/`edit`/`webfetch`/`task`: allow|deny, plus `external_directory` allow-list for `.runs/**` and `**/.git/worktrees/**`), `prompt`. `permission` deny is what actually restricts a worker's *tools*; higher-level behavioral guarantees (no-push, no-merge) are prompt-enforced. No `$comment` key allowed.
-- **`src/models/modelPolicy.ts`** — per-backend model tiers (reasoning vs build roles), the fallback pool, per-role `variant` (reasoning effort, opencode only), and curated model catalogs for claude/codex. Authoritative for the `-m`/`--model` passed at spawn (overrides the agent configs). `models.json` stores per-role, per-backend overrides.
-- **`OPENCODE_CONFIG`** — set by the Manager to `<project>/opencode.json` when spawning each worker, so the roster is found even though workers run with `--dir` inside the worktree.
-- **Hook Generation** — `npm run build:config` emits per-tool hook configs via `scripts/generate-configs.ts` (3 adapters: opencode, claude-code, codex) + syncs `agent_registry`. `npm run check:config` fails on drift. Hook scripts generated deterministically via `scripts/lib/hooks.ts`:
-  - opencode: `.opencode/plugins/sor-hook.ts` (committed plugin source; `tool.execute.before/after` + `event`→`session.created`)
-  - claude: `.claude/settings.json` hooks → `.claude/hooks/sor-hook.sh` (PreToolUse/PostToolUse/SessionStart/Stop)
-  - codex: `.codex/config.toml` `[[hooks.*]]` + `[features] codex_hooks = true` → `.codex/hooks/sor-hook.sh`
+- **`.fleet/opencode.json`** — all 6 fleet agents. Per-agent schema: `description`, `mode` (`"all"`), `model`, `steps` (per-agent step cap: analyzer 12, planner 10, scout 15, coder 12, tester 10, reviewer 8, pr 10), `tools` (`read`/`grep`/`glob`/`bash`/`list`/`write`/`edit`/`patch`/`task`/`skill`/`webfetch` booleans), `permission` (`bash`/`edit`/`webfetch`/`task`: allow|deny, plus `external_directory` allow-list for `.runs/**` and `**/.git/worktrees/**`), `prompt`. `permission` deny is what actually restricts a worker's *tools*; higher-level behavioral guarantees (no-push, no-merge) are prompt-enforced. No `$comment` key allowed.
+- **`src/models/modelPolicy.ts`** — per-backend model tiers (reasoning vs build roles), the fallback pool, per-role `variant` (reasoning effort, opencode only), and curated model catalogs for claude/codex. Authoritative for the `-m`/`--model` passed at spawn (overrides the agent configs). `manager/models.json` stores per-role, per-backend overrides.
+- **`OPENCODE_CONFIG`** — set by the Manager to `<project>/.fleet/opencode.json` when spawning each worker, so the roster is found even though workers run with `--dir` inside the worktree.
+- **Hook Generation** — `npm run build:config` emits per-tool hook configs via `scripts/generate-configs.ts` (3 adapters: opencode, claude-code, codex) + syncs `agent_registry`. `npm run check:config` fails on drift. Hook scripts generated deterministically via `scripts/lib/hooks.ts`; every generated hook command is `bash "$FLEET_SOR_HOOK"` — the Manager sets `FLEET_SOR_HOOK` in each worker's env at spawn:
+  - opencode: `.fleet/opencode/plugins/sor-hook.ts` (committed plugin source; `tool.execute.before/after` + `event`→`session.created`)
+  - claude: `.fleet/claude/settings.json` hooks → `.fleet/claude/hooks/sor-hook.sh` (PreToolUse/PostToolUse/SessionStart/Stop)
+  - codex: `.fleet/codex/config.toml` `[[hooks.*]]` + `[features] codex_hooks = true` → `.fleet/codex/hooks/sor-hook.sh`
 
 ### Session resumption & scout tracking
 
@@ -227,9 +230,9 @@ Internally, the Manager isolates each worker's opencode state into `.runs/<id>/.
 Plus, per-agent, along each `traces/*.jsonl`:
 - **`traces/*.stderr.log`** — the worker's stderr for that attempt (used to diagnose 5xx/quota/empty-output fallbacks).
 
-And in the project root:
-- **`SESSION_LOG.md`** — reset fresh each run; the previous log is stashed to `.runs/<id>/SESSION_LOG.md`.
-- **`MEMORY.md`** — durable cross-run knowledge; the orchestrator is the only writer and appends a one-line run outcome (date, repo#issue, PR link, cost) under its "Run log" section. Auto-generated from database via `npm run generate-memory`.
+And in `manager/`:
+- **`manager/SESSION_LOG.md`** — reset fresh each run; the previous log is stashed to `.runs/<id>/SESSION_LOG.md`.
+- **`manager/MEMORY.md`** — durable cross-run knowledge; the orchestrator is the only writer and appends a one-line run outcome (date, repo#issue, PR link, cost) under its "Run log" section. Auto-generated from database via `npm run generate-memory`.
 
 Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs/`, `node_modules/`, `dist/`, and `.env*` are gitignored (only `.env.example` is kept).
 
@@ -244,7 +247,7 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
 5. `npm run sor:sync-registry` — refresh `agent_registry` from `agents/*.md`.
 6. `npm run dry -- --repo <url> --issue <n>` — stubbed workers, zero tokens. (Add `--interactive=false` to auto-approve the gates; no trace files are produced.)
 7. Single-agent live — run only the Analyzer on a real issue to confirm auth, traces, and cost.
-8. Full E2E — `npm start -- --repo <url> --issue <n>` on a small repo you own; clear all 3 gates → real PR URL in `result.json`.
+8. Full E2E — `npm start -- --repo <url> --issue <n>` on a small repo you own; clear all 3 gates → real PR URL in `result.json`. (The fleet was tested against [Saif-Ali-109/demo-repo](https://github.com/Saif-Ali-109/demo-repo).)
 
 **Isolation guarantee:** the Manager clones into `.runs/<id>/repo/` and works in the linked worktree at `.runs/<id>/worktree/`. Workers are pointed at the worktree via `--dir` and told it is disposable. Any existing checkout of the sample repo is never touched; all edits are confined to `.runs/<id>/worktree/`.
 
@@ -258,7 +261,6 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
 
 ```
 .
-├── AGENT_IMPLEMENTATION_PROMPT.md          # Original prompt spec used to build the fleet agents/workflow
 ├── PLAN.md                                 # Current working plan (hybrid webhook triggering; dashboard transcript fixes)
 ├── directory.md                            # This file — annotated repo map
 │
@@ -266,19 +268,21 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     │
     # — top-level docs & config —
     ├── README.md                           # Project overview, architecture, CLI usage
-    ├── AGENTS.md                           # Canonical rules file (read by opencode/codex); CLAUDE.md symlinks here
-    ├── CLAUDE.md                           # Symlink -> AGENTS.md (Claude Code reads this name)
-    ├── MEMORY.md                           # Regenerated run-log + "Next" memory (db/queries/summaryReport)
-    ├── MEMORY.example.md                   # Template/example of MEMORY.md format
-    ├── SESSION_LOG.md                      # Per-run session log appended by orchestrator/memory/sessionLog
+    ├── AGENTS.md                           # Canonical rules file (read by opencode/codex); CLAUDE.md imports it via @AGENTS.md
+    ├── CLAUDE.md                           # One-liner: @AGENTS.md (Claude Code reads this name)
     ├── package.json                        # Deps + scripts: start/dry/test/build:config/migrate/analytics
     ├── package-lock.json                   # npm lockfile
     ├── tsconfig.json                       # TypeScript config (ES2022, NodeNext, strict)
     ├── vitest.config.ts                    # Vitest setup (defaults DATABASE_URL, src/**/__tests__)
-    ├── opencode.json                       # GENERATED opencode config (inline agents) — never hand-edit
-    ├── models.json                         # Per-role model overrides for the opencode backend (persisted)
     ├── .env.example                        # Env template: OPENCODE_BIN, ORCHESTRATOR_BACKEND, SCAN_INTERVAL, DB…
     ├── .env                                # Local env/secrets (git-ignored; DB URL, CLI overrides)
+    │
+    # — manager runtime artifacts (durable memory, session log, model overrides) —
+    ├── manager/
+    │   ├── MEMORY.md                       # Regenerated cross-run memory + "Run log" (orchestrator-only writer; npm run generate-memory)
+    │   ├── MEMORY.example.md               # Template/example of MEMORY.md format
+    │   ├── SESSION_LOG.md                  # Fresh per run; previous log stashed to .runs/<id>/SESSION_LOG.md
+    │   └── models.json                     # Per-role, per-backend model overrides (dashboard Models panel persists here)
     │
     # — SQL migrations (system of record, Postgres) —
     ├── migrations/
@@ -302,9 +306,9 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     ├── scripts/
     │   ├── generate-configs.ts             # Runs every adapter against agents/*.md (build:config/check:config)
     │   └── adapters/
-    │       ├── opencode.ts                 # Adapter -> opencode.json (inline agent blocks)
-    │       ├── claude-code.ts              # Adapter -> .claude/agents/<role>.md
-    │       └── codex.ts                    # Adapter -> .codex/agents/<role>.toml
+    │       ├── opencode.ts                 # Adapter -> .fleet/opencode.json (inline agent blocks)
+    │       ├── claude-code.ts              # Adapter -> .fleet/claude/agents/<role>.md
+    │       └── codex.ts                    # Adapter -> .fleet/codex/agents/<role>.toml
     │   └── lib/
     │       ├── adapter.ts                  # Adapter interface contract
     │       ├── canonical.ts                # Shared canonical parsing of agents/*.md frontmatter
@@ -383,24 +387,28 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     │       ├── scoutTracker.test.ts        # Scout invocation tracking
     │       └── webhook.test.ts             # Webhook signature verification + event parsing
     │
-    # — generated per-tool configs (never hand-edit) —
-    ├── .claude/
-    │   ├── settings.json                   # GENERATED hook bindings (PreToolUse/PostToolUse/SessionStart/Stop)
-    │   ├── hooks/
-    │   │   └── sor-hook.sh                 # GENERATED hook script (writes JSONL to SOR_EVENT_DIR)
-    │   ├── agents/                         # GENERATED Claude Code agent defs (.md)
-    │   └── skills/
-    │       └── fleet-schemas/SKILL.md      # Canonical JSON schemas for analyzer/planner/reviewer output
-    ├── .codex/
-    │   ├── config.toml                     # GENERATED hook config + [features] codex_hooks = true
-    │   ├── hooks/
-    │   │   └── sor-hook.sh                 # GENERATED hook script (writes JSONL to SOR_EVENT_DIR)
-    │   └── agents/ (+ skills/fleet-schemas) # GENERATED Codex agent defs (.toml)
-    ├── .opencode/                          # Local opencode config: plugins/, skills/, node_modules
-    │   ├── plugins/
-    │   │   └── sor-hook.ts                 # COMMITTED plugin (tool.execute.before/after, session.created via event)
-    │   └── skills/
-    │       └── fleet-schemas/SKILL.md      # Canonical JSON schemas for analyzer/planner/reviewer output
+    # — generated per-tool fleet configs (never hand-edit) —
+    # Root .claude/, .codex/, .opencode/ no longer hold fleet configs; they are
+    # user-personal tool content only. All generated fleet configs live in .fleet/.
+    ├── .fleet/
+    │   ├── opencode.json                   # GENERATED opencode config (inline agents); workers find it via OPENCODE_CONFIG
+    │   ├── opencode/                       # Fleet opencode project config (moved from root .opencode/)
+    │   │   ├── plugins/
+    │   │   │   └── sor-hook.ts             # COMMITTED plugin (tool.execute.before/after, session.created via event)
+    │   │   ├── opencode.json               # GENERATED opencode project config (hook bindings)
+    │   │   ├── agent/                      # GENERATED opencode agent defs (.md)
+    │   │   └── skills/
+    │   │       └── fleet-schemas/SKILL.md  # Canonical JSON schemas — source of truth; Manager copies into each worktree
+    │   ├── claude/                         # Fleet Claude Code config (was root .claude/); passed via --settings flag
+    │   │   ├── settings.json               # GENERATED hook bindings (PreToolUse/PostToolUse/SessionStart/Stop)
+    │   │   ├── hooks/
+    │   │   │   └── sor-hook.sh             # GENERATED hook script (writes JSONL to SOR_EVENT_DIR)
+    │   │   └── agents/*.md                 # GENERATED Claude Code agent defs (.md)
+    │   └── codex/                          # Fleet Codex config (was root .codex/); workers get CODEX_HOME=.fleet/codex
+    │       ├── config.toml                 # GENERATED hook config + [features] codex_hooks = true
+    │       ├── hooks/
+    │       │   └── sor-hook.sh             # GENERATED hook script (writes JSONL to SOR_EVENT_DIR)
+    │       └── agents/*.toml               # GENERATED Codex agent defs (.toml)
     │
     # — runtime/build artifacts (git-ignored) —
     ├── .runs/                              # Per-run artifacts: worktree/, traces/*.jsonl, logs, fix-spec/plan
