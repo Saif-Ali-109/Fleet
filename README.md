@@ -261,7 +261,6 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
 
 ```
 .
-├── AGENT_IMPLEMENTATION_PROMPT.md          # Original prompt spec used to build the fleet agents/workflow
 ├── PLAN.md                                 # Current working plan (hybrid webhook triggering; dashboard transcript fixes)
 ├── directory.md                            # This file — annotated repo map
 │
@@ -269,8 +268,8 @@ Both `SESSION_LOG.md` and `MEMORY.md` are **tracked in git** (committed). `.runs
     │
     # — top-level docs & config —
     ├── README.md                           # Project overview, architecture, CLI usage
-    ├── AGENTS.md                           # Canonical rules file (read by opencode/codex); CLAUDE.md symlinks here
-    ├── CLAUDE.md                           # Symlink -> AGENTS.md (Claude Code reads this name)
+    ├── AGENTS.md                           # Canonical rules file (read by opencode/codex); CLAUDE.md imports it via @AGENTS.md
+    ├── CLAUDE.md                           # One-liner: @AGENTS.md (Claude Code reads this name)
     ├── package.json                        # Deps + scripts: start/dry/test/build:config/migrate/analytics
     ├── package-lock.json                   # npm lockfile
     ├── tsconfig.json                       # TypeScript config (ES2022, NodeNext, strict)

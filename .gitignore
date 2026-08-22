@@ -6,4 +6,4 @@ dist/
 .env.*
 !.env.example
 PLAN.md
-Directory.md
+directory.md
