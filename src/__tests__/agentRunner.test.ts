@@ -60,26 +60,26 @@ function writeTrace(name: string, content: string): string {
 // ---- buildArgs tests ----
 
 describe("buildArgs", () => {
-  it("builds the base opencode run command", () => {
+  it("builds the generic provider run command (--role/--model/--provider/--task/--worktree)", () => {
     const ctx = makeCtx();
     const policy = makePolicy();
-    const args = buildArgs("coder", "Fix the bug", ctx, "opencode/laguna-s-2.1-free", policy, {});
-    expect(args[0]).toBe("run");
-    expect(args).toContain("--agent");
-    expect(args[args.indexOf("--agent") + 1]).toBe("coder");
-    expect(args).toContain("-m");
-    expect(args[args.indexOf("-m") + 1]).toBe("opencode/laguna-s-2.1-free");
-    expect(args).toContain("--dir");
-    expect(args[args.indexOf("--dir") + 1]).toBe(ctx.worktreeDir);
-    expect(args).toContain("--format");
-    expect(args[args.indexOf("--format") + 1]).toBe("json");
-    expect(args[args.length - 1]).toBe("Fix the bug");
+    const args = buildArgs("coder", "Fix the bug", ctx, "gemini-2.5-flash", policy, {});
+    expect(args[0]).toBe("--role");
+    expect(args[1]).toBe("coder");
+    expect(args).toContain("--model");
+    expect(args[args.indexOf("--model") + 1]).toBe("gemini-2.5-flash");
+    expect(args).toContain("--provider");
+    expect(args[args.indexOf("--provider") + 1]).toBe("gemini");
+    expect(args).toContain("--worktree");
+    expect(args[args.indexOf("--worktree") + 1]).toBe(ctx.worktreeDir);
+    expect(args).toContain("--task");
+    expect(args[args.indexOf("--task") + 1]).toBe("Fix the bug");
   });
 
   it("appends --variant when policy.variant is set", () => {
     const ctx = makeCtx();
     const policy = makePolicy({ variant: "high" });
-    const args = buildArgs("planner", "Task", ctx, "opencode/big-pickle", policy, {});
+    const args = buildArgs("planner", "Task", ctx, "m", policy, {});
     expect(args).toContain("--variant");
     expect(args[args.indexOf("--variant") + 1]).toBe("high");
   });
@@ -98,20 +98,19 @@ describe("buildArgs", () => {
     expect(args).not.toContain("--variant");
   });
 
-  it("passes the task as the last argument (positional message)", () => {
+  it("passes the task verbatim after --task (spaces intact)", () => {
     const ctx = makeCtx();
     const policy = makePolicy();
     const args = buildArgs("tester", "My special task with spaces", ctx, "m", policy, {});
-    expect(args[args.length - 1]).toBe("My special task with spaces");
+    expect(args[args.indexOf("--task") + 1]).toBe("My special task with spaces");
   });
 
-  it("inserts -s <sessionID> after --format json when opts.resumeSessionID is set", () => {
+  it("adds --resume <sessionID> when opts.resumeSessionID is set", () => {
     const ctx = makeCtx();
     const policy = makePolicy();
     const args = buildArgs("coder", "Task", ctx, "m", policy, { resumeSessionID: "sess-42" });
-    expect(args[args.indexOf("--format") + 2]).toBe("-s");
-    expect(args[args.indexOf("--format") + 3]).toBe("sess-42");
-    expect(args[args.length - 1]).toBe("Task");
+    expect(args).toContain("--resume");
+    expect(args[args.indexOf("--resume") + 1]).toBe("sess-42");
   });
 });
 
@@ -130,7 +129,8 @@ describe("runWorker", () => {
     const result = await runWorker("coder", "Fix the bug", ctx, makePolicy(), {});
     expect(result.ok).toBe(true);
     expect(result.text).toContain("[dry-run]");
-    expect(result.attempts).toEqual([{ model: "opencode/laguna-s-2.1-free", ok: true }]);
+    expect(result.provider).toBe("gemini");
+    expect(result.attempts).toEqual([{ model: "opencode/laguna-s-2.1-free", ok: true, provider: "gemini" }]);
     rmSync(dir, { recursive: true, force: true });
   });
 });
@@ -156,20 +156,20 @@ describe("parseTrace", () => {
     expect(result.text).toBe("Hello World");
   });
 
-  it("extracts sessionID from the first event that has one", () => {
+  it("extracts sessionID from the first init event that has one", () => {
     const tracePath = writeTrace("trace2.jsonl", [
       JSON.stringify({ type: "text", part: { text: "hi" } }),
-      JSON.stringify({ type: "event", sessionID: "sess-1", part: {} }),
-      JSON.stringify({ type: "event", sessionID: "sess-2", part: {} }),
+      JSON.stringify({ type: "init", role: "coder", sessionId: "sess-1" }),
+      JSON.stringify({ type: "init", role: "coder", sessionId: "sess-2" }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.sessionID).toBe("sess-1");
   });
 
-  it("sums fresh tokens from step_finish events and tracks cached separately", () => {
+  it("sums tokens from step_finish usage events and tracks cached separately", () => {
     const tracePath = writeTrace("trace3.jsonl", [
-      JSON.stringify({ type: "step_finish", part: { tokens: { input: 10, output: 5, reasoning: 2, cache: { read: 100 }, total: 117 }, cost: 0.01 } }),
-      JSON.stringify({ type: "step_finish", part: { tokens: { input: 20, output: 8, reasoning: 0, cache: { read: 50 }, total: 78 }, cost: 0.02 } }),
+      JSON.stringify({ type: "step_finish", usage: { input: 10, output: 5, reasoning: 2, cached: 100, cacheWrite: 0, total: 117 }, costUsd: 0.01 }),
+      JSON.stringify({ type: "step_finish", usage: { input: 20, output: 8, reasoning: 0, cached: 50, cacheWrite: 0, total: 78 }, costUsd: 0.02 }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.tokens.input).toBe(30);
@@ -178,35 +178,40 @@ describe("parseTrace", () => {
     expect(result.tokens.cached).toBe(150);
     expect(result.tokens.cacheWrite).toBe(0);
     expect(result.tokens.total).toBe(195);
-    expect(result.costUsd).toBe(0.03);
+    expect(result.costUsd).toBeCloseTo(0.03, 10);
   });
 
-  it("handles missing tokens gracefully (defaults to 0)", () => {
+  it("handles missing/empty usage gracefully (defaults to 0)", () => {
     const tracePath = writeTrace("trace4.jsonl", [
-      JSON.stringify({ type: "step_finish", part: {} }),
-      JSON.stringify({ type: "step_finish", part: { tokens: undefined } }),
+      JSON.stringify({ type: "step_finish" }),
+      JSON.stringify({ type: "step_finish", usage: undefined }),
+      JSON.stringify({ type: "step_finish", usage: {} }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.tokens.input).toBe(0);
     expect(result.costUsd).toBe(0);
   });
 
-  it("detects error events and extracts error message", () => {
-    const tracePath = writeTrace("trace5.jsonl", [
-      JSON.stringify({ type: "error", error: "Something went wrong" }),
+  it("ignores tool_call/tool_result events for text and error state", () => {
+    const tracePath = writeTrace("trace6.jsonl", [
+      JSON.stringify({ type: "tool_call", name: "bash", input: "ls -la" }),
+      JSON.stringify({ type: "tool_result", name: "bash", ok: true, ms: 12, bytesOut: 4096 }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
-    expect(result.sawError).toBe(true);
-    expect(result.errorMsg).toBe("Something went wrong");
+    expect(result.text).toBe("");
+    expect(result.sawError).toBe(false);
+    expect(result.errorMsg).toBeUndefined();
   });
 
-  it("detects errors with part.type === 'error'", () => {
-    const tracePath = writeTrace("trace6.jsonl", [
-      JSON.stringify({ type: "tool_result", part: { type: "error", error: "Part error" } }),
+  it("detects error events and keeps the last error message", () => {
+    const tracePath = writeTrace("trace5.jsonl", [
+      JSON.stringify({ type: "text", part: { text: "partial work" } }),
+      JSON.stringify({ type: "error", error: "Something went wrong" }),
+      JSON.stringify({ type: "error", error: "Final failure" }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.sawError).toBe(true);
-    expect(result.errorMsg).toBe("Part error");
+    expect(result.errorMsg).toBe("Final failure");
   });
 
   it("skips non-JSON lines (noise)", () => {

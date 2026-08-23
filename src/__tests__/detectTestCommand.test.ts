@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { detectTestCommand, splitTestCommand } from "../runner/backends.ts";
+import { detectTestCommand, splitTestCommand } from "../fleet/testCmd.ts";
 
 function fakeRepo(): string {
   return mkdtempSync(join(tmpdir(), "detect-test-"));

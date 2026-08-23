@@ -36,14 +36,14 @@ describe("dashboard", () => {
       }
     });
 
-    it("defaults backend to opencode", () => {
+    it("defaults backend to gemini (primary provider path)", () => {
       const d = newDashboardState("run-1", "owner/repo", 7);
-      expect(d.backend).toBe("opencode");
+      expect(d.backend).toBe("gemini");
     });
 
     it("records a supplied backend", () => {
-      const d = newDashboardState("run-1", "owner/repo", 7, "codex");
-      expect(d.backend).toBe("codex");
+      const d = newDashboardState("run-1", "owner/repo", 7, "ollama");
+      expect(d.backend).toBe("ollama");
     });
   });
 
@@ -56,9 +56,9 @@ describe("dashboard", () => {
     });
 
     it("shows the backend in the header", () => {
-      const d = newDashboardState("run-42", "owner/repo", 7, "claude");
+      const d = newDashboardState("run-42", "owner/repo", 7, "openrouter");
       const out = renderDashboard(d);
-      expect(out).toContain("claude");
+      expect(out).toContain("openrouter");
     });
 
     it("lists every role", () => {
@@ -144,7 +144,7 @@ describe("dashboard", () => {
     async function setupDashboard(
       onWebhook?: (headers: Record<string, string | string[] | undefined>, rawBody: string) => Promise<WebhookResponse>,
     ) {
-      dashboard = new WebDashboard(0, "/tmp", undefined, "opencode", null, onWebhook);
+      dashboard = new WebDashboard(0, "/tmp", undefined, "gemini", null, onWebhook);
       const info = await dashboard.start();
       expect(info).not.toBeNull();
       baseUrl = info!.url;
