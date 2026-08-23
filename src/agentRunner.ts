@@ -18,8 +18,6 @@ export interface RunWorkerOpts {
   onEvent?: (ev: Record<string, unknown>) => void;
   /** Reviewer-findings injection only (SPEC §6); forwarded verbatim into the job ctx. */
   extraTask?: string;
-  /** Deprecated spawn-era option; ignored under the fork+stdin-job contract. */
-  resumeSessionID?: string;
 }
 
 export interface ParsedStream {
@@ -60,7 +58,11 @@ export function resetWorkerAbort(): void {
 
 const DEFAULT_WORKER_ENTRY = fileURLToPath(new URL("./runtime/worker/main.ts", import.meta.url));
 
-/** Worker entry point (FLEET_WORKER_ENTRY overrides for tests — documented-by-test). */
+/**
+ * Worker entry point. FLEET_WORKER_ENTRY is a PERMANENT TEST-ONLY seam: it is
+ * never set by any production code path and exists solely so tests can fork a
+ * stub worker program instead of the real runtime/worker/main.ts entry.
+ */
 function workerEntry(): string {
   return process.env.FLEET_WORKER_ENTRY
     ? resolve(process.env.FLEET_WORKER_ENTRY)

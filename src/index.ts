@@ -37,14 +37,13 @@ const sessionClones = new Map<string, string>();
 
 process.on("SIGINT", () => process.exit(130));
 
-const usage = (): string => `Usage: npm start [--repo <url> --issue <n>] [--dry-run] [--interactive=false] [--branch <name>] [--port <n>] [--no-web] [--provider <name>]
+const usage = (): string => `Usage: npm start [--repo <url> --issue <n>] [--dry-run] [--branch <name>] [--port <n>] [--no-web] [--provider <name>]
 
   (no args)             Dashboard-driven repo queue: paste a repo URL in the
                         dashboard and it fixes every open issue, one by one.
   --repo <url>          Repo URL (https://...) or owner/name slug.
   --issue <n>           GitHub issue number to fix.
   --dry-run              Skip cloning, workers and gh; use stubs.
-  --interactive=false    Auto-approve all gates.
   --branch <name>        Fix branch name (default fix-issue-<n>).
   --port <n>             Web dashboard port (default 3456).
   --no-web               Disable the web dashboard.
@@ -185,13 +184,12 @@ async function runSingleIssue(args: {
   repo: string;
   issueNumber: number;
   dryRun: boolean;
-  interactive: boolean;
   branch?: string;
   port: number;
   noWeb?: boolean;
   provider: ProviderName;
 }): Promise<void> {
-  const { repo, issueNumber, dryRun, interactive, branch, port, noWeb, provider } = args;
+  const { repo, issueNumber, dryRun, branch, port, noWeb, provider } = args;
   const repoUrl = toRepoUrl(repo);
   const runId = newRunId();
   const { web, webFeed } = noWeb ? { web: null, webFeed: undefined } : await bootWeb(port);
@@ -251,7 +249,7 @@ async function runSingleIssue(args: {
     provider,
   };
 
-  const summary = await runOrchestrator(ctx, { interactive, web: webFeed });
+  const summary = await runOrchestrator(ctx, { web: webFeed });
 
   console.log("\n┌─ Run finished ─────────────────────────────");
   console.log(`│ status:      ${summary.status}`);
@@ -590,7 +588,7 @@ async function runSingleIssueFromQueue(
     }
   }
 
-  const s = await runOrchestrator(ctx, { interactive: false, web: webFeed });
+  const s = await runOrchestrator(ctx, { web: webFeed });
   console.log("\n┌─ Issue #" + num + " finished ───────────────────────");
   console.log(`│ status:      ${s.status}`);
   if (s.prUrl) console.log(`│ PR:          ${s.prUrl}`);
@@ -618,7 +616,6 @@ async function main(): Promise<void> {
   let repo: string | undefined;
   let issueNumber: number | undefined;
   let dryRun = false;
-  let interactive: boolean | undefined;
   let branch: string | undefined;
   let port = 3456;
   let noWeb = false;
@@ -651,14 +648,6 @@ async function main(): Promise<void> {
       issueNumber = Number(v);
     } else if (arg === "--dry-run") {
       dryRun = true;
-    } else if (arg.startsWith("--interactive=")) {
-      const v = arg.slice("--interactive=".length);
-      if (v !== "true" && v !== "false") {
-        console.error(`--interactive must be true or false, got "${v}"\n`);
-        console.error(usage());
-        process.exit(1);
-      }
-      interactive = v === "true";
     } else if (arg === "--branch") {
       i += 1;
       branch = argv[i];
@@ -724,7 +713,6 @@ async function main(): Promise<void> {
     repo,
     issueNumber,
     dryRun,
-    interactive: interactive !== false,
     branch,
     port,
     noWeb,
