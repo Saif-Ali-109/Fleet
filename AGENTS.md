@@ -1,61 +1,75 @@
-# Multi-Orchestration
+# AGENTS.md — Multi-Orchestration
 
-TypeScript Manager driving 6 headless `opencode` workers to take a GitHub issue to a real PR, gated by 3 human approvals.
+Constitution for ANY AI agent working in this repo, in ANY session, on ANY plan.
+Read fully before your first edit. Re-read "Boundaries" before risky operations.
+No YAML frontmatter on this file by rule — every other `*.md` must have one.
 
-## Stack
+## What this repo is
 
-Node ≥22, TypeScript, `tsx`, `vitest`. Dashboard = hand-rolled `node:http`.
+TypeScript Manager that takes a GitHub issue → a real PR using 6 role agents
+(analyzer, planner, coder, tester, reviewer, pr). Workers run as child processes;
+the Manager itself never calls models. PostgreSQL-backed tamper-evident SOR audit
+chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
+
+> System is mid-migration: CLI fleet (opencode/claude/codex) → custom OpenAI-SDK
+> workers (gemini → openrouter → ollama), gates removed. Truth for that work:
+> `SPEC.md` (+ progress in its §17 checklist; `PLAN.md` is the index). Rules below
+> hold in BOTH eras unless explicitly marked.
+
+## Session protocol (every session)
+
+1. Read `PLAN.md` → if touching fleet/engine/migration code, read `SPEC.md`.
+2. Doing migration work? First unchecked item in `SPEC.md §17` is your task.
+   Tick it + commit (`docs: check <item>`) when its acceptance criteria pass.
+3. Follow the subagent strategy in `USER.md` (sequential vs parallel by file overlap).
+4. Every task ends green: `npm run typecheck && npm test`.
+5. Commit per logical unit — short imperative subject + explanatory body.
 
 ## Commands
 
 - `npm start -- --repo <url> --issue <n>` — one issue → PR
-- `npm run dry` — no tokens/API calls, stubs workers
-- `npm run build:config` / `npm run check:config` — regenerate / verify generated configs from `agents/*.md`
-- `npm test` — vitest
-- `npm run sor:verify` — replay SOR hash chain
-- `npm run sor:sync-registry` — refresh `agent_registry` from `agents/*.md`
+- `npm run dry` — keyless stubbed run (no tokens spent); ALWAYS smoke this first
+- `npm test` / `npm run typecheck`
+- `npm run migrate:up` / `migrate:down` — Postgres schema (DATABASE_URL required)
+- `npm run sor:verify` — replay SOR hash chain; must stay green at all times
+- `analytics`, `generate-memory` — reporting utilities
+- Scheduled for removal after SPEC.md P8 (do not rely on): `build:config`,
+  `check:config`, `sor:sync-registry`
 
-## Code Style
+## Code style
 
-- Plain TypeScript in `src/*` — **never add model calls** to `orchestrator.ts`; only spawned workers call models
-- Per-tool fields (`codex_model`, `claude_model`, etc.) are opt-in; never infer one provider's model ID from another
-- Edit `agents/<role>.md`, run `npm run build:config`, commit both — never hand-edit generated configs (`.fleet/**`, incl. `.fleet/opencode.json`, `.fleet/claude/agents/*.md`, `.fleet/codex/agents/*.toml`)
-- Workers run in isolated git worktrees; never touch files outside assigned worktree
+- Plain TypeScript ESM in `src/*`; imports keep explicit `.ts` extensions.
+- Model/API calls ONLY inside worker child processes — never in
+  `orchestrator.ts`, dashboard, router, or any manager-side module.
+- Providers/models are resolved through the provider/model policy layers — never
+  hardcode baseURLs or infer one provider's model id from another's.
+- No comments unless asked; mirror surrounding conventions.
 
 ## Security
 
-- `gh` auth required for real PRs; `--dry-run` stubs every worker
-- `SOR_SIGNING_KEY` required (`openssl rand -hex 32`) for tamper-evident audit log
-- All SOR writes are non-fatal — never abort a run
-- coder/tester must never `git push`; pr must never merge (prompt-enforced, not permission-enforced)
-
-## Architecture
-
-- `src/orchestrator.ts` — Manager: routing, 3 gates, git worktrees
-- `src/agentRunner.ts` — spawns headless `opencode run` workers, parses NDJSON
-- `src/models/modelPolicy.ts` — authoritative model tiers + fallback pool; overrides `.fleet/opencode.json`'s model at spawn via `-m`
-- `agents/<role>.md` — single canonical source for every fleet role; frontmatter = config, body = prompt verbatim
-- `scripts/generate-configs.ts` — runs adapters in `scripts/adapters/` against `agents/*.md` → each tool's native format
-- PostgreSQL 16 backed; `DATABASE_URL` set, schema migrated (`npm run migrate:up`)
+- Secrets live ONLY in `.env`; never commit keys/tokens.
+- All SOR writes are NON-FATAL: warn and continue, never abort a run over them.
+- coder/tester workers never `git push`; pr creates PRs but never merges.
+- Workers operate ONLY inside their assigned git worktree — tool-layer path
+  checks enforce this; do not weaken them.
 
 ## Boundaries
 
 ### Always
+- Typecheck + tests green before every commit.
+- Update `.env.example` when adding env vars.
+- YAML frontmatter on every new/edited `*.md` EXCEPT this file.
 
-- Run `npm run build:config` after editing any `agents/*.md`
-- Commit both source (`agents/*.md`) and generated configs together
-- Use `npm run check:config` in CI to fail on drift
-- Workers receive `-m <model>` override at spawn from `modelPolicy.ts`
-
-### Ask First
-
-- Adding new agent roles (requires `agents/<role>.md` + adapter registration)
-- Changing SOR event types or hash chain logic
-- Modifying the 3-gate approval flow in `orchestrator.ts`
+### Ask first
+- New agent roles or new providers beyond gemini/openrouter/ollama.
+- Changes to SOR event shapes or hash-chain logic (`sor:verify` contract).
+- Schema migrations; new runtime dependencies.
+- Gate/auto-flow design changes — EXCEPT the SPEC.md D11 migration
+  (gate removal + auto-fix), which is pre-authorized.
 
 ### Never
-
-- Hand-edit `.fleet/**` or any generated config (`.fleet/opencode.json`, `.fleet/claude/agents/*.md`, `.fleet/codex/agents/*.toml`)
-- Add model calls to `src/orchestrator.ts` or any `src/*` manager code
-- Have coder/tester workers `git push` or pr worker `merge`
-- Assume `--dry-run` exercises real worker spawns
+- Add model calls to manager code (`orchestrator.ts` et al).
+- Hand-edit generated or historical artifacts (`.fleet/**` while it exists;
+  anything under `.runs/`).
+- Weaken tool gating (per-role toolsets) or bash worktree cwd-locking.
+- Reorder/delete SOR chain logic; assume `--dry-run` spawns real workers.
