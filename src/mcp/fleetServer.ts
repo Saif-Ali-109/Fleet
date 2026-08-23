@@ -2,6 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 
 interface GhApiResult {
   stdout: string;
@@ -9,21 +10,33 @@ interface GhApiResult {
   exitCode: number;
 }
 
-async function runGhApi(args: string[]): Promise<GhApiResult> {
-  return new Promise(async (resolve) => {
-    const proc = Bun.spawn(["gh", "api", ...args], {
-      stdout: "pipe",
-      stderr: "pipe",
+function runGhApi(args: string[]): Promise<GhApiResult> {
+  return new Promise((resolve) => {
+    const proc = spawn("gh", ["api", ...args], {
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    const stdoutChunks: Uint8Array[] = [];
-    const stderrChunks: Uint8Array[] = [];
-    for await (const chunk of proc.stdout) stdoutChunks.push(chunk);
-    for await (const chunk of proc.stderr) stderrChunks.push(chunk);
-    const exitCode = await proc.exited;
-    resolve({
-      stdout: Buffer.concat(stdoutChunks).toString("utf8"),
-      stderr: Buffer.concat(stderrChunks).toString("utf8"),
-      exitCode,
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let settled = false;
+    proc.stdout.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(chunk);
+    });
+    proc.stderr.on("data", (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+    });
+    proc.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      resolve({ stdout: "", stderr: `gh failed to start: ${err.message}`, exitCode: 127 });
+    });
+    proc.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        exitCode: code ?? 1,
+      });
     });
   });
 }
@@ -57,11 +70,17 @@ const ALLOWED_TOOLS_PER_ROLE: Record<string, string[]> = {
   pr: ["create_pr", "get_checks"],
 };
 
-function isToolAllowedForRole(role: string, toolName: string): boolean {
+function isToolAllowedForRole(role: string | undefined, toolName: string): boolean {
+  if (!role) return false;
   const allowed = ALLOWED_TOOLS_PER_ROLE[role];
   if (!allowed) return false;
   return allowed.includes(toolName);
 }
+
+const SESSION_ROLE: string | undefined =
+  typeof process.argv[2] === "string" && process.argv[2].length > 0
+    ? process.argv[2]
+    : undefined;
 
 const server = new Server(
   { name: "fleet-mcp", version: "1.0.0" },
@@ -186,9 +205,17 @@ async function handleGetChecks(args: Record<string, unknown>): Promise<unknown> 
   })) ?? [];
 }
 
-async function handleToolCall(name: string, args: Record<string, unknown>, role?: string): Promise<unknown> {
-  if (role && !isToolAllowedForRole(role, name)) {
-    throw new Error(`Tool ${name} not allowed for role ${role}`);
+async function handleToolCall(
+  name: string,
+  args: Record<string, unknown>,
+  role: string | undefined
+): Promise<unknown> {
+  if (!isToolAllowedForRole(role, name)) {
+    throw new Error(
+      role
+        ? `Tool ${name} not allowed for role ${role}`
+        : `Tool ${name} not allowed: server session has no bound role`
+    );
   }
 
   switch (name) {
@@ -205,8 +232,7 @@ async function handleToolCall(name: string, args: Record<string, unknown>, role?
   }
 }
 
-server.setRequestHandler(ListToolsRequestSchema, async (request) => {
-  const role = (request.params as { _meta?: { role?: string } })._meta?.role;
+server.setRequestHandler(ListToolsRequestSchema, async () => {
   const allTools = [
     { name: "get_issue", description: "Get issue title, body, and labels", inputSchema: GET_ISSUE_SCHEMA },
     { name: "get_issue_comments", description: "Get issue comments", inputSchema: GET_ISSUE_COMMENTS_SCHEMA },
@@ -214,16 +240,14 @@ server.setRequestHandler(ListToolsRequestSchema, async (request) => {
     { name: "get_checks", description: "Get check runs for a commit ref", inputSchema: GET_CHECKS_SCHEMA },
   ];
 
-  const filtered = role ? allTools.filter((t) => isToolAllowedForRole(role, t.name)) : allTools;
-  return { tools: filtered };
+  return { tools: allTools.filter((t) => isToolAllowedForRole(SESSION_ROLE, t.name)) };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  const role = (request.params as { _meta?: { role?: string } })._meta?.role;
 
   try {
-    const result = await handleToolCall(name, args ?? {}, role);
+    const result = await handleToolCall(name, args ?? {}, SESSION_ROLE);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -241,7 +265,7 @@ async function shutdown(): Promise<void> {
   await server.close().catch(() => {});
 }
 
-async function main(role?: string): Promise<void> {
+async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
@@ -260,6 +284,5 @@ export { handleToolCall, isToolAllowedForRole, ALLOWED_TOOLS_PER_ROLE };
 
 const isEntry = process.argv[1] && import.meta.url === new URL(process.argv[1], "file:").href;
 if (isEntry) {
-  const role = process.argv[2];
-  void main(role).catch(() => process.exit(1));
+  void main().catch(() => process.exit(1));
 }
