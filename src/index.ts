@@ -28,7 +28,7 @@ import { killActiveWorkers, resetWorkerAbort } from "./agentRunner.ts";
 import type { DashboardState } from "./tui/dashboard.ts";
 import type { Issue, RunContext } from "./types.ts";
 import { loadModelOverrides } from "./models/modelPolicy.ts";
-import type { Backend } from "./types.ts";
+import { PROVIDER_NAMES, type ProviderName } from "./types.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -37,7 +37,7 @@ const sessionClones = new Map<string, string>();
 
 process.on("SIGINT", () => process.exit(130));
 
-const usage = (): string => `Usage: npm start [--repo <url> --issue <n>] [--dry-run] [--interactive=false] [--branch <name>] [--port <n>] [--no-web] [--backend <name>]
+const usage = (): string => `Usage: npm start [--repo <url> --issue <n>] [--dry-run] [--interactive=false] [--branch <name>] [--port <n>] [--no-web] [--provider <name>]
 
   (no args)             Dashboard-driven repo queue: paste a repo URL in the
                         dashboard and it fixes every open issue, one by one.
@@ -48,12 +48,10 @@ const usage = (): string => `Usage: npm start [--repo <url> --issue <n>] [--dry-
   --branch <name>        Fix branch name (default fix-issue-<n>).
   --port <n>             Web dashboard port (default 3456).
   --no-web               Disable the web dashboard.
-  --backend <name>       Headless CLI that runs the fleet workers:
-                         opencode | claude | codex (default opencode,
-                         or ORCHESTRATOR_BACKEND env).
+  --provider <name>      Provider to run the fleet workers:
+                         gemini | openrouter | ollama (default gemini,
+                         or ORCHESTRATOR_PROVIDER env).
   --help                 Show this help.`;
-
-const BACKENDS: readonly Backend[] = ["opencode", "claude", "codex"];
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -191,9 +189,9 @@ async function runSingleIssue(args: {
   branch?: string;
   port: number;
   noWeb?: boolean;
-  backend: Backend;
+  provider: ProviderName;
 }): Promise<void> {
-  const { repo, issueNumber, dryRun, interactive, branch, port, noWeb, backend } = args;
+  const { repo, issueNumber, dryRun, interactive, branch, port, noWeb, provider } = args;
   const repoUrl = toRepoUrl(repo);
   const runId = newRunId();
   const { web, webFeed } = noWeb ? { web: null, webFeed: undefined } : await bootWeb(port);
@@ -250,7 +248,7 @@ async function runSingleIssue(args: {
     tracesDir: join(rootDir, ".runs", runId, "traces"),
     branch: branch ?? `fix-issue-${issue.number}`,
     dryRun,
-    backend,
+    provider,
   };
 
   const summary = await runOrchestrator(ctx, { interactive, web: webFeed });
@@ -277,17 +275,17 @@ async function runSingleIssue(args: {
 }
 
 /** Dashboard-driven daemon: watch a repo, auto-scan for open issues, fix them one by one until Stop. */
-async function runQueue(port: number, dryRun: boolean, backend: Backend): Promise<void> {
+async function runQueue(port: number, dryRun: boolean, provider: ProviderName): Promise<void> {
   let web: WebDashboard | null = null;
   let webFeed: WebFeed | undefined;
   const watched = new Set<string>();
 
   const startHandler = async (
     repoInput: string,
-    chosenBackend?: Backend,
+    chosenProvider?: ProviderName,
   ): Promise<{ ok: boolean; error?: string; runStarted?: boolean }> => {
     try {
-      const effectiveBackend = chosenBackend ?? backend;
+      const effectiveProvider = chosenProvider ?? provider;
       const slug = toRepoSlug(repoInput);
       const ghInfo = await ghAuthInfo();
       if (!ghInfo.ok) return { ok: false, error: ghInfo.error ?? "GitHub not signed in" };
@@ -303,7 +301,7 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
       resetWorkerAbort();
       if (!daemonActive) {
         daemonActive = true;
-        void runDaemonLoop(watched, dryRun, effectiveBackend, web, webFeed, port).catch((err: unknown) => {
+        void runDaemonLoop(watched, dryRun, effectiveProvider, web, webFeed, port).catch((err: unknown) => {
           daemonActive = false;
           console.error(err);
           web?.pushNotice("Daemon crashed: " + (err instanceof Error ? err.message : err));
@@ -361,7 +359,7 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
     return { status: 200, body: { queued: true } };
   };
 
-  web = new WebDashboard(port, rootDir, startHandler, backend, () => {
+  web = new WebDashboard(port, rootDir, startHandler, provider, () => {
     stopRequested = true;
     const killed = killActiveWorkers();
     web?.pushNotice(
@@ -399,7 +397,7 @@ async function runQueue(port: number, dryRun: boolean, backend: Backend): Promis
 async function runDaemonLoop(
   repos: ReadonlySet<string>,
   dryRun: boolean,
-  backend: Backend,
+  provider: ProviderName,
   web: WebDashboard | null,
   webFeed: WebFeed | undefined,
   port: number,
@@ -439,7 +437,7 @@ async function runDaemonLoop(
             }
           }
           try {
-            const res = await runSingleIssueFromQueue(slug, num, title, dryRun, backend, web, webFeed);
+            const res = await runSingleIssueFromQueue(slug, num, title, dryRun, provider, web, webFeed);
             if (res.status === "completed") {
               web?.pushNotice(`✓ Webhook issue #${num} → PR: ${res.prUrl ?? "(none)"}`);
             } else {
@@ -481,7 +479,7 @@ async function runDaemonLoop(
             }
           }
           try {
-            const res = await runSingleIssueFromQueue(slug, num, title, dryRun, backend, web, webFeed);
+            const res = await runSingleIssueFromQueue(slug, num, title, dryRun, provider, web, webFeed);
             if (res.status === "completed") {
               web?.pushNotice(`✓ Issue #${num} → PR: ${res.prUrl ?? "(none)"}`);
             } else {
@@ -499,7 +497,7 @@ async function runDaemonLoop(
                 body: JSON.stringify({
                   type: "model_limit",
                   message: errMsg,
-                  agent: backend,
+                  agent: provider,
                   issue: num,
                   timestamp: Date.now(),
                 }),
@@ -539,7 +537,7 @@ async function runSingleIssueFromQueue(
   num: number,
   title: string,
   dryRun: boolean,
-  backend: Backend,
+  provider: ProviderName,
   web: WebDashboard | null,
   webFeed: WebFeed | undefined,
 ): Promise<{ status: string; prUrl?: string; failure?: string }> {
@@ -573,7 +571,7 @@ async function runSingleIssueFromQueue(
     tracesDir: join(rootDir, ".runs", runId, "traces"),
     branch: fixBranchName(num),
     dryRun,
-    backend,
+    provider,
     cloneDir: sharedClone,
   };
 
@@ -584,7 +582,7 @@ async function runSingleIssueFromQueue(
     try {
       await ensureLabels(owner, repo, [ISSUE_LABEL_IN_PROGRESS, ISSUE_LABEL_DONE]);
       await addIssueLabel(owner, repo, num, ISSUE_LABEL_IN_PROGRESS);
-      await commentOnIssue(owner, repo, num, `Started managed run \`${runId}\` (backend: ${backend}).`);
+      await commentOnIssue(owner, repo, num, `Started managed run \`${runId}\` (provider: ${provider}).`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[lifecycle] mark-started #${num} failed (non-fatal): ${msg}`);
@@ -624,8 +622,8 @@ async function main(): Promise<void> {
   let branch: string | undefined;
   let port = 3456;
   let noWeb = false;
-  const envBackend = (process.env.ORCHESTRATOR_BACKEND as Backend | undefined) ?? "opencode";
-  let backend: Backend = BACKENDS.includes(envBackend) ? envBackend : "opencode";
+  const envProvider = (process.env.ORCHESTRATOR_PROVIDER as ProviderName | undefined) ?? "gemini";
+  let provider: ProviderName = PROVIDER_NAMES.includes(envProvider) ? envProvider : "gemini";
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -678,15 +676,15 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       port = Number(v);
-    } else if (arg === "--backend") {
+    } else if (arg === "--provider") {
       i += 1;
       const v = argv[i];
-      if (v === undefined || !BACKENDS.includes(v as Backend)) {
-        console.error(`--backend must be one of: ${BACKENDS.join(", ")}\n`);
+      if (v === undefined || !PROVIDER_NAMES.includes(v as ProviderName)) {
+        console.error(`--provider must be one of: ${PROVIDER_NAMES.join(", ")}\n`);
         console.error(usage());
         process.exit(1);
       }
-      backend = v as Backend;
+      provider = v as ProviderName;
     } else if (arg === "--no-web") {
       noWeb = true;
     } else {
@@ -708,7 +706,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     emitWakeupNonFatal("daemon", { kind: "config.load" });
-    await runQueue(port, dryRun, backend);
+    await runQueue(port, dryRun, provider);
     return;
   }
   if (repo === undefined) {
@@ -730,7 +728,7 @@ async function main(): Promise<void> {
     branch,
     port,
     noWeb,
-    backend,
+    provider,
   });
 }
 

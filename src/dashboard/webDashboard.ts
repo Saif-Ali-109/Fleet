@@ -7,12 +7,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveManagerPath } from "../memory/paths.ts";
 import type { DashboardState } from "../tui/dashboard.ts";
-import type { Backend, Role } from "../types.ts";
+import type { ProviderName, Role } from "../types.ts";
+import { PROVIDER_NAMES } from "../types.ts";
 import { ghAuthInfo, type GhAuthInfo } from "../github/gh.ts";
 import { startDeviceLogin, pollDeviceToken, storeGhToken } from "../github/gh.ts";
 import {
   availableModels,
-  BACKENDS,
   getModelOverrides,
   setModelOverride,
   saveModelOverrides,
@@ -47,7 +47,7 @@ const EMPTY_OUTPUTS: Record<Role, string[]> = {
 export class WebDashboard {
   private readonly port: number;
   private readonly rootDir: string;
-  private onStartRequest: ((repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
+  private onStartRequest: ((repo: string, provider: ProviderName) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
   private onStopRequest: (() => void) | null = null;
   private onWebhook: WebhookHandler | null = null;
   private runActive = false;
@@ -56,7 +56,7 @@ export class WebDashboard {
   private nextScanAt: number | null = null;
   private errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }> = [];
   private loginInProgress = false;
-  private backend: Backend = "opencode";
+  private provider: ProviderName = "gemini";
   private server: Server | null = null;
   private clients = new Map<ServerResponse, SseClient>();
   private lastEventId = 0;
@@ -68,15 +68,15 @@ export class WebDashboard {
   constructor(
     port: number = DEFAULT_PORT,
     rootDir: string,
-    onStartRequest?: (repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>,
-    initialBackend: Backend = "opencode",
+    onStartRequest?: (repo: string, provider: ProviderName) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>,
+    initialProvider: ProviderName = "gemini",
     onStopRequest: (() => void) | null = null,
     onWebhook?: WebhookHandler,
   ) {
     this.port = port;
     this.rootDir = rootDir;
     this.onStartRequest = onStartRequest ?? null;
-    this.backend = initialBackend;
+    this.provider = initialProvider;
     this.onStopRequest = onStopRequest;
     this.onWebhook = onWebhook ?? null;
   }
@@ -220,11 +220,11 @@ export class WebDashboard {
     nextScanAt: number | null;
     runActive: boolean;
     queueMode: boolean;
-    backend: Backend;
+    backend: ProviderName;
     stopRequested: boolean;
     errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }>;
   } {
-    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, nextScanAt: this.nextScanAt, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.backend, stopRequested: this.stopRequested, errorLog: this.errorLog };
+    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, nextScanAt: this.nextScanAt, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.provider, stopRequested: this.stopRequested, errorLog: this.errorLog };
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
@@ -286,13 +286,16 @@ export class WebDashboard {
     }
     if (path === "/api/models") {
       const url = new URL(req.url ?? "/", `http://${HOST}`);
-      const backend = url.searchParams.get("backend") as Backend | null;
-      const b = backend && (BACKENDS as readonly string[]).includes(backend) ? backend : this.backend;
-      this.sendJson(res, 200, { models: getModelOverrides()[b] ?? {}, available: [...availableModels(b)] });
+      const raw = url.searchParams.get("backend");
+      const provider =
+        raw !== null && (PROVIDER_NAMES as readonly string[]).includes(raw)
+          ? (raw as ProviderName)
+          : this.provider;
+      this.sendJson(res, 200, { models: getModelOverrides()[provider] ?? {}, available: [...availableModels(provider)] });
       return;
     }
     if (path === "/api/backend") {
-      this.sendJson(res, 200, { backend: this.backend, backends: [...BACKENDS] });
+      this.sendJson(res, 200, { backend: this.provider, backends: [...PROVIDER_NAMES] });
       return;
     }
     if (path === "/api/events") {
@@ -386,11 +389,11 @@ export class WebDashboard {
         this.sendJson(res, 400, { ok: false, error: "missing repo" });
         return;
       }
-      const rawBackend = (body as { backend?: unknown }).backend;
-      const backend =
-        typeof rawBackend === "string" && (BACKENDS as readonly string[]).includes(rawBackend)
-          ? (rawBackend as Backend)
-          : this.backend;
+      const rawProvider = (body as { backend?: unknown }).backend;
+      const provider =
+        typeof rawProvider === "string" && (PROVIDER_NAMES as readonly string[]).includes(rawProvider)
+          ? (rawProvider as ProviderName)
+          : this.provider;
       if (this.runActive) {
         this.sendJson(res, 200, { ok: false, error: "a run is already in progress" });
         return;
@@ -403,7 +406,7 @@ export class WebDashboard {
         this.sendJson(res, 200, { ok: false, error: "no start handler registered" });
         return;
       }
-      void this.onStartRequest(repo, backend)
+      void this.onStartRequest(repo, provider)
         .then((result) => {
           this.sendJson(res, 200, result);
           if (!result.ok || !result.runStarted) {
@@ -555,11 +558,11 @@ export class WebDashboard {
       }
       const role = (body as { role?: unknown }).role;
       const model = (body as { model?: unknown }).model;
-      const rawBackend = (body as { backend?: unknown }).backend;
-      const backend =
-        typeof rawBackend === "string" && (BACKENDS as readonly string[]).includes(rawBackend)
-          ? (rawBackend as Backend)
-          : this.backend;
+      const rawProvider = (body as { backend?: unknown }).backend;
+      const provider =
+        typeof rawProvider === "string" && (PROVIDER_NAMES as readonly string[]).includes(rawProvider)
+          ? (rawProvider as ProviderName)
+          : this.provider;
       if (typeof role !== "string" || !ROLES.includes(role as Role)) {
         this.sendJson(res, 400, { ok: false, error: "invalid role" });
         return;
@@ -573,7 +576,7 @@ export class WebDashboard {
         return;
       }
       try {
-        setModelOverride(role as Role, model, backend);
+        setModelOverride(role as Role, model, provider);
       } catch (err) {
         this.sendJson(res, 400, { ok: false, error: String(err instanceof Error ? err.message : err) });
         return;
@@ -587,12 +590,12 @@ export class WebDashboard {
         });
         return;
       }
-      const models = getModelOverrides()[backend] ?? {};
+      const models = getModelOverrides()[provider] ?? {};
       this.lastEventId += 1;
       this.broadcast(this.lastEventId, "models", {
-        backend,
+        backend: provider,
         models,
-        available: [...availableModels(backend)],
+        available: [...availableModels(provider)],
       });
       this.sendJson(res, 200, { ok: true, models });
     });
@@ -604,7 +607,7 @@ export class WebDashboard {
     });
   }
 
-  /** Set the run backend (opencode | claude | codex) used for the next queue start. */
+  /** Set the run provider (gemini | openrouter | ollama) used for the next queue start. */
   private handleBackend(req: IncomingMessage, res: ServerResponse): void {
     const chunks: Buffer[] = [];
     let done = false;
@@ -630,18 +633,18 @@ export class WebDashboard {
         return;
       }
       const backend = (body as { backend?: unknown }).backend;
-      if (typeof backend !== "string" || !(BACKENDS as readonly string[]).includes(backend)) {
-        this.sendJson(res, 400, { ok: false, error: `invalid backend; must be one of: ${BACKENDS.join(", ")}` });
+      if (typeof backend !== "string" || !(PROVIDER_NAMES as readonly string[]).includes(backend)) {
+        this.sendJson(res, 400, { ok: false, error: `invalid backend; must be one of: ${PROVIDER_NAMES.join(", ")}` });
         return;
       }
       if (this.runActive) {
         this.sendJson(res, 409, { ok: false, error: "a run is in progress; cannot change backend" });
         return;
       }
-      this.backend = backend as Backend;
+      this.provider = backend as ProviderName;
       this.lastEventId += 1;
-      this.broadcast(this.lastEventId, "backend", { backend: this.backend, backends: [...BACKENDS] });
-      this.sendJson(res, 200, { ok: true, backend: this.backend });
+      this.broadcast(this.lastEventId, "backend", { backend: this.provider, backends: [...PROVIDER_NAMES] });
+      this.sendJson(res, 200, { ok: true, backend: this.provider });
     });
     req.on("error", () => {
       if (!done) {

@@ -4,17 +4,8 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { appendAuditEvent, ensureChain } from "./db/audit.ts";
 import { pool } from "./db/client.ts";
-import {
-  backendDef,
-  buildBackendArgs,
-  buildBackendEnv,
-  parseBackendTrace,
-  resolveRolePrompt,
-} from "./runner/backends.ts";
-import type { AgentResult, Backend, Role, RolePolicy, RunContext } from "./types.ts";
-
-// Shared with the CLI/SDK runtimes under src/runtime/.
-export { buildBackendEnv, resolveRolePrompt } from "./runner/backends.ts";
+import { buildProviderArgs, buildProviderEnv, parseProviderTrace, providerDef, resolveRolePrompt } from "./runner/providers.ts";
+import type { AgentResult, ProviderName, Role, RolePolicy, RunContext } from "./types.ts";
 
 export interface RunWorkerOpts {
   /** Reasoning-effort variant override (else policy.variant). */
@@ -23,7 +14,7 @@ export interface RunWorkerOpts {
   onText?: (chunk: string) => void;
   /** Called for every opencode stream event (thinking, tool calls, results, etc.). */
   onEvent?: (ev: Record<string, unknown>) => void;
-  /** Resume this CLI session instead of starting fresh (same backend, no model fallback). */
+  /** Resume this CLI session instead of starting fresh (same provider, no model fallback). */
   resumeSessionID?: string;
 }
 
@@ -62,7 +53,7 @@ export function resetWorkerAbort(): void {
   abortRequested = false;
 }
 
-/** Run one worker for `role` on the ctx backend (default opencode), trying `policy.model` then each fallback. */
+/** Run one worker for `role` on the ctx provider (default gemini), trying `policy.model` then each fallback. */
 export async function runWorker(
   role: Role,
   task: string,
@@ -70,17 +61,17 @@ export async function runWorker(
   policy: RolePolicy,
   opts: RunWorkerOpts = {},
 ): Promise<AgentResult> {
-  const backend: Backend = ctx.backend ?? "opencode";
+  const provider: ProviderName = ctx.provider ?? "gemini";
   const tracePath = join(ctx.tracesDir, `${role}.jsonl`);
   await mkdir(dirname(tracePath), { recursive: true });
   const startedAt = Date.now();
 
   if (ctx.dryRun) {
-    return stubResult(role, policy.model, tracePath, startedAt);
+    return stubResult(role, policy.model, tracePath, startedAt, provider);
   }
 
-  const env = buildBackendEnv(backend, ctx);
-  const rolePrompt = resolveRolePrompt(backend, role, ctx);
+  const env = buildProviderEnv(provider, ctx);
+  const rolePrompt = resolveRolePrompt(provider, role, ctx);
   const models = [policy.model, ...policy.fallbacks];
   let last: ParsedStream | null = null;
   let lastModel = policy.model;
@@ -90,13 +81,13 @@ export async function runWorker(
     lastModel = model;
     if (abortRequested) {
       // User hit Stop: fail fast without spawning or falling back.
-      attempts.push({ model, ok: false, error: "aborted by user" });
+      attempts.push({ model, ok: false, error: "aborted by user", provider });
       continue;
     }
-    const parsed = await spawnOnce(backend, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt);
+    const parsed = await spawnOnce(provider, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt);
     last = parsed;
     const ok = !parsed.sawError && parsed.text.trim().length > 0;
-    attempts.push({ model, ok, error: parsed.errorMsg });
+    attempts.push({ model, ok, error: parsed.errorMsg, provider });
     if (ok) {
       return finalize(role, model, parsed, tracePath, startedAt, true, undefined, attempts);
     }
@@ -122,13 +113,13 @@ export function buildArgs(
   model: string,
   policy: RolePolicy,
   opts: RunWorkerOpts,
-  backend: Backend = "opencode",
+  provider: ProviderName = "gemini",
 ): string[] {
-  return buildBackendArgs(backend, role, task, ctx, model, policy, opts, "").args;
+  return buildProviderArgs(provider, role, task, ctx, model, policy, opts, "").args;
 }
 
 export function spawnOnce(
-  backend: Backend,
+  provider: ProviderName,
   role: Role,
   task: string,
   ctx: RunContext,
@@ -140,8 +131,8 @@ export function spawnOnce(
   rolePrompt: string,
 ): Promise<ParsedStream> {
   return new Promise((resolve) => {
-    const { args, cwd } = buildBackendArgs(backend, role, task, ctx, model, policy, opts, rolePrompt);
-    const binary = backendDef(backend).binary;
+    const { args, cwd } = buildProviderArgs(provider, role, task, ctx, model, policy, opts, rolePrompt);
+    const binary = providerDef(provider).binary;
     const traceDir = dirname(tracePath);
     mkdirSync(traceDir, { recursive: true });
     const stderrPath = join(traceDir, `${role}.stderr.log`);
@@ -215,7 +206,7 @@ export function spawnOnce(
       }
 
       child.on("close", (code) => {
-        const parsed = parseTrace(tracePath, opts, startOffset, backend);
+        const parsed = parseTrace(tracePath, opts, startOffset, provider);
         if (timedOut) {
           parsed.sawError = true;
           parsed.errorMsg = `timed out after ${timeoutMs}ms${parsed.errorMsg ? `: ${parsed.errorMsg}` : ""}`;
@@ -238,12 +229,12 @@ export function spawnOnce(
   });
 }
 
-/** Read back this attempt's trace from the trace file and build the parsed shape for `backend`. */
+/** Read back this attempt's trace from the trace file and build the parsed shape for `provider`. */
 export function parseTrace(
   tracePath: string,
   opts: RunWorkerOpts,
   startOffset: number,
-  backend: Backend = "opencode",
+  provider: ProviderName = "gemini",
 ): ParsedStream {
   let raw: string;
   try {
@@ -251,8 +242,7 @@ export function parseTrace(
   } catch {
     return { text: "", sessionID: null, tokens: zeroTokens(), costUsd: 0, sawError: false };
   }
-  const lastmsgPath = backend === "codex" ? tracePath.replace(/\.jsonl$/, ".lastmsg") : undefined;
-  const t = parseBackendTrace(backend, raw, startOffset, { lastmsgPath });
+  const t = parseProviderTrace(provider, raw, startOffset);
   return {
     text: t.text,
     sessionID: t.sessionID,
@@ -287,6 +277,7 @@ export function finalize(
     ok,
     sessionID: s.sessionID,
     model,
+    provider: "gemini", // TODO: Extract provider from context or pass it through
     attempts,
     text: s.text,
     tokens: s.tokens,
@@ -299,13 +290,20 @@ export function finalize(
   };
 }
 
-export function stubResult(role: Role, model: string, tracePath: string, startedAt: number): AgentResult {
+export function stubResult(
+  role: Role,
+  model: string,
+  tracePath: string,
+  startedAt: number,
+  provider: ProviderName = "gemini",
+): AgentResult {
   return {
     role,
     ok: true,
     sessionID: `dry-${role}`,
     model,
-    attempts: [{ model, ok: true }],
+    provider, // TODO: Extract provider from context
+    attempts: [{ model, ok: true, provider }],
     text: `[dry-run] ${role} would run here.`,
     tokens: zeroTokens(),
     costUsd: 0,
@@ -328,17 +326,17 @@ export const emptyStream = (): ParsedStream => ({ text: "", sessionID: null, tok
 
 /**
  * Bridge worker stream events into `opts.onEvent` so runtimes share one
- * forwarding path. The ctx/role/backend args keep the call site self-describing.
+ * forwarding path. The ctx/role/provider args keep the call site self-describing.
  */
 export function makeEventBridge(
   ctx: RunContext,
   role: Role,
-  backend: Backend,
+  provider: ProviderName,
   opts: RunWorkerOpts | undefined,
 ): (ev: Record<string, unknown>) => void {
   void ctx;
   void role;
-  void backend;
+  void provider;
   return (ev) => opts?.onEvent?.(ev);
 }
 
@@ -349,7 +347,7 @@ export function makeEventBridge(
  */
 export function emitWakeup(
   ctx: RunContext,
-  backend: Backend,
+  provider: ProviderName,
   payload: Record<string, unknown>,
 ): Promise<void> {
   if (ctx.dryRun) return Promise.resolve();
@@ -360,7 +358,7 @@ export function emitWakeup(
         run_id: null,
         event_type: "wakeup",
         actor: "manager",
-        backend,
+        backend: provider,
         tool_name: null,
         tool_input: null,
         tool_output: null,
@@ -493,6 +491,7 @@ export function aggregateAgentResults(results: AgentResult[]): AgentResult {
     ok: results.every((r) => r.ok),
     sessionID: last.sessionID,
     model: last.model,
+    provider: last.provider, // Preserve provider from last result
     attempts,
     text: text.join("\n"),
     tokens,

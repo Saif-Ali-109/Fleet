@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { aggregateAgentResults, runWorker } from "../agentRunner.ts";
 import { checkpoint } from "../db/checkpoint.ts";
-import { splitTestCommand } from "../runner/backends.ts";
+import { splitTestCommand } from "../fleet/testCmd.ts";
 import type { AgentResult, Role, RolePolicy, RunContext } from "../types.ts";
 
 const exec = promisify(execFile);

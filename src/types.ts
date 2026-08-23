@@ -4,8 +4,11 @@
 /** The six worker roles in the fleet. */
 export type Role = "analyzer" | "planner" | "coder" | "tester" | "reviewer" | "pr";
 
-/** Which headless CLI agent runs the fleet for a given run. */
-export type Backend = "opencode" | "claude" | "codex";
+/** Which provider is used for the worker (gemini, openrouter, ollama). */
+export type ProviderName = "gemini" | "openrouter" | "ollama";
+
+/** List of all provider names. */
+export const PROVIDER_NAMES: readonly ProviderName[] = ["gemini", "openrouter", "ollama"] as const;
 
 /** A GitHub issue as pulled from `gh issue view --json`. */
 export interface Issue {
@@ -42,13 +45,14 @@ export interface Plan {
   outOfScope: string[];
 }
 
-/** Result of one opencode worker invocation. */
+/** Result of one worker invocation. */
 export interface AgentResult {
   role: Role;
   ok: boolean; // false if is_error or non-zero exit or parse failure
-  sessionID: string | null; // opencode session ID returned by the worker
+  sessionID: string | null; // opencode session ID returned by the worker (now unused?
   model: string; // model actually used (after any fallback)
-  attempts?: { model: string; ok: boolean; error?: string }[]; // each model tried, in order
+  provider: ProviderName; // provider used for this call
+  attempts?: { model: string; ok: boolean; error?: string; provider?: ProviderName }[]; // each model/provider tried, in order
   text: string; // final assembled assistant text (the worker's "return value")
   tokens: { input: number; output: number; reasoning: number; cached: number; cacheWrite: number; total: number };
   costUsd: number;
@@ -72,8 +76,8 @@ export interface RunContext {
   dryRun: boolean;
   /** Session-level clone to reuse instead of cloning again (0.7 worktree hygiene). */
   cloneDir?: string;
-  /** Which headless CLI runs the fleet's workers. Default "opencode". */
-  backend?: Backend;
+  /** Which provider is used for the worker's model (optional, default comes from policy). */
+  provider?: ProviderName;
 }
 
 /** Per-role model + privilege policy (mirrors opencode.json; used by the router/runner). */

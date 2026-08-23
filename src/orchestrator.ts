@@ -37,7 +37,7 @@ import {
 } from "./workflow/coder.ts";
 import { runTester } from "./workflow/tester.ts";
 import { ScoutTracker } from "./workflow/scoutTracker.ts";
-import { detectTestCommand } from "./runner/backends.ts";
+import { detectTestCommand } from "./fleet/testCmd.ts";
 import { generateMemory } from "./db/queries/summaryReport.ts";
 import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.ts";
 import { policyFor } from "./models/modelPolicy.ts";
@@ -46,7 +46,6 @@ import type { DashboardState } from "./tui/dashboard.ts";
 import { newDashboardState, renderDashboard } from "./tui/dashboard.ts";
 import type {
   AgentResult,
-  Backend,
   FixSpec,
   Issue,
   Plan,
@@ -54,6 +53,7 @@ import type {
   RolePolicy,
   RunContext,
 } from "./types.ts";
+import type { ProviderName } from "./types.ts";
 
 export type RunStatus = "completed" | "aborted" | "failed";
 
@@ -72,7 +72,7 @@ export interface RunSummary {
   status: RunStatus;
   prUrl?: string;
   failure?: string;
-  backend: Backend;
+  backend: ProviderName;
   agents: Record<Role, AgentResult>;
   totalCostUsd: number;
   iterationsUsed: number;
@@ -174,7 +174,7 @@ async function sorEmit(
   ctx: RunContext | { runId: string; dryRun?: boolean },
   event: Partial<SorEvent>,
 ): Promise<void> {
-  const backend = "backend" in ctx ? ctx.backend : undefined;
+  const backend = "provider" in ctx ? ctx.provider : undefined;
   const sorEvent: SorEvent = {
     run_id: ctx.runId,
     event_type: event.event_type ?? "phase",
@@ -200,7 +200,7 @@ export async function runOrchestrator(
 ): Promise<RunSummary> {
   const startedAt = Date.now();
   const web = opts.web;
-  const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.backend);
+  const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.provider ?? "gemini");
   const agents = {} as Record<Role, AgentResult>;
   const scoutTracker = new ScoutTracker();
   let runId: string | undefined;
@@ -233,7 +233,7 @@ export async function runOrchestrator(
     status,
     prUrl,
     failure,
-    backend: ctx.backend ?? "opencode",
+    backend: ctx.provider ?? "gemini",
     agents,
     totalCostUsd: totalCostUsd(),
     iterationsUsed,
@@ -279,7 +279,7 @@ export async function runOrchestrator(
             `Managed run \`${ctx.runId}\` completed.`,
             prUrl ? `- PR: ${prUrl}` : "- PR: (none)",
             `- Total cost: $${totalCostUsd().toFixed(4)}`,
-            `- Backend: ${ctx.backend ?? "opencode"}`,
+            `- Backend: ${ctx.provider ?? "gemini"}`,
           ].join("\n");
           await commentOnIssue(owner, repo, ctx.issue.number, lines);
         } else {
@@ -379,7 +379,7 @@ export async function runOrchestrator(
       runId = await db.createRun({
         repo: ctx.issue.repo,
         issue_number: ctx.issue.number,
-        backend: ctx.backend ?? "opencode",
+        backend: ctx.provider ?? "gemini",
       });
       await db.updateRunStatus({ run_id: runId, phase: "start", status: "running", iteration: 0 });
     }
@@ -442,7 +442,7 @@ export async function runOrchestrator(
       `Return ONLY one JSON object with exactly this shape and nothing else:`,
       `{"summary": "...", "rootCause": "...", "suspectFiles": ["..."], "affectedSymbols": ["..."], "reproduction": "...", "testStrategy": "...", "risks": ["..."], "confidence": "low" | "medium" | "high"}`,
     ].join("\n");
-    const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer", ctx.backend));
+    const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer", ctx.provider ?? "gemini"));
     if (!a.ok) {
       setPhase("failed");
       pushState();
@@ -511,7 +511,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
       `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
       `{"approach": "...", "steps": ["..."], "filesToChange": ["..."], "testsToAddOrUpdate": ["..."], "acceptanceCriteria": ["..."], "outOfScope": ["..."], "filesNeeded": "string[]"}`,
     ].join("\n");
-    const p = await runAgent("planner", "plan", plannerTask, policyFor("planner", ctx.backend));
+    const p = await runAgent("planner", "plan", plannerTask, policyFor("planner", ctx.provider ?? "gemini"));
     if (!p.ok) {
       setPhase("failed");
       pushState();
@@ -659,7 +659,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
 
       for (const role of implRoles) {
         const task = implTask(feedback);
-        const policy = policyFor(role, ctx.backend);
+        const policy = policyFor(role, ctx.provider ?? "gemini");
 
         if (!runId) {
           const res = await runAgent(role, "implement", task, policy);
@@ -842,7 +842,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
         "reviewer",
         "review",
         reviewerTask,
-        policyFor("reviewer", ctx.backend),
+        policyFor("reviewer", ctx.provider ?? "gemini"),
       );
       if (!r.ok) {
         setPhase("failed");
@@ -938,7 +938,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
       `PR body must start with: Closes #${ctx.issue.number}`,
       `Managed run: ${ctx.runId}.`,
     ].join("\n");
-    const pr = await runAgent("pr", "pr", prTask, policyFor("pr", ctx.backend));
+    const pr = await runAgent("pr", "pr", prTask, policyFor("pr", ctx.provider ?? "gemini"));
     const extractPrUrl = (text: string): string | undefined =>
       /https?:\/\/[^\s)"']+\/pull\/\d+/.exec(text)?.[0];
     if (pr.ok) {
