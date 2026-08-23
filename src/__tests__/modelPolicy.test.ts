@@ -74,6 +74,57 @@ describe("modelPolicy (v2 override store: {provider:{role:id}})", () => {
     });
   });
 
+  describe("env layer (SPEC D6: dashboard override > <ROLE>_MODEL_<PROVIDER> > tier default)", () => {
+    const ENV_KEYS = ["ANALYZER_MODEL_OLLAMA", "CODER_MODEL_OLLAMA", "CODER_MODEL_GEMINI"];
+    let savedEnv: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      savedEnv = {};
+      for (const k of ENV_KEYS) {
+        savedEnv[k] = process.env[k];
+        delete process.env[k];
+      }
+    });
+
+    afterEach(() => {
+      for (const [k, v] of Object.entries(savedEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    });
+
+    it("env var set → picked for that role+provider only", () => {
+      process.env.CODER_MODEL_OLLAMA = "llama3.2:3b";
+      expect(policyFor("coder", "ollama").model).toBe("llama3.2:3b");
+      expect(policyFor("coder", "gemini").model).toBe(modelDefaults.gemini.coder);
+      expect(policyFor("tester", "ollama").model).toBe(modelDefaults.ollama.tester);
+    });
+
+    it("env unset → tier default", () => {
+      expect(policyFor("coder", "ollama").model).toBe(modelDefaults.ollama.coder);
+      expect(policyFor("analyzer", "ollama").model).toBe(modelDefaults.ollama.analyzer);
+    });
+
+    it("dashboard override beats env", () => {
+      process.env.CODER_MODEL_OLLAMA = "env-id";
+      setModelOverride("coder", "dash-id", "ollama");
+      expect(policyFor("coder", "ollama").model).toBe("dash-id");
+    });
+
+    it("env beats tier default and yields fallbacks=[tierDefault]", () => {
+      process.env.ANALYZER_MODEL_OLLAMA = "env-strong";
+      const p = policyFor("analyzer", "ollama");
+      expect(p.model).toBe("env-strong");
+      expect(p.fallbacks).toEqual([modelDefaults.ollama.analyzer]);
+    });
+
+    it("empty-string env value is treated as unset", () => {
+      process.env.CODER_MODEL_OLLAMA = "";
+      expect(policyFor("coder", "ollama").model).toBe(modelDefaults.ollama.coder);
+      expect(policyFor("coder", "ollama").fallbacks).toEqual([]);
+    });
+  });
+
   describe("setModelOverride / getModelOverrides round-trip", () => {
     it("round-trips a per-provider role override", () => {
       setModelOverride("analyzer", "custom-pro", "openrouter");
@@ -157,11 +208,28 @@ describe("modelPolicy (v2 override store: {provider:{role:id}})", () => {
       expect(getModelOverrides()).toEqual({});
     });
 
-    it("self-seeds the file with the SPEC §5 tier table when missing", () => {
+    it("self-seeds an EMPTY store when missing (defaults must not enter the override layer)", () => {
       expect(existsSync(path)).toBe(false);
       loadModelOverrides(path);
       expect(existsSync(path)).toBe(true);
-      expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(modelDefaults);
+      expect(readFileSync(path, "utf8")).toBe("{}\n");
+      expect(getModelOverrides()).toEqual({});
+    });
+
+    it("regression: seeded-empty store keeps env above defaults across reboot", () => {
+      const saved = process.env.ANALYZER_MODEL_OLLAMA;
+      process.env.ANALYZER_MODEL_OLLAMA = "llama3.2:3b";
+      try {
+        // Boot 1: file missing → empty-store self-seed. Boot 2: reload the
+        // regenerated file; the env var must still win over the §5 tier default.
+        loadModelOverrides(path);
+        loadModelOverrides(path);
+        expect(policyFor("analyzer", "ollama").model).toBe("llama3.2:3b");
+        expect(policyFor("analyzer", "ollama").fallbacks).toEqual([modelDefaults.ollama.analyzer]);
+      } finally {
+        if (saved === undefined) delete process.env.ANALYZER_MODEL_OLLAMA;
+        else process.env.ANALYZER_MODEL_OLLAMA = saved;
+      }
     });
   });
 

@@ -44,14 +44,18 @@ let overrides: Partial<Record<ProviderName, Partial<Record<Role, string>>>> = {}
 // Log-once latch for v1 override keys discarded during loadModelOverrides (SPEC §12/P8).
 let warnedLegacyOverrideKeys = false;
 
-// Override ids and tier defaults are already provider-correct (SPEC D6:
-// `<ROLE>_MODEL_<PROVIDER>` / §5 table) — no cross-provider prefixing.
+// Resolution chain per SPEC D6: dashboard override beats the
+// `<ROLE>_MODEL_<PROVIDER>` env var, which beats the SPEC §5 tier default,
+// which beats the POLICIES baseline. An empty-string env value is treated as
+// unset. Ids are provider-correct at each layer — no cross-provider prefixing.
 
 /** Per-role policy for a provider. `provider` defaults to "gemini" (the primary path). */
 export function policyFor(role: Role, provider: ProviderName = "gemini"): RolePolicy {
   const base = POLICIES[role];
   const tierDefault: string | undefined = defaultsFor(provider)[role];
-  const chosen = overrides[provider]?.[role] ?? tierDefault ?? base.model;
+  const rawEnv = process.env[`${role.toUpperCase()}_MODEL_${provider.toUpperCase()}`];
+  const fromEnv = typeof rawEnv === "string" && rawEnv.length > 0 ? rawEnv : undefined;
+  const chosen = overrides[provider]?.[role] ?? fromEnv ?? tierDefault ?? base.model;
   return {
     ...base,
     model: chosen,
@@ -102,14 +106,18 @@ export function saveModelOverrides(path: string): void {
 
 export function loadModelOverrides(modelsJsonPath: string): void {
   if (!existsSync(modelsJsonPath)) {
-    // Self-seed: write the SPEC §5 tier table so the feature works out of the box.
-    const seed: Record<ProviderName, Record<Role, string>> = structuredClone(modelDefaults);
+    // Missing file = no user overrides yet, so write an EMPTY v2 store. Seeding
+    // the SPEC §5 tier table here would put defaults into the OVERRIDE layer,
+    // where they outrank the `<ROLE>_MODEL_<PROVIDER>` env vars on every later
+    // boot (D6: dashboard override > env > tier default) and silently defeat
+    // user env config. Defaults already live in src/fleet/modelDefaults.ts and
+    // are applied as the tier-default stage of the resolution chain.
     try {
       mkdirSync(dirname(modelsJsonPath), { recursive: true });
     } catch {
       // Ignore: writeFileSync below will throw if the directory is truly unwritable.
     }
-    writeFileSync(modelsJsonPath, JSON.stringify(seed, null, 2) + "\n", "utf8");
+    writeFileSync(modelsJsonPath, "{}\n", "utf8");
   }
   let parsed: Record<string, unknown> = {};
   try {
