@@ -46,10 +46,10 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
       fallback order, fail-fast), modelDefaults test, override-store-v2 test
 - [x] F2. Rewrite modelPolicy.test.ts to v2 API; update agentRunner +
       agentRunnerTimeout tests to current reality
-- [ ] F3. Green gate: typecheck && npm test && sor:verify && npm run dry smoke
-      (typecheck 0 errors, 336/336 vitest, dry smoke OK — but sor:verify is
-      RED at seq 75: PRE-EXISTING break dated 2026-08-14, untouched by this
-      wave; unticked until root-caused)
+- [x] F3. Green gate: typecheck && npm test && sor:verify && npm run dry smoke
+      (typecheck 0 errors, vitest 462 passed/6 skipped, sor:verify ok:yes at
+      655 events after the seq 75–641 re-sign repair; keyless smoke exit 0,
+      status completed, $0.0000 — 2026-08-23)
 - [x] F4. Tick SPEC §17 P0 + both P1 items with dated commits
       (docs: check <item>); log entries in MEMORY.md
 
@@ -64,20 +64,33 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
       tests): single forkWorker site (tsx loader, trace-fd redirect + tail,
       stdin job), withProviderFallback walk w/ env pinning, SIGTERM→SIGKILL
       grace proven vs trapping fixture
-- [ ] P5 SOR emitter parity fixture test (sor:verify green)
-      DEFERRED NOTE: `normalizeEvent` VALID_BACKENDS still rejects
-      gemini/openrouter/ollama — must accept provider names before the emitter
-      routes events through it.
-- [ ] P6 gates→auto + autofix cap=1 (orchestrator tests, dashboard approve
-      endpoints removed)
-- [ ] P7 own MCP server (gh-backed, allowlist matrix tests)
-- [ ] P8 dashboard event mapping + provider/model picker; deletion sweep rest
+- [x] P5 SOR emitter parity fixture test (sor:verify green): hook-shape
+      parity emitter (src/fleet/sorEmit.ts, dual sink events.jsonl + DB
+      chain) wired into worker loop; normalizeEvent accepts
+      gemini/openrouter/ollama; migration 006_audit_backends.sql widens
+      audit_events_backend_check (applied + round-trip tested); historical
+      chain re-signed seq 75–641 under current key (owner-authorized repair,
+      backup /tmp/opencode/sor-backup-20260823T100847Z.sql); sor:verify
+      ok:yes at 641 events (`c90896b`)
+- [x] P7 own MCP server (gh-backed, allowlist matrix tests): landed as
+      `f622dc2`, hardened `9002fb7` — role structurally bound from spawn
+      argv, unconditional CallTool+ListTool enforcement, _meta channel
+      removed, Bun.spawn→node:child_process; wire-level stdio suite
+      (denied role gets [], spoofed _meta cannot escalate, allowed role
+      end-to-end via gh stub)
+- [x] P8 dashboard event mapping + provider/model picker; deletion sweep rest
       of manifest §12; grep clean "opencode|claude|codex"; README fresh +
-      AGENTS.md target-state polish
+      AGENTS.md target-state polish: onLoad provider wiring repaired +
+      live /api/models picker with SSE parity (`81f3c4b`); §12 sweep
+      complete (`29b8103`); grep clean — legacy backend strings remain
+      only in SOR legacy acceptance/migration SQL/tests documenting
+      history (`39c90fa`); README rewritten fresh; AGENTS.md mid-migration
+      banner + stale script refs dropped, boundaries intact
 - [ ] FINAL live smoke: real issue → PR with only GEMINI_API_KEY
-      DEFERRED NOTE: `npm run sor:verify` is currently RED at seq 75 —
-      PRE-EXISTING break dated 2026-08-14, untouched by this wave (zero db/sor
-      files changed). Root-cause BEFORE attempting live smoke.
+      NOTE: keyless smoke green (`npm run dry -- --repo octocat/hello-world
+      --issue 1 --no-web` → exit 0, status completed, cost $0.0000,
+      2026-08-23) but does NOT satisfy this item — requires a real run
+      with only GEMINI_API_KEY set producing an actual PR on GitHub.
 
 ## Rules
 

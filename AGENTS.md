@@ -6,15 +6,7 @@ No YAML frontmatter on this file by rule — every other `*.md` must have one.
 
 ## What this repo is
 
-TypeScript Manager that takes a GitHub issue → a real PR using 6 role agents
-(analyzer, planner, coder, tester, reviewer, pr). Workers run as child processes;
-the Manager itself never calls models. PostgreSQL-backed tamper-evident SOR audit
-chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
-
-> System is mid-migration: CLI fleet (opencode/claude/codex) → custom OpenAI-SDK
-> workers (gemini → openrouter → ollama), gates removed. Truth for that work:
-> `SPEC.md` (+ progress in its §17 checklist; `PLAN.md` is the index). Rules below
-> hold in BOTH eras unless explicitly marked.
+TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue → a real PR using 6 role agents (analyzer, planner, coder, tester, reviewer, pr). Workers run as child processes; the Manager itself never calls models. PostgreSQL-backed tamper-evident SOR audit chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
 
 ## Session protocol (every session)
 
@@ -33,16 +25,12 @@ chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
 - `npm run migrate:up` / `migrate:down` — Postgres schema (DATABASE_URL required)
 - `npm run sor:verify` — replay SOR hash chain; must stay green at all times
 - `analytics`, `generate-memory` — reporting utilities
-- Scheduled for removal after SPEC.md P8 (do not rely on): `build:config`,
-  `check:config`, `sor:sync-registry`
 
 ## Code style
 
 - Plain TypeScript ESM in `src/*`; imports keep explicit `.ts` extensions.
-- Model/API calls ONLY inside worker child processes — never in
-  `orchestrator.ts`, dashboard, router, or any manager-side module.
-- Providers/models are resolved through the provider/model policy layers — never
-  hardcode baseURLs or infer one provider's model id from another's.
+- Model/API calls ONLY inside worker child processes — never in `orchestrator.ts`, dashboard, router, or any manager-side module.
+- Providers/models are resolved through the provider/model policy layers — never hardcode baseURLs or infer one provider's model id from another's.
 - No comments unless asked; mirror surrounding conventions.
 
 ## Security
@@ -50,8 +38,7 @@ chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
 - Secrets live ONLY in `.env`; never commit keys/tokens.
 - All SOR writes are NON-FATAL: warn and continue, never abort a run over them.
 - coder/tester workers never `git push`; pr creates PRs but never merges.
-- Workers operate ONLY inside their assigned git worktree — tool-layer path
-  checks enforce this; do not weaken them.
+- Workers operate ONLY inside their assigned git worktree — tool-layer path checks enforce this; do not weaken them.
 
 ## Boundaries
 
@@ -64,12 +51,9 @@ chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
 - New agent roles or new providers beyond gemini/openrouter/ollama.
 - Changes to SOR event shapes or hash-chain logic (`sor:verify` contract).
 - Schema migrations; new runtime dependencies.
-- Gate/auto-flow design changes — EXCEPT the SPEC.md D11 migration
-  (gate removal + auto-fix), which is pre-authorized.
 
 ### Never
 - Add model calls to manager code (`orchestrator.ts` et al).
-- Hand-edit generated or historical artifacts (`.fleet/**` while it exists;
-  anything under `.runs/`).
+- Hand-edit generated or historical artifacts (anything under `.runs/`).
 - Weaken tool gating (per-role toolsets) or bash worktree cwd-locking.
 - Reorder/delete SOR chain logic; assume `--dry-run` spawns real workers.

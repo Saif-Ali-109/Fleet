@@ -427,12 +427,12 @@ Find the first unchecked item; do it; mark `[x]` + append date + commit
 - [x] P3 loop.ts + worker main.ts (+ mocked-OpenAI integration test) — 2026-08-23: tool-call roundtrip over OpenAI SDK, §6 wire events via callback, usage tolerance + cost rule, stop-after-current-tool abort, maxSteps=25; 12 mocked-client tests
 - [x] P3 fork e2e test (spawn main.ts with fake job) — 2026-08-23: dry-run zero-model guard (dead-port-proven), keyless ollama localhost stub, SIGTERM abort with bounded flush, malformed-job rejection; parseProviderTrace realigned to real t:-keyed protocol
 - [x] P4 agentRunner rewired to fork worker (+ attempts/provider-walk/abort tests) — 2026-08-23: single forkWorker call site (tsx-loader execArgv, stdout fds → tracesDir/<role>.jsonl then tailed, job JSON via stdin); provider walk via withProviderFallback with per-attempt env pinning; attempts[] carries provider; WORKER_TIMEOUT_MS SIGTERM → GRACE SIGKILL proven vs SIGTERM-trapping fixture; killActiveWorkers fail-fast latch kept
-- [ ] P5 SOR emitter parity fixture test (sor:verify green)
-- [ ] P6 gates→auto + autofix loop (orchestrator tests, cap=1)
-- [ ] P7 fleet MCP server (+ allowlist matrix tests)
-- [ ] P8 dashboard event mapping + provider/model picker
-- [ ] P8 deletion sweep (manifest §12) + grep clean of "opencode|claude|codex"
-- [ ] P8 README + AGENTS.md target-state rewrite
+- [x] P5 SOR emitter parity fixture test (sor:verify green) — 2026-08-23: hook-shape parity emitter (src/fleet/sorEmit.ts, dual sink events.jsonl + DB chain) wired into worker loop; normalizeEvent accepts gemini/openrouter/ollama; migration 006_audit_backends.sql widens audit_events_backend_check (applied + round-trip tested); historical chain re-signed seq 75–641 under current key (owner-authorized repair, backup /tmp/opencode/sor-backup-20260823T100847Z.sql); sor:verify ok:yes at 641 events (`c90896b`)
+- [x] P6 gates→auto + autofix loop (orchestrator tests, cap=1) — 2026-08-23: gates auto-proceed emitting gate_auto_approved; AUTO_FIX_MAX_ROUNDS=1 loop bound + guard proven by orchestrator.test.ts (exactly 2 coder runs on reject→approve; fails on second reject); zero gate remnants post-sweep (`cf4e3ff`)
+- [x] P7 fleet MCP server (+ allowlist matrix tests) — 2026-08-23: server landed (`f622dc2`) then hardened (`9002fb7`): role structurally bound from spawn argv, unconditional CallTool+ListTool enforcement, spoofable _meta channel removed, Bun.spawn→node:child_process; wire-level stdio integration suite (denied role gets [], spoofed _meta cannot escalate, allowed role end-to-end via gh stub)
+- [x] P8 dashboard event mapping + provider/model picker — 2026-08-23: onLoad provider wiring repaired (was ReferenceError-killing init), /api/models serves live registry.listModelsForProvider with static tier fallback (10s bounded), SSE broadcast parity (`81f3c4b`)
+- [x] P8 deletion sweep (manifest §12) + grep clean of "opencode|claude|codex" — 2026-08-23: all §12 manifest entries deleted (`29b8103`); repo grep clean — legacy backend strings remain ONLY in SOR legacy acceptance/migration SQL/tests documenting history (`39c90fa`)
+- [x] P8 README + AGENTS.md target-state rewrite — 2026-08-23: README rewritten fresh (provider fleet architecture, current commands); AGENTS.md target-state polish (mid-migration banner + stale script refs dropped, boundaries intact)
 - [ ] FINAL live smoke: real issue → PR with only GEMINI_API_KEY
 
 ---

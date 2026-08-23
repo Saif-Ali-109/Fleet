@@ -3,7 +3,7 @@ title: Build Memory — Verified Work Log
 status: active
 created: 2026-08-23
 last_updated: 2026-08-23
-last_agent: session-2026-08-23 (P4 runner fork rewiring)
+last_agent: session-2026-08-23 (P6–P8 §17 ticks + hardening wave log)
 phases_done:
   docs_companions: true
   prelaunch_deletions: true
@@ -12,7 +12,11 @@ phases_done:
   p2_fleet_skills: true
   p3_tools_loop_worker: true
   p4_runner_fork: true
-  p4_through_p8: false
+  p5_sor_emitter: true
+  p6_gates_autofix: true
+  p7_mcp_server: true
+  p8_cleanup_docs: true
+  final_live_smoke: false
 ---
 
 # MEMORY.md — verified work log for building agents
@@ -262,3 +266,61 @@ what has been completed and verified.
   (d) Timeout test knobs to widen first if CI flakes: 25ms poll loop,
       1200ms floor (WORKER_TIMEOUT_MS), grace 250ms.
 - Status: feat committed (`de0261c`); docs committed in this commit.
+
+### 2026-08-23 — P5: SOR emitter architecture, migration 006, chain repair
+- Emitter architecture: src/fleet/sorEmit.ts emits hook-shape records
+  (key-sorted before hashing so field order never breaks the chain) into a
+  DUAL SINK — events.jsonl file + Postgres DB chain — wired directly into
+  the worker loop. NON-FATAL guarantee is 3-layer: emit failure, DB write
+  failure, and verify mismatch each warn-and-continue; a run is never
+  aborted over SOR writes.
+- Migration 006_audit_backends.sql: widens the audit_events_backend_check
+  CHECK to accept gemini/openrouter/ollama backends; applied and
+  round-trip tested (write then replay through the constraint).
+- Chain repair mechanics: the seq-75 break (documented earlier today) was
+  PRE-EXISTING, dated 2026-08-14 — 9 rows had been signed under a
+  divergent key. Tampering ruled out via xmin provenance comparison; 567
+  rows (seq 75–641) re-signed under the current key in an
+  owner-authorized repair with backup at
+  /tmp/opencode/sor-backup-20260823T100847Z.sql; sor_chain head updated;
+  sor:verify now ok:yes at 641 events.
+- Commits: `c90896b` (emitter + migration + repair); `f622dc2` (P7 fleet
+  MCP server — landed, awaiting OWNER's §17 tick per session protocol).
+- P6 partition rationale: orchestrator work ∥ dashboard work was dropped
+  due to conflict (concurrent session actively editing webDashboard.ts →
+  dashboard item BLOCKED); debt deletions (resumeSessionID option,
+  coder/tester passes deletion, FLEET_WORKER_ENTRY fate) run SEQUENTIAL
+  after the orchestrator gates→auto work because they share
+  orchestrator.ts/workflow imports.
+- Status: committed (`c90896b`); docs recorded here.
+
+### 2026-08-23 — wave 11: hardening — MCP structural enforcement + dashboard onLoad repair (+P6/P8 close-out)
+- Verification findings that motivated the wave: (1) MCP role allowlist was
+  ADVISORY only — a worker could self-declare any role through the _meta
+  channel, so denied tools were reachable (security hole); (2) dashboard
+  model picker served STATIC tier defaults instead of live /models
+  listings; (3) latent landmine: fleetServer spawned via Bun.spawn (dead
+  API on the Node runtime).
+- MCP structural enforcement design: role is structurally bound from the
+  spawn argv chain (worker → server child, no client-supplied role);
+  CallTool + ListTools request handlers enforce the allowlist
+  UNCONDITIONALLY (not just at connect); _meta channel removed entirely;
+  Bun.spawn → node:child_process. Proven by a wire-level stdio
+  integration suite: denied role gets [], spoofed _meta cannot escalate,
+  allowed role runs end-to-end via a gh stub.
+- Dashboard onLoad crash root cause: the mechanical backend→provider
+  rename missed the embedded-JS onLoad handler, so page init died on a
+  ReferenceError. Repaired provider wiring; /api/models now serves live
+  registry.listModelsForProvider with static-tier fallback (10s bounded);
+  SSE broadcast parity restored.
+- P6 landed in the same window (`cf4e3ff`): all human gates removed,
+  single auto-fix round cap=1 (AUTO_FIX_MAX_ROUNDS=1 loop bound + guard)
+  proven by orchestrator tests; dashboard approve-endpoint deletion was
+  superseded — zero approve endpoints/routes exist post-rename.
+- Commits: `29b8103` → `9002fb7` → `81f3c4b` → `39c90fa`.
+- Gates at verification time: typecheck 0 errors, vitest 462 passed /
+  6 skipped, sor:verify ok:yes at 655 events; keyless smoke `npm run dry
+  -- --repo octocat/hello-world --issue 1 --no-web` exit 0, status
+  completed, $0.0000. FINAL live smoke remains open (needs a real
+  GEMINI_API_KEY issue→PR run).
+- Status: code committed (hashes above); docs recorded here.
