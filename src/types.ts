@@ -1,5 +1,5 @@
 // Core domain types shared across the Manager.
-// The Manager is plain TypeScript (not an LLM); opencode runs the 6 worker roles.
+// The Manager is plain TypeScript (not an LLM); custom OpenAI-SDK workers run the 6 roles.
 
 /** The six worker roles in the fleet. */
 export type Role = "analyzer" | "planner" | "coder" | "tester" | "reviewer" | "pr";
@@ -49,7 +49,7 @@ export interface Plan {
 export interface AgentResult {
   role: Role;
   ok: boolean; // false if is_error or non-zero exit or parse failure
-  sessionID: string | null; // opencode session ID returned by the worker (now unused?
+  sessionID: string | null; // worker session ID (unused in new SDK workers)
   model: string; // model actually used (after any fallback)
   provider: ProviderName; // provider used for this call
   attempts?: { model: string; ok: boolean; error?: string; provider?: ProviderName }[]; // each model/provider tried, in order
@@ -80,10 +80,10 @@ export interface RunContext {
   provider?: ProviderName;
 }
 
-/** Per-role model + privilege policy (mirrors opencode.json; used by the router/runner). */
+/** Per-role model + privilege policy (v2: provider-keyed; used by the orchestrator). */
 export interface RolePolicy {
   role: Role;
-  model: string; // primary opencode model id
+  model: string; // primary model id
   fallbacks: string[]; // tried in order on 5xx/quota
   variant?: "minimal" | "low" | "medium" | "high" | "max"; // reasoning effort
 }

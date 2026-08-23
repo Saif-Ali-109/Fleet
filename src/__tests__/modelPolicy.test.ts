@@ -176,7 +176,9 @@ describe("modelPolicy (v2 override store: {provider:{role:id}})", () => {
           opencode: { analyzer: "legacy-free" },
           claude: { coder: "anthropic/claude-3.5-sonnet" },
           codex: { pr: "openai/gpt-4o-mini" },
-          gemini: { planner: "kept-id" },
+          gemini: { analyzer: "legacy-free", planner: "kept-id" },
+          openrouter: { coder: "anthropic/claude-3.5-sonnet" },
+          ollama: { pr: "qwen2.5:7b" },
         }),
         "utf8",
       );
@@ -184,7 +186,11 @@ describe("modelPolicy (v2 override store: {provider:{role:id}})", () => {
       try {
         loadModelOverrides(path);
         // v2 keys survive; v1 keys are dropped
-        expect(getModelOverrides()).toEqual({ gemini: { planner: "kept-id" } });
+        expect(getModelOverrides()).toEqual({
+          gemini: { planner: "kept-id", analyzer: "legacy-free" },
+          openrouter: { coder: "anthropic/claude-3.5-sonnet" },
+          ollama: { pr: "qwen2.5:7b" },
+        });
         loadModelOverrides(path);
         loadModelOverrides(path);
         // log-once latch: one warning total no matter how many loads re-see legacy keys

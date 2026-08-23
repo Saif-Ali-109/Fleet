@@ -1,5 +1,5 @@
 // Ingestion for the signed System of Record: converts raw hook lines and
-// opencode NDJSON trace events into normalized SorEvent objects (no signing —
+// worker NDJSON trace events into normalized SorEvent objects (no signing —
 // that happens later, in the DB layer).
 
 import { readFileSync } from "node:fs";
@@ -14,14 +14,14 @@ import {
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-const VALID_BACKENDS: readonly string[] = ["opencode", "claude", "codex", "gemini", "openrouter", "ollama"];
+const VALID_BACKENDS: readonly string[] = ["opencode", "claude", "codex", "gemini", "openrouter", "ollama"]; // historical event verification
 
-/** Best-effort backend from the event, else defaulting to "opencode" (trace events are opencode NDJSON). */
+/** Best-effort provider from the event, else defaulting to "gemini". */
 function backendOf(ev: Record<string, unknown>): string {
   if (typeof ev.backend === "string" && (VALID_BACKENDS as readonly unknown[]).includes(ev.backend)) {
     return ev.backend;
   }
-  return "opencode";
+  return "gemini";
 }
 
 /** created_at from an explicit ISO field or an epoch-ms `timestamp`, else now. */
@@ -101,7 +101,7 @@ function toolCallFrom(ev: Record<string, unknown>): ToolCall | null {
 }
 
 /**
- * Convert an opencode NDJSON trace event (the object passed to agentRunner onEvent) into
+ * Convert a worker NDJSON trace event (the object passed to agentRunner onEvent) into
  * a SorEvent, or null if not mappable. Never throws. tool_input/tool_output are truncated
  * with truncateValue to TOOL_INPUT_CAP/TOOL_OUTPUT_CAP.
  */

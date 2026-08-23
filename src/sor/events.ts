@@ -6,7 +6,7 @@ export interface SorEvent {
   run_id: string | null;
   event_type: SorEventType;
   actor: string; // role | 'manager' | 'daemon' | 'system'
-  backend: string | null; // 'gemini' | 'openrouter' | 'ollama' | legacy 'opencode' | 'claude' | 'codex' | null
+  backend: string | null; // 'gemini' | 'openrouter' | 'ollama' | legacy 'opencode' | 'claude' | 'codex' (kept for historical verification) | null
   tool_name: string | null;
   tool_input: unknown | null;
   tool_output: unknown | null;
@@ -18,7 +18,7 @@ export const TOOL_INPUT_CAP = 20000; // max chars before truncation
 export const TOOL_OUTPUT_CAP = 20000;
 
 const VALID_TYPES: readonly SorEventType[] = ["tool_call", "wakeup", "phase", "registry_sync", "finalize"];
-const VALID_BACKENDS: readonly string[] = ["opencode", "claude", "codex", "gemini", "openrouter", "ollama"];
+const VALID_BACKENDS: readonly string[] = ["opencode", "claude", "codex", "gemini", "openrouter", "ollama"]; // legacy 'opencode' | 'claude' | 'codex' kept for historical verification
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
