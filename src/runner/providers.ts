@@ -141,16 +141,6 @@ export function resolveRolePrompt(provider: ProviderName, role: Role, ctx: RunCo
   return "";
 }
 
-/** Provider trace structure (matches the new wire protocol) */
-export interface ProviderTrace {
-  text: string;
-  sessionID: string | null;
-  tokens: { input: number; output: number; reasoning: number; cached: number; cacheWrite: number; total: number };
-  costUsd: number;
-  sawError: boolean;
-  errorMsg?: string;
-}
-
 /** Parse a trace body into a normalized shape for the new NDJSON format. */
 export function parseProviderTrace(
   provider: ProviderName,
@@ -175,14 +165,14 @@ export function parseProviderTrace(
   return acc;
 }
 
-/** Dispatch one trace line to the provider's line parser. */
+/** Dispatch one trace line to the provider's line parser (SPEC §6 wire schema, keyed on `t`). */
 export function parseProviderLine(provider: ProviderName, ev: any, acc: ProviderTrace): void {
-  switch (ev.type) {
+  switch (ev.t) {
     case "init":
-      if (ev.sessionId && !acc.sessionID) acc.sessionID = ev.sessionId;
+      if (typeof ev.sessionId === "string" && ev.sessionId && !acc.sessionID) acc.sessionID = ev.sessionId;
       break;
     case "text":
-      if (ev.part?.text) {
+      if (typeof ev.part?.text === "string" && ev.part.text) {
         acc.text += ev.part.text;
       }
       break;

@@ -408,7 +408,7 @@ function startTailing(
     }
     onEvent?.(ev);
     const part = ev.part ?? {};
-    if (ev.type === "text" && typeof part.text === "string") onText?.(part.text);
+    if (ev.t === "text" && typeof part.text === "string") onText?.(part.text);
   };
   const step = (): void => {
     let size: number;

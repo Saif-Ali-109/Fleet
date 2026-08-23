@@ -149,8 +149,8 @@ describe("parseTrace", () => {
 
   it("accumulates text from multiple text events", () => {
     const tracePath = writeTrace("trace1.jsonl", [
-      JSON.stringify({ type: "text", part: { text: "Hello " } }),
-      JSON.stringify({ type: "text", part: { text: "World" } }),
+      JSON.stringify({ t: "text", part: { text: "Hello " } }),
+      JSON.stringify({ t: "text", part: { text: "World" } }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.text).toBe("Hello World");
@@ -158,9 +158,9 @@ describe("parseTrace", () => {
 
   it("extracts sessionID from the first init event that has one", () => {
     const tracePath = writeTrace("trace2.jsonl", [
-      JSON.stringify({ type: "text", part: { text: "hi" } }),
-      JSON.stringify({ type: "init", role: "coder", sessionId: "sess-1" }),
-      JSON.stringify({ type: "init", role: "coder", sessionId: "sess-2" }),
+      JSON.stringify({ t: "text", part: { text: "hi" } }),
+      JSON.stringify({ t: "init", role: "coder", sessionId: "sess-1" }),
+      JSON.stringify({ t: "init", role: "coder", sessionId: "sess-2" }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.sessionID).toBe("sess-1");
@@ -168,8 +168,8 @@ describe("parseTrace", () => {
 
   it("sums tokens from step_finish usage events and tracks cached separately", () => {
     const tracePath = writeTrace("trace3.jsonl", [
-      JSON.stringify({ type: "step_finish", usage: { input: 10, output: 5, reasoning: 2, cached: 100, cacheWrite: 0, total: 117 }, costUsd: 0.01 }),
-      JSON.stringify({ type: "step_finish", usage: { input: 20, output: 8, reasoning: 0, cached: 50, cacheWrite: 0, total: 78 }, costUsd: 0.02 }),
+      JSON.stringify({ t: "step_finish", usage: { input: 10, output: 5, reasoning: 2, cached: 100, cacheWrite: 0, total: 117 }, costUsd: 0.01 }),
+      JSON.stringify({ t: "step_finish", usage: { input: 20, output: 8, reasoning: 0, cached: 50, cacheWrite: 0, total: 78 }, costUsd: 0.02 }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.tokens.input).toBe(30);
@@ -183,9 +183,9 @@ describe("parseTrace", () => {
 
   it("handles missing/empty usage gracefully (defaults to 0)", () => {
     const tracePath = writeTrace("trace4.jsonl", [
-      JSON.stringify({ type: "step_finish" }),
-      JSON.stringify({ type: "step_finish", usage: undefined }),
-      JSON.stringify({ type: "step_finish", usage: {} }),
+      JSON.stringify({ t: "step_finish" }),
+      JSON.stringify({ t: "step_finish", usage: undefined }),
+      JSON.stringify({ t: "step_finish", usage: {} }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.tokens.input).toBe(0);
@@ -194,8 +194,8 @@ describe("parseTrace", () => {
 
   it("ignores tool_call/tool_result events for text and error state", () => {
     const tracePath = writeTrace("trace6.jsonl", [
-      JSON.stringify({ type: "tool_call", name: "bash", input: "ls -la" }),
-      JSON.stringify({ type: "tool_result", name: "bash", ok: true, ms: 12, bytesOut: 4096 }),
+      JSON.stringify({ t: "tool_call", name: "bash", input: "ls -la" }),
+      JSON.stringify({ t: "tool_result", name: "bash", ok: true, ms: 12, bytesOut: 4096 }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.text).toBe("");
@@ -205,9 +205,9 @@ describe("parseTrace", () => {
 
   it("detects error events and keeps the last error message", () => {
     const tracePath = writeTrace("trace5.jsonl", [
-      JSON.stringify({ type: "text", part: { text: "partial work" } }),
-      JSON.stringify({ type: "error", error: "Something went wrong" }),
-      JSON.stringify({ type: "error", error: "Final failure" }),
+      JSON.stringify({ t: "text", part: { text: "partial work" } }),
+      JSON.stringify({ t: "error", error: "Something went wrong" }),
+      JSON.stringify({ t: "error", error: "Final failure" }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.sawError).toBe(true);
@@ -217,17 +217,29 @@ describe("parseTrace", () => {
   it("skips non-JSON lines (noise)", () => {
     const tracePath = writeTrace("trace7.jsonl", [
       "Some log noise\n",
-      JSON.stringify({ type: "text", part: { text: "valid" } }),
+      JSON.stringify({ t: "text", part: { text: "valid" } }),
       "Another noise line\n",
-      JSON.stringify({ type: "text", part: { text: " text" } }),
+      JSON.stringify({ t: "text", part: { text: " text" } }),
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.text).toBe("valid text");
   });
 
+  it("only consumes the t-keyed wire schema and ignores legacy type-keyed lines", () => {
+    const tracePath = writeTrace("trace10.jsonl", [
+      JSON.stringify({ type: "text", part: { text: "legacy" } }),
+      JSON.stringify({ type: "init", sessionId: "legacy-sess" }),
+      JSON.stringify({ t: "text", part: { text: "current" } }),
+      JSON.stringify({ t: "init", sessionId: "sess-current" }),
+    ].join("\n"));
+    const result = parseTrace(tracePath, {}, 0);
+    expect(result.text).toBe("current");
+    expect(result.sessionID).toBe("sess-current");
+  });
+
   it("respects startOffset (only parses content after offset)", () => {
-    const line1 = JSON.stringify({ type: "text", part: { text: "before" } });
-    const line2 = JSON.stringify({ type: "text", part: { text: "after" } });
+    const line1 = JSON.stringify({ t: "text", part: { text: "before" } });
+    const line2 = JSON.stringify({ t: "text", part: { text: "after" } });
     const content = line1 + "\n" + line2 + "\n";
     const tracePath = writeTrace("trace8.jsonl", content);
     const result = parseTrace(tracePath, {}, line1.length + 1);
