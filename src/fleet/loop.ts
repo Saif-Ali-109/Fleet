@@ -1,6 +1,7 @@
 import type OpenAI from "openai";
 import { buildRegistry, type ToolImpl, type WtCtx } from "./tools/registry.ts";
 import type { ToolSchema } from "./tools/common.ts";
+import type { SorEmitSink } from "./sorEmit.ts";
 import type { ProviderName, Role } from "../types.ts";
 import type { ToolName } from "./types.ts";
 
@@ -30,6 +31,7 @@ export interface RunAgentOpts {
   registry: ReturnType<typeof buildRegistry>;
   wtCtx: WtCtx;
   emit: (evt: WireEvent) => void;
+  sor?: SorEmitSink;
   maxSteps?: number;
   signal?: AbortSignal;
   provider?: ProviderName;
@@ -90,7 +92,7 @@ function openAiTools(
 }
 
 export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
-  const { client, model, systemPrompt, task, registry, wtCtx, emit, signal, provider } = opts;
+  const { client, model, systemPrompt, task, registry, wtCtx, emit, signal, provider, sor } = opts;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const totals: UsageTotals = {
     input: 0,
@@ -184,6 +186,11 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
           input = {};
         }
         emit({ t: "tool_call", name, input });
+        try {
+          sor?.toolCall(callId, name, input);
+        } catch (err) {
+          console.warn(`[sor] tool_call skipped: ${err instanceof Error ? err.message : String(err)}`);
+        }
 
         const impl = (registry as Partial<Record<string, ToolImpl>>)[name];
         const startedAt = Date.now();
@@ -209,6 +216,11 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
           ms,
           bytesOut: Buffer.byteLength(result.content, "utf8"),
         });
+        try {
+          sor?.toolResult(callId, name, input, result.content, result.ok, ms);
+        } catch (err) {
+          console.warn(`[sor] tool_result skipped: ${err instanceof Error ? err.message : String(err)}`);
+        }
 
         messages.push({
           role: "tool",

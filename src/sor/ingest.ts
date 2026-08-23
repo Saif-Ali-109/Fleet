@@ -14,7 +14,7 @@ import {
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-const VALID_BACKENDS: readonly string[] = ["opencode", "claude", "codex"];
+const VALID_BACKENDS: readonly string[] = ["opencode", "claude", "codex", "gemini", "openrouter", "ollama"];
 
 /** Best-effort backend from the event, else defaulting to "opencode" (trace events are opencode NDJSON). */
 function backendOf(ev: Record<string, unknown>): string {

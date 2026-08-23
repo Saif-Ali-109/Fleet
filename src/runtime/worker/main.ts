@@ -10,7 +10,9 @@ import { testerDef } from "../../fleet/agents/tester.ts";
 import type { FleetAgentDef } from "../../fleet/types.ts";
 import { runAgent, type WireEvent } from "../../fleet/loop.ts";
 import { injectSkills } from "../../fleet/skills/loader.ts";
+import { createSorEmitSink } from "../../fleet/sorEmit.ts";
 import { buildRegistry, type WtCtx } from "../../fleet/tools/registry.ts";
+import { connectToMcpServer, closeMcpConnection } from "../../fleet/tools/mcp.ts";
 import { policyFor } from "../../models/modelPolicy.ts";
 import {
   getClientForProvider,
@@ -151,6 +153,16 @@ async function run(): Promise<number> {
     runDir: job.ctx.runDir,
   };
 
+  let mcpConn: Awaited<ReturnType<typeof connectToMcpServer>> | null = null;
+  if (def.mcpAllow.length > 0) {
+    mcpConn = await connectToMcpServer(job.role);
+    for (const [name, impl] of mcpConn.tools) {
+      if (def.mcpAllow.includes(name)) {
+        registry[name as keyof typeof registry] = impl;
+      }
+    }
+  }
+
   if (job.ctx.dryRun) {
     const resolved = resolveProviderModel(job.role);
     const provider: ProviderName = resolved?.provider ?? "gemini";
@@ -164,6 +176,9 @@ async function run(): Promise<number> {
       usage: { input: 0, output: 0, reasoning: 0, cached: 0, cacheWrite: 0, total: 0 },
       costUsd: 0,
     });
+    if (mcpConn) {
+      await closeMcpConnection(mcpConn);
+    }
     return 0;
   }
 
@@ -175,6 +190,15 @@ async function run(): Promise<number> {
   const client: OpenAI = getClientForProvider(provider);
   emit({ t: "init", role: job.role, model, provider, sessionId });
 
+  const sor = createSorEmitSink({
+    runDir: job.ctx.runDir,
+    role: job.role,
+    provider,
+    model,
+    sessionId,
+    eventsDir: process.env.SOR_EVENT_DIR || undefined,
+  });
+
   const task = job.ctx.extraTask ? `${job.task}\n\n${job.ctx.extraTask}` : job.task;
 
   const outcome = await runAgent({
@@ -185,12 +209,17 @@ async function run(): Promise<number> {
     registry,
     wtCtx,
     emit,
+    sor,
     signal: controller.signal,
     provider,
   });
 
-  process.off("SIGTERM", onSignal);
-  process.off("SIGINT", onSignal);
+  process.removeListener("SIGTERM" as any, onSignal);
+  process.removeListener("SIGINT" as any, onSignal);
+
+  if (mcpConn) {
+    await closeMcpConnection(mcpConn);
+  }
 
   if (!outcome.ok) {
     console.error(`[worker] run failed: ${outcome.error ?? "unknown error"}`);

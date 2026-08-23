@@ -193,7 +193,7 @@ describe("normalizeEvent validation", () => {
   });
 
   it("throws on invalid backend", () => {
-    expect(() => normalizeEvent({ event_type: "phase", actor: "manager", backend: "gemini" })).toThrow(
+    expect(() => normalizeEvent({ event_type: "phase", actor: "manager", backend: "skynet" })).toThrow(
       /backend/,
     );
   });
