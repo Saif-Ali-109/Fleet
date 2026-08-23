@@ -3,13 +3,14 @@ title: Build Memory — Verified Work Log
 status: active
 created: 2026-08-23
 last_updated: 2026-08-23
-last_agent: session-2026-08-23 (P1 completion + verification)
+last_agent: session-2026-08-23 (P2 fleet defs + skills loader)
 phases_done:
   docs_companions: true
   prelaunch_deletions: true
   P0_baseline: true
   P1_providers_models: true
-  P2_through_P8: false
+  p2_fleet_skills: true
+  p3_through_p8: false
 ---
 
 # MEMORY.md — verified work log for building agents
@@ -134,3 +135,46 @@ what has been completed and verified.
   2026-08-14 — untouched by this wave (zero db/sor files changed in any
   commit here). Root-cause BEFORE the FINAL live smoke (note added to
   TODO.md Later phases). F3 left unticked for this reason.
+
+### 2026-08-23 — wave 6: six fleet agent defs + byte-parity net (P2 slice)
+- `src/fleet/types.ts`: D5 def shape `{name, systemPrompt, tools,
+  mcpAllow, skillsDir}` + ToolName union; six modules under
+  src/fleet/agents/ carry prompts VERBATIM from old agents/*.md bodies.
+- Tools matrix derived from the old md frontmatter; the `list` tool was
+  DROPPED — no new-union successor. FLAG FOR P3 REGISTRY REVIEW: any
+  read-only listing need must route through read/grep/glob, and the P3
+  tool registry should not silently reintroduce a list tool.
+- mcpAllow per SPEC §9 (e.g. analyzer: get_issue + get_issue_comments).
+- Prompt fixtures snapshotted to src/__tests__/fixtures/fleet-prompts/
+  so the parity net survives the P8 deletion sweep; git-HEAD diff
+  assertions runtime-skip once agents/*.md are gone post-P8.
+- pr role keeps no load_skill in its tools; reviewer/tester/coder/
+  planner/analyzer matrices preserved as authored.
+- Status: committed (`14cd586`).
+
+### 2026-08-23 — wave 7: skills loader + seven starter playbooks (P2 slice)
+- `src/fleet/skills/loader.ts`: loadSkillSummaries parses each role
+  dir's *.md frontmatter; injectSkills appends a "# Available skills"
+  block to the system prompt — this is the P3 worker-loop entry point;
+  loadSkill returns result-object errors ({ok:false,error}), never
+  throws, so worker loops can branch without try/catch.
+- Containment design: name screening (length ≤128, no / \ .. NUL,
+  no drive prefixes — checked on BOTH raw and decodeURIComponent forms)
+  followed by a resolve+startsWith(sep-bounded) containment check
+  against the role dir. Missing role dirs yield empty summaries, not
+  errors. Static agent defs untouched by injection.
+- Playbooks (fresh-authored, all ≤120 lines per D9): analyzer/repo-triage,
+  coder/minimal-diff, coder/commit-hygiene, planner/decomposition,
+  pr/pr-body, reviewer/checklist, tester/test-selection.
+- Status: committed (`b350992`).
+
+### 2026-08-23 — independent verification verdict (P2)
+- Independent verification returned GREEN: 12/12 prompt byte-parity
+  checks pass (six defs × fixture/git-HEAD sources), 12/12 hostile
+  skill-name attacks rejected (traversal, encoded traversal, absolute,
+  drive-letter, NUL, backslash forms).
+- Gates at commit time: typecheck 0 errors, vitest 384/384.
+- SPEC §17 both P2 items ticked (dated 2026-08-23); TODO.md P2 line
+  ticked; MEMORY frontmatter now granular: p2_fleet_skills=true,
+  p3_through_p8=false.
+- Status: committed in this docs commit.

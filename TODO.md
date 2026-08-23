@@ -55,8 +55,9 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
 
 ## Later phases (order per SPEC §17)
 
-- [ ] P2 fleet defs: 6 agent modules, prompt byte-parity vs git HEAD
-      agents/*.md, snapshot bodies to fixtures, skills loader + 7 playbooks
+- [x] P2 fleet defs: 6 agent modules, prompt byte-parity vs git HEAD
+      agents/*.md, snapshot bodies to fixtures (12/12 byte parity),
+      skills loader + 7 playbooks (containment verified)
 - [ ] P3 tools (bash/read/write/edit/grep/glob/load_skill) + gating tests;
       loop.ts + worker main.ts (mocked-OpenAI integration); fork e2e test
 - [ ] P4 agentRunner rewired to fork worker (+ attempts/provider-walk/abort)
