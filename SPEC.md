@@ -418,9 +418,9 @@ Rules for the builder agent: on session start, read this section FIRST.
 Find the first unchecked item; do it; mark `[x]` + append date + commit
 (`docs: check <item>`). Never skip ahead past failing acceptance criteria.
 
-- [ ] P0 baseline recorded (typecheck clean, vitest N green, dry run OK)
-- [ ] P1 providers registry + modelDefaults (+ unit tests)
-- [ ] P1 override store v2 {provider:{role:id}}
+- [x] P0 baseline recorded (typecheck clean, vitest N green, dry run OK) — 2026-08-23: typecheck 0 errors, vitest 336/336, `npm run dry` smoke OK
+- [x] P1 providers registry + modelDefaults (+ unit tests) — 2026-08-23: registry URL/key resolution, missing-key skip, fallback order, fail-fast covered; SPEC §5 defaults table single-sourced
+- [x] P1 override store v2 {provider:{role:id}} — 2026-08-23: v2 read/write roundtrip tested; v1 keys discarded log-once
 - [ ] P2 six agent defs + prompt byte-parity test vs git HEAD agents/*.md (+ bodies snapshotted to fixtures)
 - [ ] P2 skills loader + 7 starter playbooks authored
 - [ ] P3 tools: bash/read/write/edit/grep/glob/load_skill (+ gating tests)
