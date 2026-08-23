@@ -3,7 +3,7 @@ title: Build Memory — Verified Work Log
 status: active
 created: 2026-08-23
 last_updated: 2026-08-23
-last_agent: session-2026-08-23 (P3 tools + loop + worker/fork e2e)
+last_agent: session-2026-08-23 (P4 runner fork rewiring)
 phases_done:
   docs_companions: true
   prelaunch_deletions: true
@@ -11,6 +11,7 @@ phases_done:
   P1_providers_models: true
   p2_fleet_skills: true
   p3_tools_loop_worker: true
+  p4_runner_fork: true
   p4_through_p8: false
 ---
 
@@ -227,5 +228,37 @@ what has been completed and verified.
   3. NO step_finish emitted on the error path — failed-run token totals
      survive only in RunAgentOutcome, not on the wire; P5 SOR parity may
      need a terminal step_finish on the fail path.
-  4. bash conflates external SIGKILL with timeout (cosmetic).
+   4. bash conflates external SIGKILL with timeout (cosmetic).
 - Status: committed in this docs commit.
+
+### 2026-08-23 — P4: agentRunner rewired from spawn placeholder to real worker forks
+- fork helper single-site: ONE forkWorker call site per SPEC §6 — `.ts`
+  entry via `--import tsx` execArgv, stdio pipe+fdOut+fdErr+ipc so worker
+  stdout redirects straight into tracesDir/<role>.jsonl (one stream IS
+  trace capture AND event source) and is tailed; ONE JSON job via stdin.
+  Trace-fd convention preserved from the spawn era.
+- Provider walk via withProviderFallback with per-attempt env pinning
+  (FLEET_PROVIDERS pinned to the single walked candidate so the worker's
+  own resolveProviderModel lands exactly there); attempts[] carries
+  provider; AgentResult.provider/model threaded through finalize.
+- Abort: killActiveWorkers fail-fast latch kept; aborted-by-user returns
+  without falling through remaining candidates. WORKER_TIMEOUT_MS SIGTERM
+  escalates to SIGKILL after WORKER_TIMEOUT_GRACE_MS, proven against a
+  SIGTERM-trapping fixture (stubbornWorker.mjs).
+- Dead spawn-era plumbing deleted: buildProviderArgs/buildProviderEnv/
+  resolveRolePrompt/PROVIDER_BIN gone — runner/providers.ts is now
+  parsing-only. resumeSessionID inert-deprecated until P6.
+- Verification GREEN: typecheck 0 errors, vitest 437/437; fork-test trio
+  ran 3x consecutively clean (flake check).
+- Notes:
+  (a) PRE-EXISTING DB finding: audit_events backend CHECK constraint
+      predates provider backends — dry-run prints non-fatal SOR warnings;
+      schema/migration question lands at P5 (ASK-FIRST boundary for
+      migrations).
+  (b) Post-abort attempts noise: an aborted-by-user entry is appended per
+      remaining candidate — collapse if consumed downstream later.
+  (c) P6 debt ledger: delete resumeSessionID option + coder/tester passes;
+      decide FLEET_WORKER_ENTRY production fate.
+  (d) Timeout test knobs to widen first if CI flakes: 25ms poll loop,
+      1200ms floor (WORKER_TIMEOUT_MS), grace 250ms.
+- Status: feat committed (`de0261c`); docs committed in this commit.

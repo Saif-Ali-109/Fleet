@@ -60,7 +60,10 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
       skills loader + 7 playbooks (containment verified)
 - [x] P3 tools (bash/read/write/edit/grep/glob/load_skill) + gating tests;
       loop.ts + worker main.ts (mocked-OpenAI integration); fork e2e test
-- [ ] P4 agentRunner rewired to fork worker (+ attempts/provider-walk/abort)
+- [x] P4 agentRunner rewired to fork worker (+ attempts/provider-walk/abort
+      tests): single forkWorker site (tsx loader, trace-fd redirect + tail,
+      stdin job), withProviderFallback walk w/ env pinning, SIGTERM→SIGKILL
+      grace proven vs trapping fixture
 - [ ] P5 SOR emitter parity fixture test (sor:verify green)
       DEFERRED NOTE: `normalizeEvent` VALID_BACKENDS still rejects
       gemini/openrouter/ollama — must accept provider names before the emitter

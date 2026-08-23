@@ -426,7 +426,7 @@ Find the first unchecked item; do it; mark `[x]` + append date + commit
 - [x] P3 tools: bash/read/write/edit/grep/glob/load_skill (+ gating tests) — 2026-08-23: per-role gating registry, bash cwd-lock + process-group timeout kill, 20k combined cap, read 2000-line cap, edit fail-loud, grep/glob 500-cap, load_skill via hardened loader; 36 tests incl. symlink-escape + truncation
 - [x] P3 loop.ts + worker main.ts (+ mocked-OpenAI integration test) — 2026-08-23: tool-call roundtrip over OpenAI SDK, §6 wire events via callback, usage tolerance + cost rule, stop-after-current-tool abort, maxSteps=25; 12 mocked-client tests
 - [x] P3 fork e2e test (spawn main.ts with fake job) — 2026-08-23: dry-run zero-model guard (dead-port-proven), keyless ollama localhost stub, SIGTERM abort with bounded flush, malformed-job rejection; parseProviderTrace realigned to real t:-keyed protocol
-- [ ] P4 agentRunner rewired to fork worker (+ attempts/provider-walk/abort tests)
+- [x] P4 agentRunner rewired to fork worker (+ attempts/provider-walk/abort tests) — 2026-08-23: single forkWorker call site (tsx-loader execArgv, stdout fds → tracesDir/<role>.jsonl then tailed, job JSON via stdin); provider walk via withProviderFallback with per-attempt env pinning; attempts[] carries provider; WORKER_TIMEOUT_MS SIGTERM → GRACE SIGKILL proven vs SIGTERM-trapping fixture; killActiveWorkers fail-fast latch kept
 - [ ] P5 SOR emitter parity fixture test (sor:verify green)
 - [ ] P6 gates→auto + autofix loop (orchestrator tests, cap=1)
 - [ ] P7 fleet MCP server (+ allowlist matrix tests)
