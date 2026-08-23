@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { writeFileSync, mkdirSync, rmSync, mkdtempSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, mkdirSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildArgs, parseTrace, readStderrTail, runWorker } from "../agentRunner.ts";
+import { killActiveWorkers, parseTrace, readStderrTail, resetWorkerAbort, runWorker } from "../agentRunner.ts";
 import type { RunContext, Role, RolePolicy } from "../types.ts";
+
+const FAKE_WORKER = join(import.meta.dirname, "fixtures", "fakeWorker.mjs");
+const LONG_WORKER = join(import.meta.dirname, "fixtures", "longWorker.mjs");
 
 // ---- Shared fixtures ----
 
@@ -41,15 +44,46 @@ function makePolicy(overrides: Partial<RolePolicy> = {}): RolePolicy {
 }
 
 let tmpTraceDir: string;
+let savedEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
   tmpTraceDir = join(tmpdir(), "opencode-test-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
   mkdirSync(tmpTraceDir, { recursive: true });
+  savedEnv = {};
+  for (const key of [
+    "FLEET_WORKER_ENTRY",
+    "FAKE_FAIL_PROVIDERS",
+    "FLEET_PROVIDERS",
+    "WORKER_TIMEOUT_MS",
+    "WORKER_TIMEOUT_GRACE_MS",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+  ]) {
+    savedEnv[key] = process.env[key];
+    delete process.env[key];
+  }
+  resetWorkerAbort();
 });
 
 afterEach(() => {
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   rmSync(tmpTraceDir, { recursive: true, force: true });
 });
+
+/** Real temp ctx dirs: the manager forks with cwd = ctx.rootDir, which must exist. */
+function makeRealCtx(): RunContext {
+  const root = mkdtempSync(join(tmpdir(), "rw-fork-"));
+  const runDir = join(root, ".runs", "test-run-123");
+  return makeCtx({
+    rootDir: root,
+    runDir,
+    worktreeDir: join(runDir, "worktree"),
+    tracesDir: join(runDir, "traces"),
+  });
+}
 
 function writeTrace(name: string, content: string): string {
   const path = join(tmpTraceDir, name);
@@ -57,67 +91,10 @@ function writeTrace(name: string, content: string): string {
   return path;
 }
 
-// ---- buildArgs tests ----
-
-describe("buildArgs", () => {
-  it("builds the generic provider run command (--role/--model/--provider/--task/--worktree)", () => {
-    const ctx = makeCtx();
-    const policy = makePolicy();
-    const args = buildArgs("coder", "Fix the bug", ctx, "gemini-2.5-flash", policy, {});
-    expect(args[0]).toBe("--role");
-    expect(args[1]).toBe("coder");
-    expect(args).toContain("--model");
-    expect(args[args.indexOf("--model") + 1]).toBe("gemini-2.5-flash");
-    expect(args).toContain("--provider");
-    expect(args[args.indexOf("--provider") + 1]).toBe("gemini");
-    expect(args).toContain("--worktree");
-    expect(args[args.indexOf("--worktree") + 1]).toBe(ctx.worktreeDir);
-    expect(args).toContain("--task");
-    expect(args[args.indexOf("--task") + 1]).toBe("Fix the bug");
-  });
-
-  it("appends --variant when policy.variant is set", () => {
-    const ctx = makeCtx();
-    const policy = makePolicy({ variant: "high" });
-    const args = buildArgs("planner", "Task", ctx, "m", policy, {});
-    expect(args).toContain("--variant");
-    expect(args[args.indexOf("--variant") + 1]).toBe("high");
-  });
-
-  it("opts.variant overrides policy.variant", () => {
-    const ctx = makeCtx();
-    const policy = makePolicy({ variant: "high" });
-    const args = buildArgs("coder", "Task", ctx, "m", policy, { variant: "low" });
-    expect(args[args.indexOf("--variant") + 1]).toBe("low");
-  });
-
-  it("does not add --variant when neither opts nor policy specify one", () => {
-    const ctx = makeCtx();
-    const policy = makePolicy();
-    const args = buildArgs("coder", "Task", ctx, "m", policy, {});
-    expect(args).not.toContain("--variant");
-  });
-
-  it("passes the task verbatim after --task (spaces intact)", () => {
-    const ctx = makeCtx();
-    const policy = makePolicy();
-    const args = buildArgs("tester", "My special task with spaces", ctx, "m", policy, {});
-    expect(args[args.indexOf("--task") + 1]).toBe("My special task with spaces");
-  });
-
-  it("adds --resume <sessionID> when opts.resumeSessionID is set", () => {
-    const ctx = makeCtx();
-    const policy = makePolicy();
-    const args = buildArgs("coder", "Task", ctx, "m", policy, { resumeSessionID: "sess-42" });
-    expect(args).toContain("--resume");
-    expect(args[args.indexOf("--resume") + 1]).toBe("sess-42");
-  });
-});
-
-// ---- runWorker tests ----
+// ---- runWorker tests (fork + stdin-job contract against a fake worker entry) ----
 
 describe("runWorker", () => {
-  it("stubs workers on dryRun without touching the DB", async () => {
+  it("stubs workers on dryRun without touching the DB or forking", async () => {
     const dir = mkdtempSync(join(tmpdir(), "rw-"));
     const runDir = join(dir, ".runs", "test-run-123");
     const ctx = makeCtx({
@@ -126,6 +103,8 @@ describe("runWorker", () => {
       tracesDir: join(runDir, "traces"),
       dryRun: true,
     });
+    // No FLEET_WORKER_ENTRY configured: any fork would target the real worker
+    // entry and fail loudly — the stub must short-circuit before that.
     const result = await runWorker("coder", "Fix the bug", ctx, makePolicy(), {});
     expect(result.ok).toBe(true);
     expect(result.text).toContain("[dry-run]");
@@ -133,6 +112,93 @@ describe("runWorker", () => {
     expect(result.attempts).toEqual([{ model: "opencode/laguna-s-2.1-free", ok: true, provider: "gemini" }]);
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it("forks ONE JSON job into the worker and reads the answer back from the redirected trace stream", async () => {
+    process.env.FLEET_WORKER_ENTRY = FAKE_WORKER;
+    process.env.FLEET_PROVIDERS = "ollama";
+    const ctx = makeRealCtx();
+    const res = await runWorker("coder", "Fix the bug #42", ctx, makePolicy(), {});
+
+    expect(res.ok).toBe(true);
+    expect(res.provider).toBe("ollama");
+    expect(res.sessionID).toBe("sess-fake-1");
+    expect(res.model).toBe("fake-model");
+    expect(res.text).toContain("hello from ollama re: Fix the bug #42");
+    expect(res.tokens.input).toBe(3);
+    expect(res.attempts).toEqual([{ model: "fake-model", ok: true, provider: "ollama" }]);
+    // stdio fd redirect: the worker's NDJSON landed in tracesDir/<role>.jsonl
+    const trace = readFileSync(join(ctx.tracesDir, "coder.jsonl"), "utf8");
+    expect(trace).toContain('"t":"init"');
+    expect(trace).toContain('"t":"result"');
+  }, 30000);
+
+  it("threads opts.extraTask through the job ctx verbatim", async () => {
+    process.env.FLEET_WORKER_ENTRY = FAKE_WORKER;
+    process.env.FLEET_PROVIDERS = "ollama";
+    const ctx = makeRealCtx();
+    const res = await runWorker("coder", "base task", ctx, makePolicy(), {
+      extraTask: "reviewer findings: fix flaky test",
+    });
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("[extra: reviewer findings: fix flaky test]");
+  }, 30000);
+
+  it("walks FLEET_PROVIDERS on runtime failure and records every attempt with its provider", async () => {
+    process.env.FLEET_WORKER_ENTRY = FAKE_WORKER;
+    process.env.FLEET_PROVIDERS = "gemini,ollama";
+    process.env.GEMINI_API_KEY = "dummy-key-for-walk-test";
+    process.env.FAKE_FAIL_PROVIDERS = "gemini";
+    const ctx = makeRealCtx();
+    const res = await runWorker("coder", "walk me", ctx, makePolicy(), {});
+
+    expect(res.ok).toBe(true);
+    expect(res.attempts).toEqual([
+      { model: "fake-model", ok: false, error: "synthetic failure on gemini", provider: "gemini" },
+      { model: "fake-model", ok: true, provider: "ollama" },
+    ]);
+    expect(res.provider).toBe("ollama");
+    expect(res.text).toContain("hello from ollama re: walk me");
+  }, 30000);
+
+  it("fails fast with a synthetic attempt when no candidate provider has keys", async () => {
+    process.env.FLEET_WORKER_ENTRY = FAKE_WORKER;
+    process.env.FLEET_PROVIDERS = "gemini";
+    delete process.env.GEMINI_API_KEY;
+    const ctx = makeRealCtx();
+    const res = await runWorker("coder", "never forked", ctx, makePolicy(), {});
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("no provider keys configured");
+    expect(res.attempts).toEqual([{ model: "none", ok: false, error: "no provider keys configured" }]);
+    expect(existsSync(join(ctx.tracesDir, "coder.jsonl"))).toBe(false);
+  });
+
+  it("killActiveWorkers SIGTERMs the live fork and latches fail-fast ('aborted by user')", async () => {
+    process.env.FLEET_WORKER_ENTRY = LONG_WORKER;
+    process.env.FLEET_PROVIDERS = "gemini";
+    process.env.GEMINI_API_KEY = "dummy-key-for-abort-test";
+    const ctx = makeRealCtx();
+
+    const pending = runWorker("coder", "task", ctx, makePolicy(), {});
+    let killed = 0;
+    for (let i = 0; i < 600 && killed === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      killed = killActiveWorkers();
+    }
+    expect(killed).toBeGreaterThan(0);
+
+    const started = Date.now();
+    const res = await pending;
+    const elapsed = Date.now() - started;
+
+    expect(res.ok).toBe(false);
+    expect(res.sawError).toBe(true);
+    expect(res.error).toBe("aborted by user");
+    expect(res.attempts).toEqual([
+      { model: "opencode/laguna-s-2.1-free", ok: false, error: "aborted by user", provider: "gemini" },
+    ]);
+    expect(elapsed).toBeLessThan(10000);
+  }, 30000);
 });
 
 // ---- parseTrace tests ----
@@ -164,6 +230,15 @@ describe("parseTrace", () => {
     ].join("\n"));
     const result = parseTrace(tracePath, {}, 0);
     expect(result.sessionID).toBe("sess-1");
+  });
+
+  it("extracts the model from the first init event that has one", () => {
+    const tracePath = writeTrace("trace11.jsonl", [
+      JSON.stringify({ t: "init", role: "coder", model: "qwen2.5-coder:7b", sessionId: "sess-m" }),
+      JSON.stringify({ t: "init", role: "coder", model: "other-model", sessionId: "sess-m2" }),
+    ].join("\n"));
+    const result = parseTrace(tracePath, {}, 0);
+    expect(result.model).toBe("qwen2.5-coder:7b");
   });
 
   it("sums tokens from step_finish usage events and tracks cached separately", () => {
