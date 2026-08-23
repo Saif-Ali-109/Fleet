@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
 import { newDashboardState, renderDashboard } from "../tui/dashboard.ts";
 import { WebDashboard, type WebhookResponse } from "../dashboard/webDashboard.ts";
-import type { Role } from "../types.ts";
+import { availableModels } from "../models/modelPolicy.ts";
+import { listModelsForProvider } from "../providers/registry.ts";
+import type { ProviderName, Role } from "../types.ts";
+
+vi.mock("../providers/registry.ts", () => ({
+  listModelsForProvider: vi.fn(async () => [] as string[]),
+}));
+
+const listModelsMock = vi.mocked(listModelsForProvider);
 
 const ROLES: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
 
@@ -35,6 +43,87 @@ describe("dashboard", () => {
         });
       }
     });
+
+  describe("embedded page provider wiring (P8)", () => {
+    const src = readFileSync(
+      new URL("../dashboard/webDashboard.ts", import.meta.url),
+      "utf8",
+    );
+
+    it("purges all dead backend-era identifiers", () => {
+      expect(src).not.toContain("backend-btn");
+      expect(src).not.toContain("data-backend");
+      expect(src).not.toContain("postBackend");
+      expect(src).not.toContain("renderBackend");
+    });
+
+    it("wires the onLoad block to .provider-btn / postProvider / renderProvider", () => {
+      const onLoad = src.match(/function onLoad\(\) \{[\s\S]*?\n  \}/);
+      expect(onLoad).not.toBeNull();
+      expect(onLoad![0]).toContain('querySelectorAll(".provider-btn")');
+      expect(onLoad![0]).toContain('this.getAttribute("data-provider")');
+      expect(onLoad![0]).toContain("postProvider(");
+      expect(onLoad![0]).toContain("renderProvider();");
+    });
+
+    it("renders provider buttons with data-provider attributes in the HTML", () => {
+      for (const p of ["gemini", "openrouter", "ollama"]) {
+        expect(src).toContain(`class="provider-btn" data-provider="${p}"`);
+      }
+    });
+  });
+
+  describe("GET /api/models (live list + static fallback)", () => {
+    let dashboard: WebDashboard;
+    let baseUrl: string;
+
+    beforeEach(() => {
+      listModelsMock.mockClear();
+      listModelsMock.mockImplementation(async () => [] as string[]);
+    });
+
+    afterEach(async () => {
+      await dashboard?.close();
+    });
+
+    async function setup(provider: ProviderName = "gemini") {
+      dashboard = new WebDashboard(0, "/tmp", undefined, provider, null);
+      const info = await dashboard.start();
+      expect(info).not.toBeNull();
+      baseUrl = info!.url;
+    }
+
+    it("serves the deduped live model list from registry.listModelsForProvider", async () => {
+      await setup();
+      listModelsMock.mockImplementation(
+        async () => ["zeta/one", "alpha/two", "zeta/one"],
+      );
+      const res = await fetch(`${baseUrl}api/models?provider=openrouter`);
+      expect(res.status).toBe(200);
+      const json = await res.json() as { models: Record<string, string>; available: string[] };
+      expect(json.available).toEqual(["zeta/one", "alpha/two"]);
+      expect(json.models).toEqual({});
+      expect(listModelsMock).toHaveBeenCalledWith("openrouter");
+    });
+
+    it("falls back to static tier defaults when the live list is empty (offline/error)", async () => {
+      await setup();
+      const res = await fetch(`${baseUrl}api/models?provider=gemini`);
+      expect(res.status).toBe(200);
+      const json = await res.json() as { available: string[] };
+      expect(json.available).toEqual([...availableModels("gemini")]);
+      expect(json.available.length).toBeGreaterThan(0);
+    });
+
+    it("falls back to the active provider's tier defaults for an unknown provider param", async () => {
+      await setup("openrouter");
+      const res = await fetch(`${baseUrl}api/models?provider=nonsense`);
+      expect(res.status).toBe(200);
+      const json = await res.json() as { available: string[] };
+      expect(json.available).toEqual([...availableModels("openrouter")]);
+      expect(listModelsMock).toHaveBeenCalledWith("openrouter");
+    });
+  });
 
     it("defaults backend to gemini (primary provider path)", () => {
       const d = newDashboardState("run-1", "owner/repo", 7);

@@ -5,9 +5,11 @@ import type { ProviderName, Role, RolePolicy } from "../types.ts";
 
 // Per-provider model policy.
 // The Manager is plain TypeScript (not an LLM); the 6 spawned workers call models.
-// Model ids come from the SPEC §5 tier table (src/fleet/modelDefaults.ts); the
-// dashboard offers these ids as suggestions with free-text entry, so a user can
-// pick any id their provider supports (live /models wiring is P8).
+// Model ids come from the SPEC §5 tier table (src/fleet/modelDefaults.ts); these
+// are the offline-fallback suggestions in the dashboard picker — the picker
+// prefers the provider's live /models list (GET /api/models) and falls back to
+// this tier table when the provider is unreachable. Free-text entry still allows
+// any id the provider supports.
 
 const GEMINI_STRONG = modelDefaults.gemini.analyzer;
 const GEMINI_FAST = modelDefaults.gemini.coder;
@@ -118,7 +120,7 @@ export function loadModelOverrides(modelsJsonPath: string): void {
   overrides = {};
 
   // v2 store shape: provider → role → model. Keys outside PROVIDER_NAMES (v1
-  // per-backend keys like opencode/claude/codex, or flat role keys) are
+  // per-provider keys like gemini/openrouter/ollama, or flat role keys) are
   // discarded with a single warning.
   const legacyKeys = Object.keys(parsed).filter((key) => !(PROVIDER_NAMES as readonly string[]).includes(key));
   if (legacyKeys.length > 0 && !warnedLegacyOverrideKeys) {
