@@ -3,14 +3,15 @@ title: Build Memory — Verified Work Log
 status: active
 created: 2026-08-23
 last_updated: 2026-08-23
-last_agent: session-2026-08-23 (P2 fleet defs + skills loader)
+last_agent: session-2026-08-23 (P3 tools + loop + worker/fork e2e)
 phases_done:
   docs_companions: true
   prelaunch_deletions: true
   P0_baseline: true
   P1_providers_models: true
   p2_fleet_skills: true
-  p3_through_p8: false
+  p3_tools_loop_worker: true
+  p4_through_p8: false
 ---
 
 # MEMORY.md — verified work log for building agents
@@ -177,4 +178,54 @@ what has been completed and verified.
 - SPEC §17 both P2 items ticked (dated 2026-08-23); TODO.md P2 line
   ticked; MEMORY frontmatter now granular: p2_fleet_skills=true,
   p3_through_p8=false.
+- Status: committed in this docs commit.
+
+### 2026-08-23 — wave 8: built-in tools with hard per-role gating (P3 slice)
+- src/fleet/tools/: bash (cwd-locked via resolve+prefix-compare,
+  process-group timeout kill, 20k combined output cap), read (2000-line
+  cap), write/edit (edit is exact-match, fail-loud on mismatch),
+  grep/glob (500-result cap), load_skill over the hardened skills
+  loader. registry.ts intersects role.tools with the built-in set
+  structurally — no `list` tool reintroduced (wave-6 flag resolved).
+- Verified: 36 tests including symlink-escape and truncation cases;
+  typecheck clean at commit time.
+- Status: committed (`cf5d729`).
+
+### 2026-08-23 — wave 9: agent loop over OpenAI SDK (P3 slice)
+- src/fleet/loop.ts: hand-written tool-call roundtrip emitting SPEC §6
+  wire events via callback only — never stdout. Usage parsing tolerates
+  missing fields; cost rule = metadata else 0, ollama forced to 0.
+  Abort is stop-after-current-tool (completes the in-flight tool batch);
+  maxSteps=25 guard against runaway loops.
+- Verified: 12 integration tests against a mocked OpenAI client;
+  typecheck clean at commit time.
+- Status: committed (`cc1f25f`).
+
+### 2026-08-23 — wave 10: worker entry + real t-wire parser + fork e2e (P3 slice)
+- src/runtime/worker/main.ts: stdin job contract with strict validation;
+  DRY-RUN second-layer zero-model guard proven via dead-port test;
+  SIGTERM handlers pre-emit then bounded flush before exit.
+- parseProviderTrace realigned to the REAL t:-keyed wire protocol
+  (`ev.t`, not `ev.type`), retiring the deferred protocol decision;
+  the one ev.type line in agentRunner.ts tailing follows suit.
+- Verified: 4 fork e2e scenarios — dry-run, keyless ollama localhost
+  stub, SIGTERM abort, malformed-job rejection.
+- Status: committed (`9bc0cbf`).
+
+### 2026-08-23 — independent verification verdict (P3)
+- Independent verification returned GREEN: typecheck 0 errors,
+  vitest 437/437.
+- SPEC §17 all three P3 items ticked (dated 2026-08-23); TODO.md P3
+  line ticked; MEMORY frontmatter granular: p3_tools_loop_worker=true,
+  p4_through_p8=false.
+- Non-blocking notes carried forward:
+  1. writeTool path check is lexical-only — parent-dir realpath
+     hardening candidate for P4+.
+  2. Abort granularity = completes current multi-tool batch; SDK call
+     not signal-cancelled (conservative direction; Stop latency ≈ one
+     LLM round-trip).
+  3. NO step_finish emitted on the error path — failed-run token totals
+     survive only in RunAgentOutcome, not on the wire; P5 SOR parity may
+     need a terminal step_finish on the fail path.
+  4. bash conflates external SIGKILL with timeout (cosmetic).
 - Status: committed in this docs commit.
