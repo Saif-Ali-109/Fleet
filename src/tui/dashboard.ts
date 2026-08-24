@@ -1,7 +1,7 @@
 import type { ProviderName, Role } from "../types.ts";
 import type { AgentResult } from "../types.ts";
 
-type PhaseName = "idle" | "gate1" | "analyze" | "plan" | "gate2" | "implement" | "review" | "gate3" | "pr" | "done" | "aborted" | "failed";
+type PhaseName = "idle" | "analyze" | "plan" | "implement" | "review" | "pr" | "done" | "aborted" | "failed";
 
 export interface AgentStatus {
   role: Role;
@@ -22,7 +22,6 @@ export interface DashboardState {
   phase: PhaseName;
   agents: Record<Role, AgentStatus>;
   loopIteration: number;
-  lastGate?: string;
   prUrl?: string;
   backend?: ProviderName;
 }

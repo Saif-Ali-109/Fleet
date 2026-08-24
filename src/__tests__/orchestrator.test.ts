@@ -190,7 +190,7 @@ describe("orchestrator SPEC D11 auto-flow", () => {
   const sorPayloads = (): Record<string, unknown>[] =>
     vi.mocked(appendAuditEvent).mock.calls.map((c) => (c[1] as { payload: Record<string, unknown> }).payload);
 
-  it("completes with zero human waits: gates auto-approved in SOR, PR created", async () => {
+  it("completes with zero human waits: review auto-approved in SOR, PR created", async () => {
     reviewerTexts = [approveText];
     const ctx = await makeCtx();
     const summary = await runOrchestrator(ctx, {});
@@ -199,16 +199,12 @@ describe("orchestrator SPEC D11 auto-flow", () => {
     expect(summary.prUrl).toBe("https://github.com/acme/widget/pull/99");
 
     const payloads = sorPayloads();
-    for (const gate of ["gate1", "gate2"]) {
-      const ev = payloads.find((p) => p["phase"] === gate);
-      expect(ev).toBeDefined();
-      expect(ev?.["gate_auto_approved"]).toBe(true);
-      expect(ev?.["status"]).toBe("auto_approved");
-    }
+    const phases = payloads.map((p) => p["phase"]);
+    expect(phases.filter((p) => typeof p === "string" && p.startsWith("gate"))).toEqual([]);
     expect(vi.mocked(db.finalizeRun)).toHaveBeenCalledWith(
       expect.objectContaining({
         status: "completed",
-        gate_status: JSON.stringify({ gate1: "auto_approved", gate2: "auto_approved", review: "auto_approved" }),
+        gate_status: JSON.stringify({ review: "auto_approved" }),
       }),
     );
   });

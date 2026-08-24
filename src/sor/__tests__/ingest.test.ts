@@ -152,7 +152,7 @@ describe("readEventFile", () => {
           "this line is garbage",
           makeHookLine({ tool_name: "read", tool_input: { filePath: "a.ts" } }),
           "",
-          makeHookLine({ event_type: "phase", actor: "manager", payload: { phase: "gate1" } }),
+          makeHookLine({ event_type: "phase", actor: "manager", payload: { phase: "analyze" } }),
         ].join("\n"),
         "utf8",
       );

@@ -406,20 +406,6 @@ export async function runOrchestrator(
       await logLine(ctx.rootDir, "worktree ready at " + wt.worktreeDir + " base " + wt.baseBranch);
     }
 
-    setPhase("gate1");
-    pushState();
-    if (runId) {
-      await db.updateRunStatus({ run_id: runId, phase: "gate1", status: "running", iteration: 0 });
-    }
-    // SPEC D11: human approval removed — intent confirmation auto-proceeds.
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "gate1", status: "auto_approved", iteration: 0, gate_auto_approved: true },
-    });
-    await logLine(ctx.rootDir, "gate1 auto-approved (human gates removed)");
-    dash.lastGate = "gate1";
-
     const skeleton = await buildSkeletonMap(ctx.worktreeDir);
 
     const analyzerTask = [
@@ -577,20 +563,6 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
       ...plan.outOfScope.map((o) => `- ${o}`),
     ].join("\n");
     await writeFile(join(ctx.runDir, "plan.md"), planMd + "\n");
-
-    setPhase("gate2");
-    pushState();
-    if (runId) {
-      await db.updateRunStatus({ run_id: runId, phase: "gate2", status: "running", iteration: iterationsUsed });
-    }
-    // SPEC D11: human approval removed — plan approval auto-proceeds.
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "gate2", status: "auto_approved", iteration: iterationsUsed, gate_auto_approved: true },
-    });
-    await logLine(ctx.rootDir, "gate2 auto-approved (human gates removed)");
-    dash.lastGate = "gate2";
 
     const route = planRoute(ctx.issue);
     const loopStep = route.find((s) => s.kind === "loop");
@@ -1012,14 +984,12 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
     );
     await writeFile(join(ctx.runDir, "result.json"), JSON.stringify(summary, null, 2) + "\n");
     await finalize("completed", {
-      gate1: "auto_approved",
-      gate2: "auto_approved",
       review: "auto_approved",
     });
     try {
       await generateMemory(ctx.rootDir);
     } catch (e) {
-      await logLine(ctx.rootDir, "MEMORY.md regeneration failed: " + String(e));
+      await logLine(ctx.rootDir, "MEMORY.txt regeneration failed: " + String(e));
     }
     return summary;
   } catch (e) {

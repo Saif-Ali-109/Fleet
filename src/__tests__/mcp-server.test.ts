@@ -35,7 +35,7 @@ describe("MCP toJsonbParam jsonb-safety", () => {
   });
 
   it("passes objects and arrays through unchanged", () => {
-    const obj = { gate1: { status: "approved", iteration: 1 } };
+    const obj = { analyze: { status: "approved", iteration: 1 } };
     const arr = [{ iteration: 2 }];
     expect(toJsonbParam(obj)).toBe(obj);
     expect(toJsonbParam(arr)).toBe(arr);
@@ -101,7 +101,7 @@ describe("MCP server handleToolCall integration", () => {
 
     const result = (await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate1",
+      phase: "analyze",
       status: "running",
       iteration: 0,
     })) as { updated: boolean };
@@ -256,19 +256,19 @@ describe("MCP server handleToolCall integration", () => {
 
     await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate1",
+      phase: "analyze",
       status: "running",
       iteration: 0,
     });
     await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate2",
+      phase: "plan",
       status: "approved",
       iteration: 2,
     });
     await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate1",
+      phase: "analyze",
       status: "approved",
       iteration: 1,
     });
@@ -278,15 +278,15 @@ describe("MCP server handleToolCall integration", () => {
       [created.run_id]
     );
     expect(row.rows[0]?.gate_status).toEqual({
-      gate1: { status: "approved", iteration: 1 },
-      gate2: { status: "approved", iteration: 2 },
+      analyze: { status: "approved", iteration: 1 },
+      plan: { status: "approved", iteration: 2 },
     });
   });
 
   it("update_run_status returns updated:false for a nonexistent run", async () => {
     const result = (await handleToolCall("update_run_status", {
       run_id: randomUUID(),
-      phase: "gate1",
+      phase: "analyze",
       status: "running",
       iteration: 0,
     })) as { updated: boolean };
