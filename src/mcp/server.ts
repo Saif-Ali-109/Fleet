@@ -187,6 +187,14 @@ function reqDate(
   return date;
 }
 
+function toJsonbParam(v: unknown): unknown {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+    return JSON.stringify(v);
+  }
+  return v;
+}
+
 interface CostByRoleRow {
   role: string;
   model: string;
@@ -235,7 +243,7 @@ async function finalizeRun(args: Record<string, unknown>): Promise<{ finalized: 
     run_id: reqString(args, "run_id", "finalize_run"),
     pr_url: reqNullableString(args, "pr_url", "finalize_run"),
     total_cost: reqNumber(args, "total_cost", "finalize_run"),
-    gate_status: reqString(args, "gate_status", "finalize_run"),
+    gate_status: toJsonbParam(reqString(args, "gate_status", "finalize_run")) as string,
     status: reqString(args, "status", "finalize_run"),
     iterationsUsed: optNumber(args, "iterations_used", "finalize_run"),
   });
@@ -343,4 +351,4 @@ process.once("SIGTERM", () => {
   void shutdown();
 });
 
-export { handleToolCall };
+export { handleToolCall, toJsonbParam };
