@@ -565,6 +565,119 @@ describe("runAgent", () => {
     }
   });
 
+  it("retries connection-level errors without a status code", async () => {
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      create.mockImplementationOnce(async () => {
+        throw new Error("Connection error.");
+      });
+      create.mockImplementationOnce(async () => resp({ role: "assistant", content: "back" }));
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+      });
+      await vi.advanceTimersByTimeAsync(15000);
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("back");
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("[llm-retry]"));
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries header-timeout aborts from slow local backends", async () => {
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      create.mockImplementationOnce(async () => {
+        throw new Error(
+          "Request timed out. Node.js fetch timed out waiting for response headers; "
+            + "configure a matching undici fetch and fetchOptions.dispatcher with an Agent "
+            + "whose headersTimeout is at least the SDK timeout.",
+        );
+      });
+      create.mockImplementationOnce(async () => resp({ role: "assistant", content: "slow but alive" }));
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+      });
+      await vi.advanceTimersByTimeAsync(15000);
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("slow but alive");
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("assembles streamed chat deltas into a non-streaming shaped response", async () => {
+    const { createStreaming } = await import("../fleet/loop.ts");
+    const chunks = [
+      { choices: [{ delta: { content: "Hel" } }] },
+      { choices: [{ delta: { content: "lo" } }] },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: "call_1", function: { name: "write_file", arguments: '{"pa' } },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'th":"a.ts"}' } }] } }] },
+    ];
+    const create = (async (opts: { stream?: boolean }) => {
+      expect(opts.stream).toBe(true);
+      return (async function* () {
+        for (const c of chunks) yield c;
+      })();
+    }) as unknown as Parameters<typeof createStreaming>[0];
+
+    const out = (await createStreaming(create, {
+      model: "m",
+      messages: [],
+    })) as unknown as {
+      choices: Array<{ message: { content: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }>;
+      usage?: unknown;
+    };
+
+    const msg = out.choices[0]!.message;
+    expect(msg.content).toBe("Hello");
+    expect(msg.tool_calls).toEqual([
+      { id: "call_1", type: "function", function: { name: "write_file", arguments: '{"path":"a.ts"}' } },
+    ]);
+  });
+
   it("parseRetryDelayMs honors the server-suggested retry window", async () => {
     const { parseRetryDelayMs } = await import("../fleet/loop.ts");
     const serverSaid = new Error(

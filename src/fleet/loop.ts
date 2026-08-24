@@ -52,7 +52,13 @@ function isTransientLlmError(err: unknown): boolean {
   const status = (err as { status?: unknown } | null)?.status;
   if (typeof status === "number") return status === 429 || (status >= 500 && status < 600);
   const msg = err instanceof Error ? err.message : String(err);
-  return /\b(429|50[0-4])\b/.test(msg);
+  return (
+    /\b(429|50[0-4])\b/.test(msg) ||
+    /\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE|Connection error|fetch failed|socket hang up|network error)\b/i.test(
+      msg,
+    ) ||
+    /timed?\s*out|headersTimeout/i.test(msg)
+  );
 }
 
 export function parseRetryDelayMs(err: unknown): number | null {
@@ -61,6 +67,84 @@ export function parseRetryDelayMs(err: unknown): number | null {
     msg.match(/Please retry in (\d+(?:\.\d+)?)s/) ??
     msg.match(/retryDelay":"(\d+(?:\.\d+)?)s"/);
   return m ? Math.ceil(Number(m[1]) * 1000) : null;
+}
+
+type CreateFn = ReturnType<OpenAI["chat"]["completions"]["create"]["bind"]>;
+
+interface StreamChunk {
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+  }>;
+  usage?: RawUsage;
+}
+
+/** FLEET_LLM_STREAM=1 routes chat calls through SSE streaming assembly. */
+function wantsStreaming(): boolean {
+  return process.env.FLEET_LLM_STREAM === "1";
+}
+
+/**
+ * Streams a chat completion and assembles the deltas into a non-streaming
+ * shaped response. Local CPU backends (ollama) can take many minutes before
+ * headers would arrive on a blocking call, tripping undici headersTimeout;
+ * streaming sends headers immediately and keeps bytes flowing.
+ */
+export async function createStreaming(
+  create: CreateFn,
+  opts: { model: string; messages: unknown[]; tools?: unknown[] },
+): Promise<unknown> {
+  const stream = (await create({
+    ...opts,
+    stream: true,
+  } as Parameters<CreateFn>[0])) as unknown as AsyncIterable<StreamChunk>;
+
+  let content = "";
+  const toolCalls = new Map<
+    number,
+    { id: string; type: "function"; function: { name: string; arguments: string } }
+  >();
+  let usage: RawUsage | undefined;
+
+  for await (const chunk of stream) {
+    if (chunk.usage) usage = chunk.usage;
+    const delta = chunk.choices?.[0]?.delta;
+    if (!delta) continue;
+    if (delta.content) content += delta.content;
+    for (const tc of delta.tool_calls ?? []) {
+      const idx = tc.index ?? 0;
+      const slot = toolCalls.get(idx) ?? {
+        id: "",
+        type: "function" as const,
+        function: { name: "", arguments: "" },
+      };
+      if (tc.id) slot.id = tc.id;
+      if (tc.function?.name) slot.function.name += tc.function.name;
+      if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
+      toolCalls.set(idx, slot);
+    }
+  }
+
+  return {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: content || null,
+          ...(toolCalls.size > 0
+            ? { tool_calls: [...toolCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v) }
+            : {}),
+        },
+      },
+    ],
+    ...(usage ? { usage } : {}),
+  };
 }
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
@@ -148,11 +232,15 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
       let response: Awaited<ReturnType<typeof create>> | undefined;
       for (let attempt = 0; ; attempt++) {
         try {
-          response = await create({
+          const reqOpts = {
             model,
             messages,
             ...(tools.length > 0 ? { tools } : {}),
-          });
+          };
+          response =
+            wantsStreaming() ?
+              ((await createStreaming(create, reqOpts)) as Awaited<ReturnType<typeof create>>)
+            : await create(reqOpts);
           break;
         } catch (err) {
           if (attempt >= RETRY_DELAYS_MS.length || !isTransientLlmError(err)) throw err;
