@@ -99,11 +99,34 @@ function wantsStreaming(): boolean {
 export async function createStreaming(
   create: CreateFn,
   opts: { model: string; messages: unknown[]; tools?: unknown[] },
+  noResponseMs: number = Number.isFinite(
+    Number(process.env.OLLAMA_NO_RESPONSE_TIMEOUT_MS),
+  )
+    ? Number(process.env.OLLAMA_NO_RESPONSE_TIMEOUT_MS)
+    : 30000,
 ): Promise<unknown> {
-  const stream = (await create({
-    ...opts,
-    stream: true,
-  } as Parameters<CreateFn>[0])) as unknown as AsyncIterable<StreamChunk>;
+  const controller = new AbortController();
+
+  const withStallGuard = <T>(p: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`watchdog timed out: no response chunk within ${noResponseMs}ms`));
+        }, noResponseMs);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+
+  const stream = (await withStallGuard(
+    Promise.resolve(create({
+      ...opts,
+      stream: true,
+      signal: controller.signal,
+    } as Parameters<CreateFn>[0])),
+  )) as unknown as AsyncIterable<StreamChunk>;
 
   let content = "";
   const toolCalls = new Map<
@@ -112,7 +135,11 @@ export async function createStreaming(
   >();
   let usage: RawUsage | undefined;
 
-  for await (const chunk of stream) {
+  const iterator = stream[Symbol.asyncIterator]();
+  for (;;) {
+    const next = await withStallGuard(iterator.next());
+    if (next.done) break;
+    const chunk = next.value;
     if (chunk.usage) usage = chunk.usage;
     const delta = chunk.choices?.[0]?.delta;
     if (!delta) continue;
@@ -243,11 +270,18 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
             : await create(reqOpts);
           break;
         } catch (err) {
-          if (attempt >= RETRY_DELAYS_MS.length || !isTransientLlmError(err)) throw err;
-          const base = RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1] ?? 60000;
-          const delay = Math.max(base, (parseRetryDelayMs(err) ?? 0) + 2000);
+          const isOllama = provider === "ollama";
+          if (!isTransientLlmError(err)) throw err;
+          if (!isOllama && attempt >= RETRY_DELAYS_MS.length) throw err;
+          const hint = parseRetryDelayMs(err);
+          const delay = isOllama
+            ? Math.max(Number(process.env.OLLAMA_RETRY_DELAY_MS ?? 5000), hint ?? 0)
+            : Math.max(
+                RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1] ?? 60000,
+                (hint ?? 0) + 2000,
+              );
           console.error(
-            `[llm-retry] attempt ${attempt + 1}/${RETRY_DELAYS_MS.length + 1} failed transiently; backing off ${delay}ms`,
+            `[llm-retry] attempt ${attempt + 1}/${isOllama ? "∞" : RETRY_DELAYS_MS.length + 1} failed transiently; backing off ${delay}ms`,
           );
           await sleep(delay, signal);
           if (signal?.aborted) return fail("aborted during retry backoff");

@@ -713,4 +713,163 @@ describe("runAgent", () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(events.some((e) => e.t === "error")).toBe(true);
   });
+
+  it("retries ollama errors every OLLAMA_RETRY_DELAY_MS", async () => {
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      create.mockImplementationOnce(async () => {
+        throw new Error("Connection error.");
+      });
+      create.mockImplementationOnce(async () => {
+        throw new Error("fetch failed");
+      });
+      create.mockImplementationOnce(async () => resp({ role: "assistant", content: "recovered" }));
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+        provider: "ollama",
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("recovered");
+      expect(create).toHaveBeenCalledTimes(3);
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("[llm-retry]"));
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("ollama retries exceed the standard three-strike ladder", async () => {
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      for (let i = 0; i < 4; i++) {
+        create.mockImplementationOnce(async () => {
+          throw new Error("Connection error.");
+        });
+      }
+      create.mockImplementationOnce(async () => resp({ role: "assistant", content: "fifth time lucky" }));
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+        provider: "ollama",
+      });
+      for (let i = 0; i < 4; i++) await vi.advanceTimersByTimeAsync(5000);
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("fifth time lucky");
+      expect(create).toHaveBeenCalledTimes(5);
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("non-ollama keeps the three-strike ladder", async () => {
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      for (let i = 0; i < 4; i++) {
+        create.mockImplementationOnce(async () => {
+          throw new Error("Connection error.");
+        });
+      }
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+      });
+      await vi.advanceTimersByTimeAsync(15000);
+      await vi.advanceTimersByTimeAsync(30000);
+      await vi.advanceTimersByTimeAsync(60000);
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(false);
+      expect(create).toHaveBeenCalledTimes(4);
+      expect(events.some((e) => e.t === "error")).toBe(true);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("streaming watchdog requeues silent ollama calls", async () => {
+    const prevStream = process.env.FLEET_LLM_STREAM;
+    process.env.FLEET_LLM_STREAM = "1";
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      create.mockImplementationOnce(async () => ({
+        [Symbol.asyncIterator]() {
+          return { next: () => new Promise(() => {}) };
+        },
+      }));
+      create.mockImplementationOnce(async () =>
+        (async function* () {
+          yield { choices: [{ delta: { content: "back" } }] };
+        })(),
+      );
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+        provider: "ollama",
+      });
+      await vi.advanceTimersByTimeAsync(30000);
+      await vi.advanceTimersByTimeAsync(30000);
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("back");
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+      if (prevStream === undefined) delete process.env.FLEET_LLM_STREAM;
+      else process.env.FLEET_LLM_STREAM = prevStream;
+    }
+  });
 });
