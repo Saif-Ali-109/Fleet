@@ -829,7 +829,9 @@ describe("runAgent", () => {
 
   it("streaming watchdog requeues silent ollama calls", async () => {
     const prevStream = process.env.FLEET_LLM_STREAM;
+    const prevFirstToken = process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
     process.env.FLEET_LLM_STREAM = "1";
+    process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = "30000";
     vi.useFakeTimers();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -870,6 +872,108 @@ describe("runAgent", () => {
       vi.useRealTimers();
       if (prevStream === undefined) delete process.env.FLEET_LLM_STREAM;
       else process.env.FLEET_LLM_STREAM = prevStream;
+      if (prevFirstToken === undefined) delete process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
+      else process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = prevFirstToken;
+    }
+  });
+
+  it("first chunk exempt from stall window; mid-stream stall aborts", async () => {
+    const prevStream = process.env.FLEET_LLM_STREAM;
+    process.env.FLEET_LLM_STREAM = "1";
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      create.mockImplementationOnce(async () =>
+        (async function* () {
+          yield { choices: [{ delta: { content: "hi" } }] };
+          await new Promise(() => {});
+        })(),
+      );
+      create.mockImplementationOnce(async () =>
+        (async function* () {
+          yield { choices: [{ delta: { content: "done" } }] };
+        })(),
+      );
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+        provider: "ollama",
+      });
+      const outcome = await (async () => {
+        await vi.advanceTimersByTimeAsync(30000);
+        await vi.advanceTimersByTimeAsync(5000);
+        return pending;
+      })();
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("done");
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+      if (prevStream === undefined) delete process.env.FLEET_LLM_STREAM;
+      else process.env.FLEET_LLM_STREAM = prevStream;
+    }
+  });
+
+  it("non-numeric OLLAMA_FIRST_TOKEN_TIMEOUT_MS falls back to 600000", async () => {
+    const prevStream = process.env.FLEET_LLM_STREAM;
+    const prevFirstToken = process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
+    process.env.FLEET_LLM_STREAM = "1";
+    process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = "garbage";
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      create.mockImplementationOnce(async () => ({
+        [Symbol.asyncIterator]() {
+          return { next: () => new Promise(() => {}) };
+        },
+      }));
+      create.mockImplementationOnce(async () =>
+        (async function* () {
+          yield { choices: [{ delta: { content: "late" } }] };
+        })(),
+      );
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+        provider: "ollama",
+      });
+      await vi.advanceTimersByTimeAsync(30000);
+      await vi.advanceTimersByTimeAsync(570000);
+      await vi.advanceTimersByTimeAsync(5000);
+      const outcome = await pending;
+
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("late");
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      vi.useRealTimers();
+      if (prevStream === undefined) delete process.env.FLEET_LLM_STREAM;
+      else process.env.FLEET_LLM_STREAM = prevStream;
+      if (prevFirstToken === undefined) delete process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
+      else process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = prevFirstToken;
     }
   });
 });

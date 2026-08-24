@@ -99,33 +99,38 @@ function wantsStreaming(): boolean {
 export async function createStreaming(
   create: CreateFn,
   opts: { model: string; messages: unknown[]; tools?: unknown[] },
-  noResponseMs: number = Number.isFinite(
-    Number(process.env.OLLAMA_NO_RESPONSE_TIMEOUT_MS),
-  )
-    ? Number(process.env.OLLAMA_NO_RESPONSE_TIMEOUT_MS)
+  firstTokenMs: number = Number.isFinite(Number(process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS))
+    ? Number(process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS)
+    : 600000,
+  stallMs: number = Number.isFinite(Number(process.env.OLLAMA_STALL_TIMEOUT_MS))
+    ? Number(process.env.OLLAMA_STALL_TIMEOUT_MS)
     : 30000,
 ): Promise<unknown> {
   const controller = new AbortController();
+  let gotFirstChunk = false;
 
   const withStallGuard = <T>(p: Promise<T>): Promise<T> => {
+    const ms = gotFirstChunk ? stallMs : firstTokenMs;
     let timer: ReturnType<typeof setTimeout> | undefined;
     return Promise.race([
       p,
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           controller.abort();
-          reject(new Error(`watchdog timed out: no response chunk within ${noResponseMs}ms`));
-        }, noResponseMs);
+          reject(
+            new Error(
+              `watchdog timed out: ${gotFirstChunk ? "stalled mid-stream" : "no first token"} (${ms}ms)`,
+            ),
+          );
+        }, ms);
       }),
     ]).finally(() => clearTimeout(timer));
   };
 
   const stream = (await withStallGuard(
-    Promise.resolve(create({
-      ...opts,
-      stream: true,
-      signal: controller.signal,
-    } as Parameters<CreateFn>[0])),
+    Promise.resolve(
+      create({ ...opts, stream: true } as Parameters<CreateFn>[0], { signal: controller.signal }),
+    ),
   )) as unknown as AsyncIterable<StreamChunk>;
 
   let content = "";
@@ -139,6 +144,7 @@ export async function createStreaming(
   for (;;) {
     const next = await withStallGuard(iterator.next());
     if (next.done) break;
+    gotFirstChunk = true;
     const chunk = next.value;
     if (chunk.usage) usage = chunk.usage;
     const delta = chunk.choices?.[0]?.delta;
