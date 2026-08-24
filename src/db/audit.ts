@@ -95,7 +95,7 @@ export async function appendAuditEvent(pool: Pool, event: SorEvent): Promise<voi
         event.tool_name,
         toJsonbParam(event.tool_input),
         toJsonbParam(event.tool_output),
-        event.payload,
+        toJsonbParam(event.payload),
          chain.hash,
          hash,
          normalized.created_at,
