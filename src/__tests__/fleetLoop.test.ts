@@ -678,6 +678,114 @@ describe("runAgent", () => {
     ]);
   });
 
+  it("streamed tool_calls preserve extra_content", async () => {
+    const { createStreaming } = await import("../fleet/loop.ts");
+    const signature = { google: { thought_signature: "sig123" } };
+    const chunks = [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_9",
+                  function: { name: "list_files", arguments: '{"path":"/"}' },
+                  extra_content: signature,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const create = (async () => {
+      return (async function* () {
+        for (const c of chunks) yield c;
+      })();
+    }) as unknown as Parameters<typeof createStreaming>[0];
+
+    const out = (await createStreaming(create, {
+      model: "m",
+      messages: [],
+    })) as unknown as {
+      choices: Array<{
+        message: {
+          tool_calls?: Array<{ id: string; extra_content?: unknown }>;
+        };
+      }>;
+    };
+
+    const tc = out.choices[0]!.message.tool_calls![0]!;
+    expect(tc.id).toBe("call_9");
+    expect(tc.extra_content).toEqual(signature);
+  });
+
+  it("streamed signatures echo back on the next request", async () => {
+    const prevStream = process.env.FLEET_LLM_STREAM;
+    process.env.FLEET_LLM_STREAM = "1";
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const registry = buildRegistry(defWith([]));
+      const { client, create } = mockClient([]);
+      const signature = { google: { thought_signature: "Eq8C…" } };
+      let capturedMessages: unknown[] | undefined;
+      const toolCallStream = (async function* () {
+        yield {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_1",
+                    function: { name: "glob", arguments: '{"pattern":"**/*.py"}' },
+                    extra_content: signature,
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      })();
+      create.mockImplementationOnce(async () => toolCallStream);
+      create.mockImplementationOnce(async (opts: { messages?: unknown[] }) => {
+        capturedMessages = opts.messages;
+        return (async function* () {
+          yield { choices: [{ delta: { content: "done" } }] };
+        })();
+      });
+      const { events, emit } = collect();
+
+      const outcome = await runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+      });
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("done");
+      expect(create).toHaveBeenCalledTimes(2);
+      const assistantEcho = (capturedMessages ?? []).find(
+        (m) =>
+          (m as { role?: string; tool_calls?: Array<{ extra_content?: unknown }> }).role ===
+            "assistant" &&
+          Array.isArray((m as { tool_calls?: unknown[] }).tool_calls),
+      ) as { tool_calls: Array<{ extra_content?: unknown }> } | undefined;
+      expect(assistantEcho).toBeDefined();
+      expect(assistantEcho!.tool_calls[0]!.extra_content).toEqual(signature);
+      expect(events.some((e) => e.t === "error")).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+      if (prevStream === undefined) delete process.env.FLEET_LLM_STREAM;
+      else process.env.FLEET_LLM_STREAM = prevStream;
+    }
+  });
+
   it("parseRetryDelayMs honors the server-suggested retry window", async () => {
     const { parseRetryDelayMs } = await import("../fleet/loop.ts");
     const serverSaid = new Error(

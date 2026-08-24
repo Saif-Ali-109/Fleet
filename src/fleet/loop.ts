@@ -79,6 +79,7 @@ interface StreamChunk {
         index?: number;
         id?: string;
         function?: { name?: string; arguments?: string };
+        extra_content?: unknown;
       }>;
     };
   }>;
@@ -136,7 +137,12 @@ export async function createStreaming(
   let content = "";
   const toolCalls = new Map<
     number,
-    { id: string; type: "function"; function: { name: string; arguments: string } }
+    {
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+      extra_content?: unknown;
+    }
   >();
   let usage: RawUsage | undefined;
 
@@ -160,6 +166,7 @@ export async function createStreaming(
       if (tc.id) slot.id = tc.id;
       if (tc.function?.name) slot.function.name += tc.function.name;
       if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
+      if (tc.extra_content !== undefined) slot.extra_content = tc.extra_content;
       toolCalls.set(idx, slot);
     }
   }
@@ -171,7 +178,16 @@ export async function createStreaming(
           role: "assistant",
           content: content || null,
           ...(toolCalls.size > 0
-            ? { tool_calls: [...toolCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v) }
+            ? {
+                tool_calls: [...toolCalls.entries()]
+                  .sort((a, b) => a[0] - b[0])
+                  .map(([, tc]) => ({
+                    id: tc.id,
+                    type: tc.type,
+                    function: tc.function,
+                    ...(tc.extra_content !== undefined ? { extra_content: tc.extra_content } : {}),
+                  })),
+              }
             : {}),
         },
       },
