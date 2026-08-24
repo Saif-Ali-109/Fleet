@@ -102,3 +102,7 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
 ## Debt (from 8cfb9b1 verification)
 - [x] MCP `finalize_run` gate_status binds caller strings raw into jsonb — FIXED `6ee2248`: local `toJsonbParam` mirror at the server.ts chokepoint (the `:205` bind actually lives in src/db/client.ts finalizeRun; coercion applied upstream so every caller is covered)
 - [x] orchestrator/agentRunner SOR payload ($9) bound without toJsonbParam — FIXED `84445e2`: bind wrapped in audit.ts; payloads are objects today (passthrough = byte-identical), chain replay unchanged
+
+## Debt (from FINAL smoke 2026-08-24)
+- [ ] SESSION_LOG cross-run bleed: run N's log lands in run N+1's dir (`09-49-22313Z` holds `09-43-59281Z`'s timeline) — lazy path resolution vs resetSessionLog ordering race in src/memory/sessionLog.ts
+- [ ] Ghost run dir `2026-08-24T10-09-01-213Z`: boot-only artifacts (fix-spec+empty traces) created 5 min AFTER its daemon exited, no process behind it — unexplained
