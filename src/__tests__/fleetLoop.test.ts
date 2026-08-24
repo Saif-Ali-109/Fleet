@@ -496,4 +496,36 @@ describe("runAgent", () => {
     expect(resultEvt.ok).toBe(false);
     expect(outcome.text).toBe("moved on");
   });
+
+  it("echoes provider thought signatures back on assistant tool_call turns", async () => {
+    const registry = buildRegistry(defWith(["read"]));
+    const signature = { google: { thought_signature: "sig-abc-123" } };
+    const first = resp({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { ...toolCallReq("read", { path: "hello.txt" }), extra_content: signature },
+      ],
+    });
+    const second = resp({ role: "assistant", content: "done" });
+    const { client, create } = mockClient([first, second]);
+    const { emit } = collect();
+
+    await runAgent({
+      client,
+      model: "m",
+      systemPrompt: "",
+      task: "",
+      registry,
+      wtCtx: ctx(),
+      emit,
+    });
+
+    expect(create).toHaveBeenCalledTimes(2);
+    const secondCall = create.mock.calls[1]?.[0] as {
+      messages: Array<{ role: string; tool_calls?: Array<Record<string, unknown>> }>;
+    };
+    const echoed = secondCall.messages.find((m) => m.role === "assistant");
+    expect(echoed?.tool_calls?.[0]?.extra_content).toEqual(signature);
+  });
 });

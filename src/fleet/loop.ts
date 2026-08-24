@@ -131,6 +131,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
             tool_calls?: Array<{
               id?: string;
               function?: { name?: string; arguments?: string };
+              extra_content?: unknown;
             }>;
           };
         }>;
@@ -171,6 +172,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
             name: tc.function?.name ?? "",
             arguments: tc.function?.arguments ?? "{}",
           },
+          ...(tc.extra_content !== undefined ? { extra_content: tc.extra_content } : {}),
         })),
       });
 
