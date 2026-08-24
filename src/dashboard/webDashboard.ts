@@ -1012,6 +1012,10 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  function fmtErr(v) {
+    if (typeof v === "string") return v;
+    try { return JSON.stringify(v) || String(v); } catch (_) { return String(v); }
+  }
   function setConn(live, label) {
     connEl.className = "conn " + (live ? "live" : "dead");
     connEl.textContent = label;
@@ -1343,7 +1347,7 @@ function syncModelsPanel() {
     if (a.state === "done" && a.costUsd != null) meta.push(fmtCost(a.costUsd));
     if (a.state === "done" && a.tokens != null) meta.push(fmtTokens(a.tokens));
     if (meta.length) html += '<div class="meta-line">' + esc(meta.join(" · ")) + '</div>';
-    if (a.error) html += '<div class="err">' + esc(a.error) + '</div>';
+    if (a.error) html += '<div class="err">' + esc(fmtErr(a.error)) + '</div>';
     return html + "</div>";
   }
   function renderAgents() {
@@ -1453,7 +1457,7 @@ function syncModelsPanel() {
       if (summary) html += ' <span class="a-result">·</span> ' + esc(summary);
     } else if (t === "error") {
       var errMsg = ev.error || ev.message || "unknown error";
-      html += '<div class="a-text" style="color:var(--red)">' + esc(String(errMsg).slice(0, 500)) + '</div>';
+      html += '<div class="a-text" style="color:var(--red)">' + esc(fmtErr(errMsg).slice(0, 500)) + '</div>';
     } else if (t === "result" && typeof ev.text === "string") {
       html += '<div class="a-text">' + esc(ev.text.slice(0, 500)) + '</div>';
     } else if (t === "tool_use" || part.type === "tool") {

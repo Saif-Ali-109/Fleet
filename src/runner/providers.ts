@@ -65,7 +65,10 @@ export function parseProviderLine(provider: ProviderName, ev: any, acc: Provider
       break;
     case "error":
       acc.sawError = true;
-      acc.errorMsg = ev.error ?? "Unknown error";
+      acc.errorMsg =
+        ev.error == null ? "Unknown error"
+        : typeof ev.error === "string" ? ev.error
+        : JSON.stringify(ev.error);
       break;
     case "result":
       // Final result - text already accumulated via "text" events

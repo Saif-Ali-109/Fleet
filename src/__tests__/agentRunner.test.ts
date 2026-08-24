@@ -289,6 +289,16 @@ describe("parseTrace", () => {
     expect(result.errorMsg).toBe("Final failure");
   });
 
+  it("coerces object error payloads to a JSON string", () => {
+    const tracePath = writeTrace("trace12.jsonl", [
+      JSON.stringify({ t: "error", error: { message: "x" } }),
+    ].join("\n"));
+    const result = parseTrace(tracePath, {}, 0);
+    expect(result.sawError).toBe(true);
+    expect(typeof result.errorMsg).toBe("string");
+    expect(result.errorMsg).toBe('{"message":"x"}');
+  });
+
   it("skips non-JSON lines (noise)", () => {
     const tracePath = writeTrace("trace7.jsonl", [
       "Some log noise\n",

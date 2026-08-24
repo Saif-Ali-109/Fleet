@@ -366,16 +366,25 @@ describe("dashboard", () => {
       /function formatAgentEvent\(ev\) \{[\s\S]*?^  \}/m,
     );
     if (!match) throw new Error("Could not extract formatAgentEvent from source");
+    // formatAgentEvent calls the fmtErr client helper; extract it too so the
+    // evaluated function sees the real source implementation.
+    const errMatch = src.match(/function fmtErr\(v\) \{[\s\S]*?\n  \}/);
+    if (!errMatch) throw new Error("Could not extract fmtErr from source");
 
     const esc = (s: unknown) => String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
     // eslint-disable-next-line no-eval
-    const fn = eval("(function(esc){ " + match[0] + " return formatAgentEvent; })") as (
+    const fmtErr = eval("(function(){ " + errMatch[0] + " return fmtErr; })")() as (
+      v: unknown,
+    ) => string;
+    // eslint-disable-next-line no-eval
+    const fn = eval("(function(esc, fmtErr){ " + match[0] + " return formatAgentEvent; })") as (
       esc: (s: unknown) => string,
+      fmtErr: (v: unknown) => string,
     ) => (ev: Record<string, unknown>) => string;
-    const format = fn(esc);
+    const format = fn(esc, fmtErr);
 
     it("returns empty string for step_start", () => {
       const ev = {
@@ -452,6 +461,40 @@ describe("dashboard", () => {
       const html = format(ev);
       expect(html).toContain("weird_thing");
       expect(html).toContain("<code>");
+    });
+
+    it("renders object error payloads as JSON, never [object Object]", () => {
+      const html = format({ t: "error", error: { message: "boom" } });
+      expect(html).toContain('{"message":"boom"}');
+      expect(html).not.toContain("[object Object]");
+    });
+
+    it("renders string error payloads verbatim via fmtErr", () => {
+      const html = format({ t: "error", error: "plain failure" });
+      expect(html).toContain("plain failure");
+    });
+  });
+
+  describe("embedded error formatting hardening (fmtErr)", () => {
+    const src = readFileSync(
+      new URL("../dashboard/webDashboard.ts", import.meta.url),
+      "utf8",
+    );
+
+    it("defines the fmtErr client helper next to esc", () => {
+      expect(src).toMatch(/function fmtErr\(v\) \{/);
+      expect(src).toContain("if (typeof v === \"string\") return v;");
+      expect(src).toContain("JSON.stringify(v)");
+    });
+
+    it("routes card() errors through fmtErr instead of raw esc()", () => {
+      expect(src).toContain("esc(fmtErr(a.error))");
+      expect(src).not.toContain("esc(a.error)");
+    });
+
+    it("replaces String(errMsg) with fmtErr(errMsg) in formatAgentEvent's error branch", () => {
+      expect(src).toContain("esc(fmtErr(errMsg).slice(0, 500))");
+      expect(src).not.toContain("String(errMsg)");
     });
   });
 });
