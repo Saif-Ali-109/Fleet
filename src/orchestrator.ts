@@ -118,7 +118,7 @@ export function extractJson<T>(text: string): T | null {
       }
     }
   }
-  // Free OpenCode Zen models cap output tokens, so responses can be truncated mid-JSON.
+  // Some providers cap output tokens, so responses can be truncated mid-JSON.
   // Salvage the unclosed object by appending closing quote/brace/array tails until it parses.
   const base = cleaned.slice(start);
   const maxK = Math.min(depth, 25);

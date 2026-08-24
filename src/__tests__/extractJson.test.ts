@@ -102,7 +102,7 @@ describe("extractJson", () => {
     });
   });
 
-  describe("truncation handling (Free OpenCode Zen models cap output tokens)", () => {
+  describe("truncation handling (some providers cap output tokens)", () => {
     it("salvages an unclosed object by appending closing braces", () => {
       // A completed inner value, missing only the final closing brace.
       const result = extractJson<{ ok: boolean }>("{\"ok\": true");
