@@ -254,8 +254,8 @@ describe("getClientForProvider", () => {
     const first = ctorCalls[0]!;
     expect(first).toMatchObject({ baseURL: "https://openrouter.ai/api/v1", apiKey: "" });
     const headers = first.defaultHeaders as Record<string, string>;
-    expect(headers["HTTP-Referer"]).toContain("Multi-Orchestration");
-    expect(headers["X-Title"]).toBe("Multi-Orchestration");
+    expect(headers["HTTP-Referer"]).toContain("fleet");
+    expect(headers["X-Title"]).toBe("Fleet");
   });
 
   it("constructs ollama without special headers and a placeholder apiKey", () => {

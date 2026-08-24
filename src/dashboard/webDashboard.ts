@@ -815,7 +815,7 @@ const HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Multi-Orchestration · Live Dashboard</title>
+<title>Fleet · Live Dashboard</title>
 <style>
 :root {
   --bg: #0d1117; --panel: #161b22; --panel2: #1c2129; --border: #2d333b;
@@ -911,7 +911,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
 </head>
 <body>
 <header>
-  <h1>Multi-Orchestration</h1>
+  <h1>Fleet</h1>
   <span id="conn" class="conn">connecting…</span>
   <span class="meta" id="meta"></span>
   <span id="gh" class="gh">gh …</span>

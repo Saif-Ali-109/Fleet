@@ -1,6 +1,16 @@
-# Multi-Orchestration
+---
+title: Fleet README
+status: active
+created: 2026-08-24
+---
+
+# Fleet
 
 TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue to a real PR. No human gates; analyzer→planner→coder→tester→reviewer→(≤1 auto-fix)→pr. PostgreSQL-backed SOR audit chain. Hand-rolled web dashboard + ANSI TUI.
+
+## Naming convention
+
+"Fleet" is the product name. Lowercase "fleet" elsewhere in this codebase (the `src/fleet/` module, `FLEET_PROVIDERS`, `FleetAgentDef`) refers to the worker-fleet concept and predates the branding — treat them as distinct.
 
 ## Quick start
 

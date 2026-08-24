@@ -20,8 +20,8 @@ export interface ProviderDef {
 const DEFAULT_FLEET_PROVIDERS: readonly ProviderName[] = ["gemini", "openrouter", "ollama"];
 
 const OPENROUTER_HEADERS = {
-  "HTTP-Referer": "https://github.com/Saif-Ali-109/Multi-Orchestration",
-  "X-Title": "Multi-Orchestration",
+  "HTTP-Referer": "https://github.com/Saif-Ali-109/fleet",
+  "X-Title": "Fleet",
 } as const;
 
 const providerDefs: Record<ProviderName, ProviderDef> = {

@@ -1,4 +1,4 @@
-# AGENTS.md — Multi-Orchestration
+# AGENTS.md — Fleet
 
 Constitution for ANY AI agent working in this repo, in ANY session, on ANY plan.
 Read fully before your first edit. Re-read "Boundaries" before risky operations.
@@ -7,6 +7,8 @@ No YAML frontmatter on this file by rule — every other `*.md` must have one.
 ## What this repo is
 
 TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue → a real PR using 6 role agents (analyzer, planner, coder, tester, reviewer, pr). Workers run as child processes; the Manager itself never calls models. PostgreSQL-backed tamper-evident SOR audit chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
+
+Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/fleet/`, `FLEET_PROVIDERS`, `FleetAgentDef`) refers to the worker-fleet concept and predates the branding — treat them as distinct.
 
 ## Session protocol (every session)
 

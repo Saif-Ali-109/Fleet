@@ -71,7 +71,7 @@ export function renderDashboard(d: DashboardState): string {
   const phasePct = d.phase === "done" ? 1 : d.phase === "aborted" || d.phase === "failed" ? 0 : 0.5;
 
   return [
-    `\n┌─ Multi-Orchestration ─ run ${d.runId} ─ ${d.repo}#${d.issue} ─ ${d.backend ?? "gemini"} ────────┐`,
+    `\n┌─ Fleet ─ run ${d.runId} ─ ${d.repo}#${d.issue} ─ ${d.backend ?? "gemini"} ────────┐`,
     `│ phase: ${d.phase.padEnd(12)} loop: ${d.loopIteration}  [${renderBar(phasePct)}]`,
     ...rows.map((r) => `│${r}`),
     `└──────────────────────────────────────────────────────────────┘`,
