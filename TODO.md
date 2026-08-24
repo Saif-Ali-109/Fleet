@@ -100,5 +100,5 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
 - Subagent strategy per USER.md (sequential unless file sets fully disjoint).
 
 ## Debt (from 8cfb9b1 verification)
-- [ ] MCP `finalize_run` gate_status binds caller strings raw into jsonb (src/mcp/server.ts:238 → client.ts:205) — same class as the tool_output bug; pre-stringify or validate
-- [ ] orchestrator/agentRunner SOR payload ($9) bound without toJsonbParam — safe today (objects only), add coercion for future-proofing
+- [x] MCP `finalize_run` gate_status binds caller strings raw into jsonb — FIXED `6ee2248`: local `toJsonbParam` mirror at the server.ts chokepoint (the `:205` bind actually lives in src/db/client.ts finalizeRun; coercion applied upstream so every caller is covered)
+- [x] orchestrator/agentRunner SOR payload ($9) bound without toJsonbParam — FIXED `84445e2`: bind wrapped in audit.ts; payloads are objects today (passthrough = byte-identical), chain replay unchanged
