@@ -62,7 +62,14 @@ jobs:
         run: npm test
         continue-on-error: false
 
+      - name: Verify SOR hash chain
+        env:
+          DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
+          SOR_SIGNING_KEY: ${{ secrets.SOR_SIGNING_KEY || 'ci-dummy-signing-key' }}
+        run: npm run sor:verify
+
       - name: Dry-run smoke (orchestration spine)
         env:
           DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
-        run: npm run dry -- --repo octocat/Hello-World --issue 1 --interactive=false --no-web
+          SOR_SIGNING_KEY: ${{ secrets.SOR_SIGNING_KEY || 'ci-dummy-signing-key' }}
+        run: npm run dry -- --repo octocat/Hello-World --issue 1 --no-web

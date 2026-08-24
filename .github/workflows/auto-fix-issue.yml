@@ -1,10 +1,11 @@
 name: Auto-fix opened issue
 
 # Fires the fix fleet the moment a new issue is opened, fully unattended:
-# all 3 gates auto-approve (--interactive=false), no web dashboard in CI
+# gates auto-approve (no interactive mode exists), no web dashboard in CI
 # (--no-web). On success this pushes a real branch and opens a PR that
-# closes the issue. Requires GH_TOKEN and the opencode CLI's own auth
-# secret to already be configured as repo secrets (see README "Prerequisites").
+# closes the issue. Requires GH_TOKEN plus at least one provider key
+# (GEMINI_API_KEY; OPENROUTER_API_KEY optional as fallback) configured as
+# repo secrets.
 
 on:
   issues:
@@ -56,36 +57,22 @@ jobs:
           DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
         run: npm run migrate:up
 
-      - name: Install opencode CLI
-        run: |
-          # Adjust to however you provision opencode on a fresh runner
-          # (README "Prerequisites" — opencode CLI >= v1.18.7 on PATH).
-          npm install -g opencode-ai
-          opencode --version
-
-      - name: Authenticate opencode CLI
-        env:
-          OPENCODE_AUTH: ${{ secrets.OPENCODE_AUTH }}
-        run: |
-          # Seed opencode's auth.json from the repo secret rather than an
-          # interactive `opencode auth login` (not possible on a runner).
-          # Adjust the path/format to match how your OPENCODE_AUTH secret
-          # is actually structured.
-          mkdir -p ~/.local/share/opencode
-          echo "$OPENCODE_AUTH" > ~/.local/share/opencode/auth.json
-
       - name: Authenticate gh CLI
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: gh auth status
+        run: |
+          gh auth status
+          gh auth setup-git
 
       - name: Run the fix fleet
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
+          SOR_SIGNING_KEY: ${{ secrets.SOR_SIGNING_KEY || 'ci-dummy-signing-key' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           npm start -- \
             --repo "${{ github.repository }}" \
             --issue "${{ github.event.issue.number }}" \
-            --interactive=false \
             --no-web
