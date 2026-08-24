@@ -1,7 +1,7 @@
 // SPEC D11 flow tests: zero human waits, exactly ONE coder auto-fix round,
 // second rejection → hard failure, PR creation = terminal success.
 // Workers/workflows/db/gh are stubbed; the Manager loop itself is under test.
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +12,7 @@ import { runCoder } from "../workflow/coder.ts";
 import { runTester } from "../workflow/tester.ts";
 import { setupWorktree, diffAgainstBase } from "../git/worktree.ts";
 import type { AgentResult, Issue, RunContext, Role } from "../types.ts";
-import { runOrchestrator } from "../orchestrator.ts";
+import { runOrchestrator, readContributionGuidance } from "../orchestrator.ts";
 
 vi.mock("../agentRunner.ts", () => ({ runWorker: vi.fn() }));
 vi.mock("../git/worktree.ts", () => ({
@@ -256,5 +256,38 @@ describe("orchestrator SPEC D11 auto-flow", () => {
     expect(runCoder).not.toHaveBeenCalled();
     expect(runTester).not.toHaveBeenCalled();
     expect(summary.prUrl).toBeUndefined();
+  });
+
+  it("injects repo CONTRIBUTING.md into coder and pr tasks when present", async () => {
+    reviewerTexts = [approveText];
+    const ctx = await makeCtx();
+    await mkdir(ctx.worktreeDir, { recursive: true });
+    await writeFile(join(ctx.worktreeDir, "CONTRIBUTING.md"), "Always sign commits as ACME.", "utf8");
+    const summary = await runOrchestrator(ctx, {});
+
+    expect(summary.status).toBe("completed");
+    const prTask = vi.mocked(runWorker).mock.calls.find((c) => c[0] === "pr")?.[1] ?? "";
+    expect(prTask).toContain("## Contribution conventions");
+    expect(prTask).toContain("Always sign commits as ACME.");
+    const coderTask = vi.mocked(runCoder).mock.calls[0]?.[1]?.task ?? "";
+    expect(coderTask).toContain("Always sign commits as ACME.");
+  });
+
+  it("falls back to conventional-commit guidance when CONTRIBUTING.md is absent", async () => {
+    reviewerTexts = [approveText];
+    const ctx = await makeCtx();
+    const summary = await runOrchestrator(ctx, {});
+
+    expect(summary.status).toBe("completed");
+    const prTask = vi.mocked(runWorker).mock.calls.find((c) => c[0] === "pr")?.[1] ?? "";
+    expect(prTask).toContain("Use conventional commit style");
+  });
+
+  it("truncates CONTRIBUTING.md content to the 4000-char cap", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "contrib-cap-"));
+    await writeFile(join(dir, "CONTRIBUTING.md"), "x".repeat(5000), "utf8");
+    const guidance = await readContributionGuidance(dir);
+    expect(guidance).toContain("## Contribution conventions");
+    expect(guidance.length).toBeLessThan(4200);
   });
 });

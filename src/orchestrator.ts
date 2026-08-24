@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { runWorker } from "./agentRunner.ts";
@@ -53,6 +53,23 @@ import type {
 import type { ProviderName } from "./types.ts";
 
 export type RunStatus = "completed" | "aborted" | "failed";
+
+const CONTRIBUTING_MAX_CHARS = 4000;
+
+/** Commit-convention guidance for coder/pr prompts: the repo's CONTRIBUTING.md when present, else a default. */
+export async function readContributionGuidance(worktreeDir: string): Promise<string> {
+  try {
+    const raw = await readFile(join(worktreeDir, "CONTRIBUTING.md"), "utf8");
+    return [
+      "## Contribution conventions",
+      "The target repository defines contribution conventions. Follow them exactly for commit messages, PR title, and PR description:",
+      "",
+      raw.slice(0, CONTRIBUTING_MAX_CHARS),
+    ].join("\n");
+  } catch {
+    return '## Commit conventions\nUse conventional commit style (e.g. "fix: ...") for all commit messages.';
+  }
+}
 
 /** Live web-mirror hooks; the web dashboard pushes these on every TUI render/text chunk. */
 export interface WebFeed {
@@ -588,6 +605,8 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
         "",
         `Implement this plan in the repo at ${ctx.worktreeDir} (branch ${ctx.branch}).`,
         "Make the code changes, run the relevant tests, and commit to the branch.",
+        "",
+        commitGuidance,
       ];
       if (feedback) lines.push("", "FEEDBACK FROM REVIEWER (auto-fix round):", feedback);
       return lines.join("\n");
@@ -599,6 +618,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
 
     const testCommand = detectTestCommand(ctx.worktreeDir);
     await logLine(ctx.rootDir, `detected test command: ${testCommand}`);
+    const commitGuidance = await readContributionGuidance(ctx.worktreeDir);
 
     // Initial implementation + at most AUTO_FIX_MAX_ROUNDS review-driven fixes.
     for (let iter = 1; iter <= 1 + AUTO_FIX_MAX_ROUNDS; iter++) {
@@ -878,6 +898,8 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
       `PR title: Fix #${ctx.issue.number}: ${ctx.issue.title}`,
       `PR body must start with: Closes #${ctx.issue.number}`,
       `Managed run: ${ctx.runId}.`,
+      "",
+      await readContributionGuidance(ctx.worktreeDir),
     ].join("\n");
     const pr = await runAgent("pr", "pr", prTask, policyFor("pr", ctx.provider ?? "gemini"));
     const extractPrUrl = (text: string): string | undefined =>
