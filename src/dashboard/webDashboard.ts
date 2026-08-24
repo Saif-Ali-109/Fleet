@@ -322,7 +322,7 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/memory") {
-      void this.sendFile(res, resolveManagerPath(this.rootDir, "MEMORY.md"));
+      void this.sendFile(res, resolveManagerPath(this.rootDir, "MEMORY.txt"));
       return;
     }
     if (path === "/api/model-limit-error") {
@@ -330,7 +330,7 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/session-log") {
-      void this.sendFile(res, resolveManagerPath(this.rootDir, "SESSION_LOG.md"));
+      void this.sendFile(res, resolveManagerPath(this.rootDir, "SESSION_LOG.txt"));
       return;
     }
     this.sendJson(res, 404, { error: "not found" });
@@ -961,8 +961,8 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   <div class="panel" style="margin-top:16px;">
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('transcript', this)">Live transcript</button>
-      <button class="tab-btn" onclick="switchTab('memory', this)">MEMORY.md</button>
-      <button class="tab-btn" onclick="switchTab('sessionlog', this)">SESSION_LOG.md</button>
+      <button class="tab-btn" onclick="switchTab('memory', this)">MEMORY.txt</button>
+      <button class="tab-btn" onclick="switchTab('sessionlog', this)">SESSION_LOG.txt</button>
       <button class="tab-btn" onclick="switchTab('errorlog', this)">Error Log</button>
     </div>
     <div id="transcript-tab" class="tab-content active">
@@ -1188,7 +1188,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       .then(function (d) {
         el.textContent = d.content || "";
       })
-      .catch(function () { el.textContent = "Error loading MEMORY.md"; });
+      .catch(function () { el.textContent = "Error loading MEMORY.txt"; });
   }
 function fetchSessionLog() {
     var el = $("sessionlog-content");
@@ -1198,7 +1198,7 @@ function fetchSessionLog() {
       .then(function (d) {
         el.textContent = d.content || "";
       })
-       .catch(function () { el.textContent = "Error loading SESSION_LOG.md"; });
+       .catch(function () { el.textContent = "Error loading SESSION_LOG.txt"; });
    }
    function renderErrorLog() {
     var box = $("errorlog-content"), empty = $("errorlog-empty");

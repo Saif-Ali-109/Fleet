@@ -1,11 +1,11 @@
-// Summary report generator — builds MEMORY.md from the run_outcomes table.
+// Summary report generator — builds MEMORY.txt from the run_outcomes table.
 // Exported as a library function (used by src/orchestrator.ts) and also runnable
 // directly via `npm run generate-memory` (tsx src/db/queries/summaryReport.ts).
 //
-// MEMORY.md is merged, not overwritten:
+// MEMORY.txt is merged, not overwritten:
 // - `generateMemoryMarkdown` builds the run-log section delimited by
 //   `<!-- run-log-start -->` / `<!-- run-log-end -->` comments.
-// - `generateMemory` reads any existing MEMORY.md and replaces ONLY the block
+// - `generateMemory` reads any existing MEMORY.txt and replaces ONLY the block
 //   between those delimiters, preserving hand-curated sections (`## Next` …).
 // - If the file is missing or lacks the delimiters, it falls back to a full
 //   overwrite of the regenerated markdown.
@@ -92,7 +92,7 @@ function extractRunLogBlock(md: string): string {
   return md.slice(startIdx, endIdx + RUN_LOG_END.length);
 }
 
-/** Build the full MEMORY.md markdown from the run_outcomes table. */
+/** Build the full MEMORY.txt markdown from the run_outcomes table. */
 export async function generateMemoryMarkdown(_rootDir: string): Promise<string> {
   const rows = await queryRunOutcomes();
   const lines = rows
@@ -112,7 +112,7 @@ export async function generateMemoryMarkdown(_rootDir: string): Promise<string> 
   return [...header, ...block, ""].join("\n");
 }
 
-/** CLI entrypoint: writes MEMORY.md under <rootDir>/manager/ (default cwd). */
+/** CLI entrypoint: writes MEMORY.txt under <rootDir>/manager/ (default cwd). */
 export async function generateMemory(rootDir = process.cwd()): Promise<string> {
   const migrationCount = await pool.query<{ count: string }>(
     "SELECT count(*) AS count FROM migrations WHERE status = 'applied'"
@@ -120,7 +120,7 @@ export async function generateMemory(rootDir = process.cwd()): Promise<string> {
   const applied = migrationCount.rows[0]?.count ?? "0";
 
   const md = await generateMemoryMarkdown(rootDir);
-  const outPath = resolveManagerPath(rootDir, "MEMORY.md");
+  const outPath = resolveManagerPath(rootDir, "MEMORY.txt");
 
   let finalMd = md;
   const existing = await readFile(outPath, "utf8").catch(() => null);
