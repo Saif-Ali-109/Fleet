@@ -497,4 +497,21 @@ describe("dashboard", () => {
       expect(src).not.toContain("String(errMsg)");
     });
   });
+
+  describe("outputs / agentEvents isolation", () => {
+    it("keeps pushOutput strings out of agentEvents and vice versa", () => {
+      const dash = new WebDashboard(0, "/tmp", undefined, "gemini", null);
+      dash.pushOutput("planner", "final answer text");
+      dash.pushAgentEvent("planner", { t: "init" });
+      const internal = dash as unknown as {
+        outputs: Record<Role, string[]>;
+        agentEvents: Record<Role, Record<string, unknown>[]>;
+      };
+      expect(internal.outputs.planner).toEqual(["final answer text"]);
+      expect(internal.agentEvents.planner).toEqual([{ t: "init" }]);
+      expect(internal.agentEvents.planner).not.toBe(internal.outputs.planner);
+      expect(internal.agentEvents.planner.some((e) => typeof e === "string")).toBe(false);
+      expect(internal.outputs.planner.every((c) => typeof c === "string")).toBe(true);
+    });
+  });
 });

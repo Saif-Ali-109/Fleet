@@ -60,14 +60,14 @@ interface SseClient {
 
 const ROLES: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
 
-const EMPTY_OUTPUTS: Record<Role, string[]> = {
+const emptyRoleMap = <T>(): Record<Role, T[]> => ({
   analyzer: [],
   planner: [],
   coder: [],
   tester: [],
   reviewer: [],
   pr: [],
-};
+});
 
 export class WebDashboard {
   private readonly port: number;
@@ -86,9 +86,9 @@ export class WebDashboard {
   private clients = new Map<ServerResponse, SseClient>();
   private lastEventId = 0;
   private dash: DashboardState | null = null;
-  private outputs: Record<Role, string[]> = { ...EMPTY_OUTPUTS };
+  private outputs: Record<Role, string[]> = emptyRoleMap<string>();
   private gh: GhAuthInfo | null = null;
-  private agentEvents: Record<Role, Record<string, unknown>[]> = { ...EMPTY_OUTPUTS } as unknown as Record<Role, Record<string, unknown>[]>;
+  private agentEvents: Record<Role, Record<string, unknown>[]> = emptyRoleMap<Record<string, unknown>>();
 
   constructor(
     port: number = DEFAULT_PORT,
