@@ -531,9 +531,10 @@ describe("runAgent", () => {
 
   it("retries transient provider errors with backoff and recovers", async () => {
     vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const registry = buildRegistry(defWith([]));
-      const transient = Object.assign(new Error("503 UNAVAILABLE"), { status: 503 });
+      const transient = Object.assign(new Error("429 RESOURCE_EXHAUSTED"), { status: 429 });
       const { client, create } = mockClient([]);
       create.mockImplementationOnce(async () => {
         throw transient;
@@ -556,11 +557,23 @@ describe("runAgent", () => {
       expect(outcome.ok).toBe(true);
       expect(outcome.text).toBe("recovered");
       expect(create).toHaveBeenCalledTimes(2);
-      const retryEvt = events.find((e): e is Extract<WireEvent, { t: "error" }> => e.t === "error");
-      expect(retryEvt?.error).toContain("transient provider error");
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("[llm-retry]"));
+      expect(events.some((e) => e.t === "error")).toBe(false);
     } finally {
+      errSpy.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  it("parseRetryDelayMs honors the server-suggested retry window", async () => {
+    const { parseRetryDelayMs } = await import("../fleet/loop.ts");
+    const serverSaid = new Error(
+      '429 quota ... "retryDelay":"19s" ... Please retry in 19.923033201s.',
+    );
+    expect(parseRetryDelayMs(serverSaid)).toBeGreaterThan(19000);
+    expect(parseRetryDelayMs(serverSaid)).toBeLessThan(20000);
+    expect(parseRetryDelayMs(new Error('"retryDelay":"30s"'))).toBe(30000);
+    expect(parseRetryDelayMs(new Error("no hint here"))).toBeNull();
   });
 
   it("does not retry non-transient provider errors", async () => {

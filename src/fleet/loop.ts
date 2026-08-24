@@ -55,6 +55,14 @@ function isTransientLlmError(err: unknown): boolean {
   return /\b(429|50[0-4])\b/.test(msg);
 }
 
+export function parseRetryDelayMs(err: unknown): number | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m =
+    msg.match(/Please retry in (\d+(?:\.\d+)?)s/) ??
+    msg.match(/retryDelay":"(\d+(?:\.\d+)?)s"/);
+  return m ? Math.ceil(Number(m[1]) * 1000) : null;
+}
+
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
     const t = setTimeout(resolve, ms);
@@ -148,11 +156,11 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
           break;
         } catch (err) {
           if (attempt >= RETRY_DELAYS_MS.length || !isTransientLlmError(err)) throw err;
-          const delay = RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1] ?? 60000;
-          emit({
-            t: "error",
-            error: `transient provider error (${err instanceof Error ? err.message : String(err)}); retry ${attempt + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms`,
-          });
+          const base = RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1] ?? 60000;
+          const delay = Math.max(base, (parseRetryDelayMs(err) ?? 0) + 2000);
+          console.error(
+            `[llm-retry] attempt ${attempt + 1}/${RETRY_DELAYS_MS.length + 1} failed transiently; backing off ${delay}ms`,
+          );
           await sleep(delay, signal);
           if (signal?.aborted) return fail("aborted during retry backoff");
         }
