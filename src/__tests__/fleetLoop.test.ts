@@ -528,4 +528,63 @@ describe("runAgent", () => {
     const echoed = secondCall.messages.find((m) => m.role === "assistant");
     expect(echoed?.tool_calls?.[0]?.extra_content).toEqual(signature);
   });
+
+  it("retries transient provider errors with backoff and recovers", async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = buildRegistry(defWith([]));
+      const transient = Object.assign(new Error("503 UNAVAILABLE"), { status: 503 });
+      const { client, create } = mockClient([]);
+      create.mockImplementationOnce(async () => {
+        throw transient;
+      });
+      create.mockImplementationOnce(async () => resp({ role: "assistant", content: "recovered" }));
+      const { events, emit } = collect();
+
+      const pending = runAgent({
+        client,
+        model: "m",
+        systemPrompt: "",
+        task: "",
+        registry,
+        wtCtx: ctx(),
+        emit,
+      });
+      await vi.advanceTimersByTimeAsync(15000);
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.text).toBe("recovered");
+      expect(create).toHaveBeenCalledTimes(2);
+      const retryEvt = events.find((e): e is Extract<WireEvent, { t: "error" }> => e.t === "error");
+      expect(retryEvt?.error).toContain("transient provider error");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry non-transient provider errors", async () => {
+    const registry = buildRegistry(defWith([]));
+    const badRequest = Object.assign(new Error("400 INVALID_ARGUMENT"), { status: 400 });
+    const { client, create } = mockClient([]);
+    create.mockImplementationOnce(async () => {
+      throw badRequest;
+    });
+    const { events, emit } = collect();
+
+    const outcome = await runAgent({
+      client,
+      model: "m",
+      systemPrompt: "",
+      task: "",
+      registry,
+      wtCtx: ctx(),
+      emit,
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toContain("400");
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.t === "error")).toBe(true);
+  });
 });

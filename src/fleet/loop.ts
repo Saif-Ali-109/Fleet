@@ -46,6 +46,23 @@ export interface RunAgentOutcome {
 }
 
 const DEFAULT_MAX_STEPS = 25;
+const RETRY_DELAYS_MS = [15000, 30000, 60000];
+
+function isTransientLlmError(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (typeof status === "number") return status === 429 || (status >= 500 && status < 600);
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b(429|50[0-4])\b/.test(msg);
+}
+
+const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      reject(new Error("aborted during retry backoff"));
+    }, { once: true });
+  });
 
 interface RawUsage {
   prompt_tokens?: unknown;
@@ -120,11 +137,27 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
     for (let step = 0; step < maxSteps; step++) {
       if (signal?.aborted) return fail("aborted before LLM call");
 
-      const response = (await create({
-        model,
-        messages,
-        ...(tools.length > 0 ? { tools } : {}),
-      })) as {
+      let response: Awaited<ReturnType<typeof create>> | undefined;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          response = await create({
+            model,
+            messages,
+            ...(tools.length > 0 ? { tools } : {}),
+          });
+          break;
+        } catch (err) {
+          if (attempt >= RETRY_DELAYS_MS.length || !isTransientLlmError(err)) throw err;
+          const delay = RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1] ?? 60000;
+          emit({
+            t: "error",
+            error: `transient provider error (${err instanceof Error ? err.message : String(err)}); retry ${attempt + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms`,
+          });
+          await sleep(delay, signal);
+          if (signal?.aborted) return fail("aborted during retry backoff");
+        }
+      }
+      const res = response as {
         choices?: Array<{
           message?: {
             content?: string | null;
@@ -138,7 +171,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
         usage?: RawUsage;
       };
 
-      const stepUsage = extractUsage(response.usage);
+      const stepUsage = extractUsage(res.usage);
       totals.input += stepUsage.input;
       totals.output += stepUsage.output;
       totals.reasoning += stepUsage.reasoning;
@@ -147,7 +180,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
       totals.total += stepUsage.total;
       costUsd += provider === "ollama" ? 0 : stepUsage.cost;
 
-      const message = response.choices?.[0]?.message;
+      const message = res.choices?.[0]?.message;
       if (!message) return fail("model returned no message");
 
       if (typeof message.content === "string" && message.content.length > 0) {
