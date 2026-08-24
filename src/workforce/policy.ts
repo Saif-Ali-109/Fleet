@@ -19,7 +19,7 @@ const CORE_ROLES = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
 export function defaultPolicy(): WorkforcePolicy {
   return {
     max_concurrent_workers: 10,
-    max_per_backend: { opencode: 6, claude: 3, codex: 2 },
+    max_per_backend: { gemini: 6, openrouter: 3, ollama: 2 },
     auto_hire_roles: ["coder", "tester"],
     gate_hire_roles: ["security-auditor"],
     deny_hire_roles: [],

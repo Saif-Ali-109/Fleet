@@ -51,11 +51,29 @@ describe("checkpoint", () => {
     expect(completed).not.toContain("run-tests");
   });
 
-  it("startStep rejects a duplicate (run, role, iteration, step_name)", async () => {
-    await checkpoint.startStep(runId, ROLE, ITERATION, "commit");
-    await expect(
-      checkpoint.startStep(runId, ROLE, ITERATION, "commit"),
-    ).rejects.toThrow();
+  it("startStep succeeds twice for a duplicate (run, role, iteration, step_name)", async () => {
+    const firstId = await checkpoint.startStep(runId, ROLE, ITERATION, "commit");
+    expect(firstId).toMatch(/^[0-9a-f-]{36}$/);
+    const secondId = await checkpoint.startStep(runId, ROLE, ITERATION, "commit");
+    expect(secondId).toBe(firstId);
+    const result = await pool.query<{ status: string }>(
+      "SELECT status FROM agent_steps WHERE step_id = $1",
+      [secondId]
+    );
+    expect(result.rows[0]?.status).toBe("running");
+  });
+
+  it("startStep resumes a failed step back to running", async () => {
+    const firstId = await checkpoint.startStep(runId, ROLE, ITERATION, "run-tests");
+    await checkpoint.markStepFailed(firstId, "boom");
+    const resumedId = await checkpoint.startStep(runId, ROLE, ITERATION, "run-tests");
+    expect(resumedId).toBe(firstId);
+    const result = await pool.query<{ status: string; error_message: string | null }>(
+      "SELECT status, error_message FROM agent_steps WHERE step_id = $1",
+      [resumedId]
+    );
+    expect(result.rows[0]?.status).toBe("running");
+    expect(result.rows[0]?.error_message).toBeNull();
   });
 
   it("getLastFailedStep returns the most recent failed step name", async () => {

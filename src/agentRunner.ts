@@ -1,35 +1,29 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { fork, type ChildProcess } from "node:child_process";
 import { closeSync, fstatSync, mkdirSync, openSync, readSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { appendAuditEvent, ensureChain } from "./db/audit.ts";
 import { pool } from "./db/client.ts";
-import {
-  backendDef,
-  buildBackendArgs,
-  buildBackendEnv,
-  parseBackendTrace,
-  resolveRolePrompt,
-} from "./runner/backends.ts";
-import type { AgentResult, Backend, Role, RolePolicy, RunContext } from "./types.ts";
-
-// Shared with the CLI/SDK runtimes under src/runtime/.
-export { buildBackendEnv, resolveRolePrompt } from "./runner/backends.ts";
+import { parseProviderTrace } from "./runner/providers.ts";
+import { withProviderFallback } from "./providers/registry.ts";
+import type { AgentResult, ProviderName, Role, RolePolicy, RunContext } from "./types.ts";
 
 export interface RunWorkerOpts {
   /** Reasoning-effort variant override (else policy.variant). */
   variant?: RolePolicy["variant"];
   /** Called for every assistant text chunk (for the live TUI). */
   onText?: (chunk: string) => void;
-  /** Called for every opencode stream event (thinking, tool calls, results, etc.). */
+  /** Called for every worker wire event (thinking, tool calls, results, etc.). */
   onEvent?: (ev: Record<string, unknown>) => void;
-  /** Resume this CLI session instead of starting fresh (same backend, no model fallback). */
-  resumeSessionID?: string;
+  /** Reviewer-findings injection only (SPEC §6); forwarded verbatim into the job ctx. */
+  extraTask?: string;
 }
 
 export interface ParsedStream {
   text: string;
   sessionID: string | null;
+  model?: string;
   tokens: AgentResult["tokens"];
   costUsd: number;
   sawError: boolean;
@@ -38,7 +32,7 @@ export interface ParsedStream {
 
 // Live worker child processes + user-abort flag (dashboard Stop button).
 // killActiveWorkers() SIGTERMs every in-flight worker and latches the flag so
-// runWorker fails fast instead of falling through the model fallback pool.
+// runWorker fails fast instead of falling through the provider fallback pool.
 const liveChildren = new Set<ChildProcess>();
 let abortRequested = false;
 
@@ -62,7 +56,40 @@ export function resetWorkerAbort(): void {
   abortRequested = false;
 }
 
-/** Run one worker for `role` on the ctx backend (default opencode), trying `policy.model` then each fallback. */
+const DEFAULT_WORKER_ENTRY = fileURLToPath(new URL("./runtime/worker/main.ts", import.meta.url));
+
+/**
+ * Worker entry point. FLEET_WORKER_ENTRY is a PERMANENT TEST-ONLY seam: it is
+ * never set by any production code path and exists solely so tests can fork a
+ * stub worker program instead of the real runtime/worker/main.ts entry.
+ */
+function workerEntry(): string {
+  return process.env.FLEET_WORKER_ENTRY
+    ? resolve(process.env.FLEET_WORKER_ENTRY)
+    : DEFAULT_WORKER_ENTRY;
+}
+
+/**
+ * The ONE worker fork call site (SPEC §6): the `.ts` entry needs the tsx
+ * loader (`--import tsx`, Node ≥22), stdout/stderr fds redirect straight into
+ * the trace files so one stream IS trace capture AND event source, and stdin
+ * is a pipe that receives ONE JSON job.
+ */
+function forkWorker(params: {
+  entry: string;
+  env: NodeJS.ProcessEnv;
+  fdOut: number;
+  fdErr: number;
+}): ChildProcess {
+  return fork(params.entry, {
+    execPath: process.execPath,
+    execArgv: [...process.execArgv, "--import", "tsx"],
+    stdio: ["pipe", params.fdOut, params.fdErr, "ipc"],
+    env: params.env,
+  });
+}
+
+/** Run one worker for `role`, walking FLEET_PROVIDERS via withProviderFallback. */
 export async function runWorker(
   role: Role,
   task: string,
@@ -70,81 +97,64 @@ export async function runWorker(
   policy: RolePolicy,
   opts: RunWorkerOpts = {},
 ): Promise<AgentResult> {
-  const backend: Backend = ctx.backend ?? "opencode";
   const tracePath = join(ctx.tracesDir, `${role}.jsonl`);
   await mkdir(dirname(tracePath), { recursive: true });
   const startedAt = Date.now();
 
   if (ctx.dryRun) {
-    return stubResult(role, policy.model, tracePath, startedAt);
+    return stubResult(role, policy.model, tracePath, startedAt, ctx.provider ?? "gemini");
   }
 
-  const env = buildBackendEnv(backend, ctx);
-  const rolePrompt = resolveRolePrompt(backend, role, ctx);
-  const models = [policy.model, ...policy.fallbacks];
-  let last: ParsedStream | null = null;
-  let lastModel = policy.model;
-  const attempts: NonNullable<AgentResult["attempts"]> = [];
-
-  for (const model of models) {
-    lastModel = model;
+  const walk = await withProviderFallback<ParsedStream>(role, async (provider) => {
     if (abortRequested) {
-      // User hit Stop: fail fast without spawning or falling back.
-      attempts.push({ model, ok: false, error: "aborted by user" });
-      continue;
+      // User hit Stop: fail fast without forking or falling back.
+      return { model: policy.model, ok: false, error: "aborted by user" };
     }
-    const parsed = await spawnOnce(backend, role, task, ctx, model, policy, tracePath, opts, env, rolePrompt);
-    last = parsed;
-    const ok = !parsed.sawError && parsed.text.trim().length > 0;
-    attempts.push({ model, ok, error: parsed.errorMsg });
-    if (ok) {
-      return finalize(role, model, parsed, tracePath, startedAt, true, undefined, attempts);
-    }
-    // else fall through to the next model in the pool
-  }
+    const parsed = await spawnOnce(provider, role, task, ctx, opts.extraTask, tracePath, opts);
+    const ok = !parsed.sawError && !abortRequested && parsed.text.trim().length > 0;
+    return { model: parsed.model ?? policy.model, ok, value: parsed, error: parsed.errorMsg };
+  });
+
+  const attempts: NonNullable<AgentResult["attempts"]> = walk.attempts.map((a) => ({
+    model: a.model,
+    ok: a.ok,
+    ...(a.error !== undefined ? { error: a.error } : {}),
+    ...(a.provider !== null ? { provider: a.provider } : {}),
+  }));
 
   return finalize(
     role,
-    lastModel,
-    last ?? emptyStream(),
+    walk.ok ? walk.model : attempts[attempts.length - 1]?.model ?? walk.model,
+    walk.value ?? emptyStream(),
     tracePath,
     startedAt,
-    false,
-    abortRequested ? "aborted by user" : last?.errorMsg ?? "all models failed",
+    walk.ok,
+    walk.ok ? undefined : walk.error ?? "all providers failed",
     attempts,
+    walk.provider ?? ctx.provider ?? "gemini",
   );
 }
 
-export function buildArgs(
-  role: Role,
-  task: string,
-  ctx: RunContext,
-  model: string,
-  policy: RolePolicy,
-  opts: RunWorkerOpts,
-  backend: Backend = "opencode",
-): string[] {
-  return buildBackendArgs(backend, role, task, ctx, model, policy, opts, "").args;
-}
-
+/** Fork one worker attempt for `provider` and parse its trace slice into a ParsedStream. */
 export function spawnOnce(
-  backend: Backend,
+  provider: ProviderName,
   role: Role,
   task: string,
   ctx: RunContext,
-  model: string,
-  policy: RolePolicy,
+  extraTask: string | undefined,
   tracePath: string,
   opts: RunWorkerOpts,
-  env: NodeJS.ProcessEnv,
-  rolePrompt: string,
 ): Promise<ParsedStream> {
   return new Promise((resolve) => {
-    const { args, cwd } = buildBackendArgs(backend, role, task, ctx, model, policy, opts, rolePrompt);
-    const binary = backendDef(backend).binary;
     const traceDir = dirname(tracePath);
     mkdirSync(traceDir, { recursive: true });
     const stderrPath = join(traceDir, `${role}.stderr.log`);
+    const eventsDir = join(ctx.runDir, "events");
+    try {
+      mkdirSync(eventsDir, { recursive: true });
+    } catch {
+      // non-fatal: the worker creates it lazily if needed
+    }
     const fdOut = openSync(tracePath, "a");
     const fdErr = openSync(stderrPath, "a");
     const startOffset = fstatSync(fdOut).size;
@@ -179,15 +189,40 @@ export function spawnOnce(
     };
 
     try {
-      const child = spawn(binary, args, {
-        cwd: cwd ?? ctx.rootDir,
-        env,
-        stdio: ["ignore", fdOut, fdErr],
+      const child = forkWorker({
+        entry: workerEntry(),
+        env: {
+          ...process.env,
+          SOR_PROVIDER: provider,
+          SOR_EVENT_DIR: eventsDir,
+          // Pin the fleet to this one candidate so the worker's own
+          // resolveProviderModel lands on exactly the walked provider.
+          FLEET_PROVIDERS: provider,
+        },
+        fdOut,
+        fdErr,
       });
       liveChildren.add(child);
       child.on("close", () => liveChildren.delete(child));
       child.on("error", () => liveChildren.delete(child));
       stopTail = startTailing(tracePath, startOffset, opts.onText, opts.onEvent);
+
+      const job = {
+        role,
+        task,
+        ctx: {
+          rootDir: ctx.rootDir,
+          worktreeDir: ctx.worktreeDir,
+          tracesDir: ctx.tracesDir,
+          runDir: ctx.runDir,
+          dryRun: ctx.dryRun,
+          ...(extraTask !== undefined ? { extraTask } : {}),
+        },
+      };
+      if (child.stdin) {
+        child.stdin.on("error", () => {}); // EPIPE when the child dies before reading the job
+        child.stdin.end(JSON.stringify(job) + "\n");
+      }
 
       child.on("error", (err) => {
         settle({
@@ -215,10 +250,13 @@ export function spawnOnce(
       }
 
       child.on("close", (code) => {
-        const parsed = parseTrace(tracePath, opts, startOffset, backend);
+        const parsed = parseTrace(tracePath, opts, startOffset, provider);
         if (timedOut) {
           parsed.sawError = true;
           parsed.errorMsg = `timed out after ${timeoutMs}ms${parsed.errorMsg ? `: ${parsed.errorMsg}` : ""}`;
+        } else if (abortRequested) {
+          parsed.sawError = true;
+          parsed.errorMsg = "aborted by user";
         } else if (code !== 0 && !parsed.sawError) {
           parsed.sawError = true;
           parsed.errorMsg = `exit ${code}: ${readStderrTail(stderrPath)}`;
@@ -238,24 +276,25 @@ export function spawnOnce(
   });
 }
 
-/** Read back this attempt's trace from the trace file and build the parsed shape for `backend`. */
+/** Read back this attempt's trace from the trace file and build the parsed shape for `provider`. */
 export function parseTrace(
   tracePath: string,
   opts: RunWorkerOpts,
   startOffset: number,
-  backend: Backend = "opencode",
+  provider: ProviderName = "gemini",
 ): ParsedStream {
+  void opts;
   let raw: string;
   try {
     raw = readFileSync(tracePath, "utf8");
   } catch {
     return { text: "", sessionID: null, tokens: zeroTokens(), costUsd: 0, sawError: false };
   }
-  const lastmsgPath = backend === "codex" ? tracePath.replace(/\.jsonl$/, ".lastmsg") : undefined;
-  const t = parseBackendTrace(backend, raw, startOffset, { lastmsgPath });
+  const t = parseProviderTrace(provider, raw, startOffset);
   return {
     text: t.text,
     sessionID: t.sessionID,
+    model: t.model ?? undefined,
     tokens: t.tokens,
     costUsd: t.costUsd,
     sawError: t.sawError,
@@ -281,12 +320,14 @@ export function finalize(
   ok: boolean,
   error?: string,
   attempts?: NonNullable<AgentResult["attempts"]>,
+  provider: ProviderName = "gemini",
 ): AgentResult {
   return {
     role,
     ok,
     sessionID: s.sessionID,
     model,
+    provider,
     attempts,
     text: s.text,
     tokens: s.tokens,
@@ -299,13 +340,20 @@ export function finalize(
   };
 }
 
-export function stubResult(role: Role, model: string, tracePath: string, startedAt: number): AgentResult {
+export function stubResult(
+  role: Role,
+  model: string,
+  tracePath: string,
+  startedAt: number,
+  provider: ProviderName = "gemini",
+): AgentResult {
   return {
     role,
     ok: true,
     sessionID: `dry-${role}`,
     model,
-    attempts: [{ model, ok: true }],
+    provider,
+    attempts: [{ model, ok: true, provider }],
     text: `[dry-run] ${role} would run here.`,
     tokens: zeroTokens(),
     costUsd: 0,
@@ -328,17 +376,17 @@ export const emptyStream = (): ParsedStream => ({ text: "", sessionID: null, tok
 
 /**
  * Bridge worker stream events into `opts.onEvent` so runtimes share one
- * forwarding path. The ctx/role/backend args keep the call site self-describing.
+ * forwarding path. The ctx/role/provider args keep the call site self-describing.
  */
 export function makeEventBridge(
   ctx: RunContext,
   role: Role,
-  backend: Backend,
+  provider: ProviderName,
   opts: RunWorkerOpts | undefined,
 ): (ev: Record<string, unknown>) => void {
   void ctx;
   void role;
-  void backend;
+  void provider;
   return (ev) => opts?.onEvent?.(ev);
 }
 
@@ -349,7 +397,7 @@ export function makeEventBridge(
  */
 export function emitWakeup(
   ctx: RunContext,
-  backend: Backend,
+  provider: ProviderName,
   payload: Record<string, unknown>,
 ): Promise<void> {
   if (ctx.dryRun) return Promise.resolve();
@@ -360,7 +408,7 @@ export function emitWakeup(
         run_id: null,
         event_type: "wakeup",
         actor: "manager",
-        backend,
+        backend: provider,
         tool_name: null,
         tool_input: null,
         tool_output: null,
@@ -410,7 +458,7 @@ function startTailing(
     }
     onEvent?.(ev);
     const part = ev.part ?? {};
-    if (ev.type === "text" && typeof part.text === "string") onText?.(part.text);
+    if (ev.t === "text" && typeof part.text === "string") onText?.(part.text);
   };
   const step = (): void => {
     let size: number;
@@ -493,6 +541,7 @@ export function aggregateAgentResults(results: AgentResult[]): AgentResult {
     ok: results.every((r) => r.ok),
     sessionID: last.sessionID,
     model: last.model,
+    provider: last.provider, // Preserve provider from last result
     attempts,
     text: text.join("\n"),
     tokens,

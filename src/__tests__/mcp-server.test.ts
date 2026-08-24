@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { handleToolCall } from "../mcp/server.ts";
+import { handleToolCall, toJsonbParam } from "../mcp/server.ts";
 import { pool } from "../db/client.ts";
 
 const REPO = "test/mcp";
@@ -17,6 +17,35 @@ async function cleanup(): Promise<void> {
   );
   await pool.query("DELETE FROM run_outcomes WHERE repo = $1", [REPO]);
 }
+
+describe("MCP toJsonbParam jsonb-safety", () => {
+  it("wraps primitive gate_status values as JSON-encoded scalars", () => {
+    expect(toJsonbParam("pass")).toBe('"pass"');
+    expect(toJsonbParam("fail")).toBe('"fail"');
+    expect(toJsonbParam(42)).toBe("42");
+    expect(toJsonbParam(3.14)).toBe("3.14");
+    expect(toJsonbParam(true)).toBe("true");
+    expect(toJsonbParam(false)).toBe("false");
+  });
+
+  it("round-trips wrapped primitives back to the original value", () => {
+    expect(JSON.parse(toJsonbParam("pass") as string)).toBe("pass");
+    expect(JSON.parse(toJsonbParam(7) as string)).toBe(7);
+    expect(JSON.parse(toJsonbParam(true) as string)).toBe(true);
+  });
+
+  it("passes objects and arrays through unchanged", () => {
+    const obj = { analyze: { status: "approved", iteration: 1 } };
+    const arr = [{ iteration: 2 }];
+    expect(toJsonbParam(obj)).toBe(obj);
+    expect(toJsonbParam(arr)).toBe(arr);
+  });
+
+  it("maps null and undefined to null", () => {
+    expect(toJsonbParam(null)).toBeNull();
+    expect(toJsonbParam(undefined)).toBeNull();
+  });
+});
 
 describe("MCP server handleToolCall integration", () => {
   beforeAll(async () => {
@@ -72,7 +101,7 @@ describe("MCP server handleToolCall integration", () => {
 
     const result = (await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate1",
+      phase: "analyze",
       status: "running",
       iteration: 0,
     })) as { updated: boolean };
@@ -183,6 +212,29 @@ describe("MCP server handleToolCall integration", () => {
     expect(row.rows[0]?.iterations_used).toBe(3);
   });
 
+  it("finalize_run stores a primitive gate_status as a jsonb scalar instead of failing", async () => {
+    const created = (await handleToolCall("create_run", {
+      repo: REPO,
+      issue_number: 1013,
+      backend: "opencode",
+    })) as { run_id: string };
+
+    const result = (await handleToolCall("finalize_run", {
+      run_id: created.run_id,
+      pr_url: null,
+      total_cost: 0.05,
+      gate_status: "pass",
+      status: "completed",
+    })) as { finalized: boolean };
+
+    expect(result.finalized).toBe(true);
+    const row = await pool.query<{ gate_status: unknown }>(
+      "SELECT gate_status FROM run_outcomes WHERE run_id = $1",
+      [created.run_id]
+    );
+    expect(row.rows[0]?.gate_status).toBe("pass");
+  });
+
   it("finalize_run returns finalized:false when the run does not exist", async () => {
     const result = (await handleToolCall("finalize_run", {
       run_id: randomUUID(),
@@ -204,19 +256,19 @@ describe("MCP server handleToolCall integration", () => {
 
     await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate1",
+      phase: "analyze",
       status: "running",
       iteration: 0,
     });
     await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate2",
+      phase: "plan",
       status: "approved",
       iteration: 2,
     });
     await handleToolCall("update_run_status", {
       run_id: created.run_id,
-      phase: "gate1",
+      phase: "analyze",
       status: "approved",
       iteration: 1,
     });
@@ -226,15 +278,15 @@ describe("MCP server handleToolCall integration", () => {
       [created.run_id]
     );
     expect(row.rows[0]?.gate_status).toEqual({
-      gate1: { status: "approved", iteration: 1 },
-      gate2: { status: "approved", iteration: 2 },
+      analyze: { status: "approved", iteration: 1 },
+      plan: { status: "approved", iteration: 2 },
     });
   });
 
   it("update_run_status returns updated:false for a nonexistent run", async () => {
     const result = (await handleToolCall("update_run_status", {
       run_id: randomUUID(),
-      phase: "gate1",
+      phase: "analyze",
       status: "running",
       iteration: 0,
     })) as { updated: boolean };

@@ -124,7 +124,7 @@ describe("eventToRecord / normalizeEvent round-trip", () => {
       tool_name: null,
       tool_input: { step: 2 },
       tool_output: null,
-      payload: { phase: "gate2" },
+      payload: { phase: "plan" },
       created_at: "2026-08-13T12:00:00.000Z",
     });
     expect(normalizeEvent(eventToRecord(e))).toEqual(e);
@@ -193,7 +193,7 @@ describe("normalizeEvent validation", () => {
   });
 
   it("throws on invalid backend", () => {
-    expect(() => normalizeEvent({ event_type: "phase", actor: "manager", backend: "gemini" })).toThrow(
+    expect(() => normalizeEvent({ event_type: "phase", actor: "manager", backend: "skynet" })).toThrow(
       /backend/,
     );
   });

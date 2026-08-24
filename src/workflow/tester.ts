@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { aggregateAgentResults, runWorker } from "../agentRunner.ts";
 import { checkpoint } from "../db/checkpoint.ts";
-import { splitTestCommand } from "../runner/backends.ts";
+import { splitTestCommand } from "../fleet/testCmd.ts";
 import type { AgentResult, Role, RolePolicy, RunContext } from "../types.ts";
 
 const exec = promisify(execFile);
@@ -69,21 +69,20 @@ export async function runTester(
 ): Promise<TesterResult> {
   const completed = await safeCompleted(runId, iteration);
   const results: AgentResult[] = [];
-  // Session captured from the setup spawn; reused for later phases (model-bound, so discarded on fallback).
-  const session: { id: string | undefined } = { id: undefined };
   for (const phase of TESTER_PHASES) {
     const pending = phase.steps.filter((s) => !completed.includes(s));
     if (pending.length === 0) continue;
-    const ids = await Promise.all(
-      pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as TesterStep)),
-    );
+    let ids: string[] = [];
     try {
-      await runPhase(ctx, opts, phase.kind, results, session);
+      ids = await Promise.all(
+        pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as TesterStep)),
+      );
+      await runPhase(ctx, opts, phase.kind, results);
       await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await Promise.all(
-        pending.map((s, i) => checkpoint.markStepFailed(ids[i]!, `${s}: ${message}`)),
+        ids.map((id, i) => checkpoint.markStepFailed(id, `${pending[i]}: ${message}`)),
       );
       return {
         ok: false,
@@ -105,17 +104,16 @@ async function runPhase(
   opts: TesterOptions,
   kind: (typeof TESTER_PHASES)[number]["kind"],
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<void> {
   switch (kind) {
     case "setup":
-      await runSetup(ctx, opts, results, session);
+      await runSetup(ctx, opts, results);
       return;
     case "run":
-      await runTests(ctx, opts, "run", results, session);
+      await runTests(ctx, opts, "run", results);
       return;
     case "validate":
-      await runValidation(ctx, opts, "validate", results, session);
+      await runValidation(ctx, opts, "validate", results);
       return;
   }
 }
@@ -124,7 +122,6 @@ async function runSetup(
   ctx: RunContext,
   opts: TesterOptions,
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<void> {
   const task =
     `${opts.task}` +
@@ -135,29 +132,30 @@ async function runSetup(
     onEvent: opts.onEvent,
   });
   results.push(res);
-  // Sessions are model-bound — discard if a fallback model was used.
-  session.id = res.ok && (!res.attempts || res.attempts.length === 1) ? res.sessionID ?? undefined : undefined;
-  return;
 }
 
+/**
+ * One single-shot worker spawn for a step: every attempt receives the FULL task
+ * plus the step instruction. There is no cross-process session resume — the
+ * orchestrator owns all iteration policy via its own auto-fix cap.
+ */
 async function worker(
   ctx: RunContext,
   opts: TesterOptions,
   step: TesterStep,
   instruction: string,
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<AgentResult> {
-  // On resume, send only the step instruction (the session already holds the base task).
-  const task =
-    session.id !== undefined
-      ? `Workflow step "${step}": ${instruction}`
-      : `${opts.task}\n\nWorkflow step "${step}": ${instruction}`;
-  const res = await runWorker(ROLE, task, ctx, opts.policy, {
-    onText: opts.onText,
-    onEvent: opts.onEvent,
-    resumeSessionID: session.id,
-  });
+  const res = await runWorker(
+    ROLE,
+    `${opts.task}\n\nWorkflow step "${step}": ${instruction}`,
+    ctx,
+    opts.policy,
+    {
+      onText: opts.onText,
+      onEvent: opts.onEvent,
+    },
+  );
   results.push(res);
   return res;
 }
@@ -167,7 +165,6 @@ async function runTests(
   opts: TesterOptions,
   step: TesterStep,
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<void> {
   const res = await worker(
     ctx,
@@ -175,7 +172,6 @@ async function runTests(
     step,
     `execute the test command: \`${opts.testCommand}\` in the worktree (${opts.worktreeDir})`,
     results,
-    session,
   );
 
   // Check if the test result matches expectation
@@ -194,7 +190,6 @@ async function runValidation(
   opts: TesterOptions,
   step: TesterStep,
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<void> {
   await worker(
     ctx,
@@ -202,7 +197,6 @@ async function runValidation(
     step,
     `validate that the test execution confirms the fix works correctly`,
     results,
-    session,
   );
   // Validation step mainly serves as a checkpoint - the actual validation
   // happens in the runTests phase where we check expectations

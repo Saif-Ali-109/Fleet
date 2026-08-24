@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { resolveManagerPath } from "./paths.ts";
 
 /**
- * SESSION_LOG.md lifecycle (decision 7): truly reset each run. The previous log is stashed
- * to `.runs/<runId>/SESSION_LOG.md` first, then a fresh one is written to `manager/`.
+ * SESSION_LOG.txt lifecycle (decision 7): truly reset each run. The previous log is stashed
+ * to `.runs/<runId>/SESSION_LOG.txt` first, then a fresh one is written to `manager/`.
  */
 export async function resetSessionLog(
   rootDir: string,
@@ -13,13 +13,13 @@ export async function resetSessionLog(
   runId: string,
   header: { repo: string; issue: number; title: string },
 ): Promise<string> {
-  const logPath = resolveManagerPath(rootDir, "SESSION_LOG.md");
+  const logPath = resolveManagerPath(rootDir, "SESSION_LOG.txt");
   await mkdir(runDir, { recursive: true });
   if (existsSync(logPath)) {
-    await copyFile(logPath, join(runDir, "SESSION_LOG.md"));
+    await copyFile(logPath, join(runDir, "SESSION_LOG.txt"));
   }
   const now = new Date().toISOString();
-  const fresh = `# SESSION_LOG.md — run ${runId}
+  const fresh = `# SESSION_LOG.txt — run ${runId}
 
 - Started: ${now}
 - Repo: ${header.repo}
@@ -32,14 +32,14 @@ export async function resetSessionLog(
   return logPath;
 }
 
-/** Append one timestamped line to the current SESSION_LOG.md timeline. */
+/** Append one timestamped line to the current SESSION_LOG.txt timeline. */
 export async function logLine(rootDir: string, message: string): Promise<void> {
   const now = new Date().toISOString();
-  await appendFile(resolveManagerPath(rootDir, "SESSION_LOG.md"), `- \`${now}\` ${message}\n`, "utf8");
+  await appendFile(resolveManagerPath(rootDir, "SESSION_LOG.txt"), `- \`${now}\` ${message}\n`, "utf8");
 }
 
 /** Append a fenced block (e.g. a gate decision or a cost summary). */
 export async function logBlock(rootDir: string, title: string, body: string): Promise<void> {
   const block = `\n### ${title}\n\n${body}\n`;
-  await appendFile(resolveManagerPath(rootDir, "SESSION_LOG.md"), block, "utf8");
+  await appendFile(resolveManagerPath(rootDir, "SESSION_LOG.txt"), block, "utf8");
 }

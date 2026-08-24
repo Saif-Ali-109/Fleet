@@ -1,9 +1,9 @@
 {
-  "name": "multi-orchestration",
+  "name": "fleet",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TypeScript Manager that orchestrates a fleet of headless opencode workers to take a GitHub issue to a real PR, gated by 3 human approvals.",
+  "description": "TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue to a real PR. No human gates; analyzer→planner→coder→tester→reviewer→(≤1 auto-fix)→pr. PostgreSQL-backed SOR audit chain. Hand-rolled web dashboard + ANSI TUI.",
   "engines": {
     "node": ">=22"
   },
@@ -14,14 +14,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:config": "tsx scripts/generate-configs.ts",
-    "check:config": "tsx scripts/generate-configs.ts --check",
     "migrate:up": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
     "migrate:down": "tsx --env-file-if-exists=.env src/db/migrate.ts down",
     "generate-memory": "tsx --env-file-if-exists=.env src/db/queries/summaryReport.ts",
     "analytics": "tsx --env-file-if-exists=.env src/analytics/report.ts",
-    "sor:verify": "tsx --env-file-if-exists=.env src/sor/verifyCli.ts",
-    "sor:sync-registry": "tsx --env-file-if-exists=.env src/sor/syncRegistryCli.ts"
+    "sor:verify": "tsx --env-file-if-exists=.env src/sor/verifyCli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -33,6 +30,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/pg": "^8.21.0",
+    "openai": "^7.5.0",
     "pg": "^8.23.0"
   }
 }

@@ -87,8 +87,8 @@ describe("normalizeTraceEvent", () => {
     });
     expect(ev).not.toBeNull();
     expect(ev?.event_type).toBe("tool_call");
-    expect(ev?.actor).toBe("opencode");
-    expect(ev?.backend).toBe("opencode");
+    expect(ev?.actor).toBe("gemini");
+    expect(ev?.backend).toBe("gemini");
     expect(ev?.tool_name).toBe("bash");
     expect(ev?.tool_input).toEqual({ command: "ls -la" });
     expect(ev?.tool_output).toEqual("total 4");
@@ -152,7 +152,7 @@ describe("readEventFile", () => {
           "this line is garbage",
           makeHookLine({ tool_name: "read", tool_input: { filePath: "a.ts" } }),
           "",
-          makeHookLine({ event_type: "phase", actor: "manager", payload: { phase: "gate1" } }),
+          makeHookLine({ event_type: "phase", actor: "manager", payload: { phase: "analyze" } }),
         ].join("\n"),
         "utf8",
       );

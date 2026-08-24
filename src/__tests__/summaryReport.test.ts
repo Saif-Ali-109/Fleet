@@ -57,7 +57,7 @@ function stubQueries() {
   }) as never);
 }
 
-describe("summaryReport MEMORY.md merge", () => {
+describe("summaryReport MEMORY.txt merge", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -95,7 +95,7 @@ describe("summaryReport MEMORY.md merge", () => {
   it("generateMemory merges into an existing file, preserving hand-curated sections", async () => {
     stubQueries();
     const dir = await mkdtemp(path.join(tmpdir(), "memory-merge-"));
-    const memPath = path.join(dir, "manager", "MEMORY.md");
+    const memPath = path.join(dir, "manager", "MEMORY.txt");
     await mkdir(path.dirname(memPath), { recursive: true });
     await writeFile(memPath, EXISTING);
 
@@ -110,7 +110,7 @@ describe("summaryReport MEMORY.md merge", () => {
   it("generateMemory falls back to full overwrite when the file lacks delimiters", async () => {
     stubQueries();
     const dir = await mkdtemp(path.join(tmpdir(), "memory-fallback-"));
-    const memPath = path.join(dir, "manager", "MEMORY.md");
+    const memPath = path.join(dir, "manager", "MEMORY.txt");
     await mkdir(path.dirname(memPath), { recursive: true });
     await writeFile(memPath, "# Run log\n\nstale content\n");
 

@@ -1,45 +1,58 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resetWorkerAbort, runWorker } from "../agentRunner.ts";
 import type { RunContext, RolePolicy } from "../types.ts";
 
-// This test must live in its own file: OPENCODE_BIN is read at module-load
-// time by src/runner/backends.ts, so the env must be set BEFORE the dynamic
-// import of agentRunner.js. A separate test file gets a fresh module registry.
+// Exercises the REAL mechanism: WORKER_TIMEOUT_MS SIGTERMs the fork, and when
+// the worker traps/ignores SIGTERM, WORKER_TIMEOUT_GRACE_MS escalates to
+// SIGKILL. The fixture (stubbornWorker.mjs) traps SIGTERM on purpose so the
+// grace path deterministically fires.
 
-let fakeBinDir: string;
+const STUBBORN_WORKER = join(import.meta.dirname, "fixtures", "stubbornWorker.mjs");
+
+let savedEnv: Record<string, string | undefined>;
 let ctxDir: string;
-let agentRunner: typeof import("../agentRunner.ts");
 
-beforeAll(async () => {
-  delete process.env.DATABASE_URL;
-  delete process.env.SOR_SIGNING_KEY;
+beforeEach(() => {
+  savedEnv = {};
+  for (const key of [
+    "FLEET_WORKER_ENTRY",
+    "FAKE_FAIL_PROVIDERS",
+    "FLEET_PROVIDERS",
+    "WORKER_TIMEOUT_MS",
+    "WORKER_TIMEOUT_GRACE_MS",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "DATABASE_URL",
+    "SOR_SIGNING_KEY",
+  ]) {
+    savedEnv[key] = process.env[key];
+    delete process.env[key];
+  }
+  process.env.FLEET_WORKER_ENTRY = STUBBORN_WORKER;
+  process.env.FLEET_PROVIDERS = "gemini";
+  process.env.GEMINI_API_KEY = "dummy-key-for-timeout-test";
+  // Generous timeout so the fixture's SIGTERM trap is guaranteed to be
+  // registered well before the kill switch fires, even under suite load.
+  process.env.WORKER_TIMEOUT_MS = "1200";
+  process.env.WORKER_TIMEOUT_GRACE_MS = "250";
+  resetWorkerAbort();
 
-  fakeBinDir = mkdtempSync(join(tmpdir(), "timeout-fake-bin-"));
-  const fakeBin = join(fakeBinDir, "opencode");
-  writeFileSync(fakeBin, "#!/usr/bin/env bash\nexec sleep 60\n");
-  chmodSync(fakeBin, 0o755);
-
-  process.env.OPENCODE_BIN = fakeBin;
-  process.env.WORKER_TIMEOUT_MS = "400";
-  process.env.WORKER_TIMEOUT_GRACE_MS = "200";
-
-  agentRunner = await import("../agentRunner.ts");
+  ctxDir = mkdtempSync(join(tmpdir(), "timeout-ctx-"));
 });
 
-afterAll(() => {
-  delete process.env.OPENCODE_BIN;
-  delete process.env.WORKER_TIMEOUT_MS;
-  delete process.env.WORKER_TIMEOUT_GRACE_MS;
-  if (fakeBinDir) rmSync(fakeBinDir, { recursive: true, force: true });
-  if (ctxDir) rmSync(ctxDir, { recursive: true, force: true });
+afterEach(() => {
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  rmSync(ctxDir, { recursive: true, force: true });
 });
 
 function makeCtx(): RunContext {
-  ctxDir = mkdtempSync(join(tmpdir(), "timeout-ctx-"));
   const runDir = join(ctxDir, ".runs", "t1");
-  mkdirSync(join(runDir, "traces"), { recursive: true });
   mkdirSync(join(runDir, "worktree"), { recursive: true });
   return {
     runId: "t1",
@@ -51,27 +64,31 @@ function makeCtx(): RunContext {
     tracesDir: join(runDir, "traces"),
     branch: "fix-1",
     dryRun: false,
-    backend: "opencode",
+    provider: "gemini",
   };
 }
 
 const policy: RolePolicy = { role: "coder", model: "m1", fallbacks: ["m2"] };
 
 describe("runWorker timeout", () => {
-  it("kills the worker and resolves the attempt as failed when WORKER_TIMEOUT_MS elapses", async () => {
+  it("SIGTERMs the fork on WORKER_TIMEOUT_MS, escalates to SIGKILL after grace, and records the timeout error", async () => {
     const started = Date.now();
-    const res = await agentRunner.runWorker("coder", "task", makeCtx(), policy, {});
+    const res = await runWorker("coder", "task", makeCtx(), policy, {});
     const elapsed = Date.now() - started;
 
     expect(res.ok).toBe(false);
+    expect(res.sawError).toBe(true);
     expect(res.error).toContain("timed out");
-    expect(res.attempts).toHaveLength(2);
-    for (const a of res.attempts ?? []) {
-      expect(a.ok).toBe(false);
-      expect(a.error).toContain("timed out after 400ms");
-    }
-    // Two attempts at ~400ms each plus overhead; must be far under the 60s sleep.
-    expect(elapsed).toBeGreaterThan(400);
+    expect(res.provider).toBe("gemini");
+    // One candidate provider in the fleet walk → one failed attempt.
+    expect(res.attempts).toHaveLength(1);
+    expect(res.attempts![0]!.ok).toBe(false);
+    expect(res.attempts![0]!.provider).toBe("gemini");
+    expect(res.attempts![0]!.error).toContain("timed out after 1200ms");
+    // The worker ignores SIGTERM, so resolution waits out the full
+    // timeout + grace window before SIGKILL lands. Deterministic: bounded by
+    // the configured kill switch only.
+    expect(elapsed).toBeGreaterThanOrEqual(1350);
     expect(elapsed).toBeLessThan(10000);
-  });
+  }, 30000);
 });

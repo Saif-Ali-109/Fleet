@@ -7,16 +7,17 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveManagerPath } from "../memory/paths.ts";
 import type { DashboardState } from "../tui/dashboard.ts";
-import type { Backend, Role } from "../types.ts";
+import type { ProviderName, Role } from "../types.ts";
+import { PROVIDER_NAMES } from "../types.ts";
 import { ghAuthInfo, type GhAuthInfo } from "../github/gh.ts";
 import { startDeviceLogin, pollDeviceToken, storeGhToken } from "../github/gh.ts";
 import {
   availableModels,
-  BACKENDS,
   getModelOverrides,
   setModelOverride,
   saveModelOverrides,
 } from "../models/modelPolicy.ts";
+import { listModelsForProvider } from "../providers/registry.ts";
 
 export interface WebhookResponse { status: number; body?: unknown }
 export type WebhookHandler = (headers: Record<string, string | string[] | undefined>, rawBody: string) => Promise<WebhookResponse>;
@@ -27,6 +28,30 @@ const MAX_CHUNKS = 200;
 const MAX_BYTES = 30 * 1024;
 const HEARTBEAT_MS = 25_000;
 const WEBHOOK_MAX_BYTES = 256 * 1024;
+const MODEL_LIST_TIMEOUT_MS = 10_000;
+
+/** Live provider model ids, or [] when listing fails or hangs past the timeout. */
+async function listLiveModels(provider: ProviderName): Promise<string[]> {
+  return new Promise<string[]>((resolve) => {
+    const timer = setTimeout(() => resolve([]), MODEL_LIST_TIMEOUT_MS);
+    void listModelsForProvider(provider)
+      .then((ids) => {
+        clearTimeout(timer);
+        resolve(ids);
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        resolve([]);
+      });
+  });
+}
+
+/** Live model ids for the picker, deduped; static SPEC §5 tier defaults as offline fallback. */
+async function modelPickerList(provider: ProviderName): Promise<string[]> {
+  const live = await listLiveModels(provider);
+  if (live.length === 0) return [...availableModels(provider)];
+  return [...new Set(live)];
+}
 
 interface SseClient {
   res: ServerResponse;
@@ -35,19 +60,19 @@ interface SseClient {
 
 const ROLES: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
 
-const EMPTY_OUTPUTS: Record<Role, string[]> = {
+const emptyRoleMap = <T>(): Record<Role, T[]> => ({
   analyzer: [],
   planner: [],
   coder: [],
   tester: [],
   reviewer: [],
   pr: [],
-};
+});
 
 export class WebDashboard {
   private readonly port: number;
   private readonly rootDir: string;
-  private onStartRequest: ((repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
+  private onStartRequest: ((repo: string, provider: ProviderName) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>) | null = null;
   private onStopRequest: (() => void) | null = null;
   private onWebhook: WebhookHandler | null = null;
   private runActive = false;
@@ -56,27 +81,27 @@ export class WebDashboard {
   private nextScanAt: number | null = null;
   private errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }> = [];
   private loginInProgress = false;
-  private backend: Backend = "opencode";
+  private provider: ProviderName = "gemini";
   private server: Server | null = null;
   private clients = new Map<ServerResponse, SseClient>();
   private lastEventId = 0;
   private dash: DashboardState | null = null;
-  private outputs: Record<Role, string[]> = { ...EMPTY_OUTPUTS };
+  private outputs: Record<Role, string[]> = emptyRoleMap<string>();
   private gh: GhAuthInfo | null = null;
-  private agentEvents: Record<Role, Record<string, unknown>[]> = { ...EMPTY_OUTPUTS } as unknown as Record<Role, Record<string, unknown>[]>;
+  private agentEvents: Record<Role, Record<string, unknown>[]> = emptyRoleMap<Record<string, unknown>>();
 
   constructor(
     port: number = DEFAULT_PORT,
     rootDir: string,
-    onStartRequest?: (repo: string, backend: Backend) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>,
-    initialBackend: Backend = "opencode",
+    onStartRequest?: (repo: string, provider: ProviderName) => Promise<{ ok: boolean; error?: string; runStarted?: boolean }>,
+    initialProvider: ProviderName = "gemini",
     onStopRequest: (() => void) | null = null,
     onWebhook?: WebhookHandler,
   ) {
     this.port = port;
     this.rootDir = rootDir;
     this.onStartRequest = onStartRequest ?? null;
-    this.backend = initialBackend;
+    this.provider = initialProvider;
     this.onStopRequest = onStopRequest;
     this.onWebhook = onWebhook ?? null;
   }
@@ -220,11 +245,11 @@ export class WebDashboard {
     nextScanAt: number | null;
     runActive: boolean;
     queueMode: boolean;
-    backend: Backend;
+    provider: ProviderName;
     stopRequested: boolean;
     errorLog: Array<{ type: string; message: string; agent: string; issue?: number; timestamp: number }>;
   } {
-    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, nextScanAt: this.nextScanAt, runActive: this.runActive, queueMode: this.onStartRequest !== null, backend: this.backend, stopRequested: this.stopRequested, errorLog: this.errorLog };
+    return { dash: this.dash, outputs: this.outputs, agentEvents: this.agentEvents, gh: this.gh, notice: this.notice, nextScanAt: this.nextScanAt, runActive: this.runActive, queueMode: this.onStartRequest !== null, provider: this.provider, stopRequested: this.stopRequested, errorLog: this.errorLog };
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
@@ -255,8 +280,8 @@ export class WebDashboard {
         this.handleModels(req, res);
         return;
       }
-      if (path === "/api/backend") {
-        this.handleBackend(req, res);
+      if (path === "/api/provider") {
+        this.handleProvider(req, res);
         return;
       }
       if (path === "/api/model-limit-error") {
@@ -285,14 +310,11 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/models") {
-      const url = new URL(req.url ?? "/", `http://${HOST}`);
-      const backend = url.searchParams.get("backend") as Backend | null;
-      const b = backend && (BACKENDS as readonly string[]).includes(backend) ? backend : this.backend;
-      this.sendJson(res, 200, { models: getModelOverrides()[b] ?? {}, available: [...availableModels(b)] });
+      void this.sendModels(req, res);
       return;
     }
-    if (path === "/api/backend") {
-      this.sendJson(res, 200, { backend: this.backend, backends: [...BACKENDS] });
+    if (path === "/api/provider") {
+      this.sendJson(res, 200, { provider: this.provider, providers: [...PROVIDER_NAMES] });
       return;
     }
     if (path === "/api/events") {
@@ -300,7 +322,7 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/memory") {
-      void this.sendFile(res, resolveManagerPath(this.rootDir, "MEMORY.md"));
+      void this.sendFile(res, resolveManagerPath(this.rootDir, "MEMORY.txt"));
       return;
     }
     if (path === "/api/model-limit-error") {
@@ -308,7 +330,7 @@ export class WebDashboard {
       return;
     }
     if (path === "/api/session-log") {
-      void this.sendFile(res, resolveManagerPath(this.rootDir, "SESSION_LOG.md"));
+      void this.sendFile(res, resolveManagerPath(this.rootDir, "SESSION_LOG.txt"));
       return;
     }
     this.sendJson(res, 404, { error: "not found" });
@@ -386,11 +408,11 @@ export class WebDashboard {
         this.sendJson(res, 400, { ok: false, error: "missing repo" });
         return;
       }
-      const rawBackend = (body as { backend?: unknown }).backend;
-      const backend =
-        typeof rawBackend === "string" && (BACKENDS as readonly string[]).includes(rawBackend)
-          ? (rawBackend as Backend)
-          : this.backend;
+      const rawProvider = (body as { provider?: unknown }).provider;
+      const provider =
+        typeof rawProvider === "string" && (PROVIDER_NAMES as readonly string[]).includes(rawProvider)
+          ? (rawProvider as ProviderName)
+          : this.provider;
       if (this.runActive) {
         this.sendJson(res, 200, { ok: false, error: "a run is already in progress" });
         return;
@@ -403,7 +425,7 @@ export class WebDashboard {
         this.sendJson(res, 200, { ok: false, error: "no start handler registered" });
         return;
       }
-      void this.onStartRequest(repo, backend)
+      void this.onStartRequest(repo, provider)
         .then((result) => {
           this.sendJson(res, 200, result);
           if (!result.ok || !result.runStarted) {
@@ -529,6 +551,18 @@ export class WebDashboard {
   }
 
 
+  /** GET /api/models?provider=X — live model list, static tier defaults when the provider is unreachable. */
+  private async sendModels(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const url = new URL(req.url ?? "/", `http://${HOST}`);
+    const raw = url.searchParams.get("provider");
+    const provider =
+      raw !== null && (PROVIDER_NAMES as readonly string[]).includes(raw)
+        ? (raw as ProviderName)
+        : this.provider;
+    const available = await modelPickerList(provider);
+    this.sendJson(res, 200, { models: getModelOverrides()[provider] ?? {}, available });
+  }
+
   private handleModels(req: IncomingMessage, res: ServerResponse): void {
     const chunks: Buffer[] = [];
     let bytes = 0;
@@ -555,11 +589,11 @@ export class WebDashboard {
       }
       const role = (body as { role?: unknown }).role;
       const model = (body as { model?: unknown }).model;
-      const rawBackend = (body as { backend?: unknown }).backend;
-      const backend =
-        typeof rawBackend === "string" && (BACKENDS as readonly string[]).includes(rawBackend)
-          ? (rawBackend as Backend)
-          : this.backend;
+      const rawProvider = (body as { provider?: unknown }).provider;
+      const provider =
+        typeof rawProvider === "string" && (PROVIDER_NAMES as readonly string[]).includes(rawProvider)
+          ? (rawProvider as ProviderName)
+          : this.provider;
       if (typeof role !== "string" || !ROLES.includes(role as Role)) {
         this.sendJson(res, 400, { ok: false, error: "invalid role" });
         return;
@@ -573,7 +607,7 @@ export class WebDashboard {
         return;
       }
       try {
-        setModelOverride(role as Role, model, backend);
+        setModelOverride(role as Role, model, provider);
       } catch (err) {
         this.sendJson(res, 400, { ok: false, error: String(err instanceof Error ? err.message : err) });
         return;
@@ -587,14 +621,16 @@ export class WebDashboard {
         });
         return;
       }
-      const models = getModelOverrides()[backend] ?? {};
-      this.lastEventId += 1;
-      this.broadcast(this.lastEventId, "models", {
-        backend,
-        models,
-        available: [...availableModels(backend)],
-      });
+      const models = getModelOverrides()[provider] ?? {};
       this.sendJson(res, 200, { ok: true, models });
+      void modelPickerList(provider).then((available) => {
+        this.lastEventId += 1;
+        this.broadcast(this.lastEventId, "models", {
+          provider,
+          models,
+          available,
+        });
+      });
     });
     req.on("error", () => {
       if (!done) {
@@ -604,8 +640,8 @@ export class WebDashboard {
     });
   }
 
-  /** Set the run backend (opencode | claude | codex) used for the next queue start. */
-  private handleBackend(req: IncomingMessage, res: ServerResponse): void {
+  /** Set the run provider (gemini | openrouter | ollama) used for the next queue start. */
+  private handleProvider(req: IncomingMessage, res: ServerResponse): void {
     const chunks: Buffer[] = [];
     let done = false;
     let bytes = 0;
@@ -629,19 +665,19 @@ export class WebDashboard {
         this.sendJson(res, 400, { ok: false, error: "invalid JSON body" });
         return;
       }
-      const backend = (body as { backend?: unknown }).backend;
-      if (typeof backend !== "string" || !(BACKENDS as readonly string[]).includes(backend)) {
-        this.sendJson(res, 400, { ok: false, error: `invalid backend; must be one of: ${BACKENDS.join(", ")}` });
+      const provider = (body as { provider?: unknown }).provider;
+      if (typeof provider !== "string" || !(PROVIDER_NAMES as readonly string[]).includes(provider)) {
+        this.sendJson(res, 400, { ok: false, error: `invalid provider; must be one of: ${PROVIDER_NAMES.join(", ")}` });
         return;
       }
       if (this.runActive) {
-        this.sendJson(res, 409, { ok: false, error: "a run is in progress; cannot change backend" });
+        this.sendJson(res, 409, { ok: false, error: "a run is in progress; cannot change provider" });
         return;
       }
-      this.backend = backend as Backend;
+      this.provider = provider as ProviderName;
       this.lastEventId += 1;
-      this.broadcast(this.lastEventId, "backend", { backend: this.backend, backends: [...BACKENDS] });
-      this.sendJson(res, 200, { ok: true, backend: this.backend });
+      this.broadcast(this.lastEventId, "provider", { provider: this.provider, providers: [...PROVIDER_NAMES] });
+      this.sendJson(res, 200, { ok: true, provider: this.provider });
     });
     req.on("error", () => {
       if (!done) {
@@ -779,7 +815,7 @@ const HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Multi-Orchestration · Live Dashboard</title>
+<title>Fleet · Live Dashboard</title>
 <style>
 :root {
   --bg: #0d1117; --panel: #161b22; --panel2: #1c2129; --border: #2d333b;
@@ -875,7 +911,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
 </head>
 <body>
 <header>
-  <h1>Multi-Orchestration</h1>
+  <h1>Fleet</h1>
   <span id="conn" class="conn">connecting…</span>
   <span class="meta" id="meta"></span>
   <span id="gh" class="gh">gh …</span>
@@ -900,10 +936,10 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   <button id="stopbtn" disabled style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Stop</button>
   <span id="notice" class="meta" style="flex-basis:100%"></span>
   <span id="scantimer" class="meta" style="flex-basis:100%;color:var(--accent)"></span>
-  <span class="meta" style="flex-basis:100%;display:block;margin-top:4px">Backend:
-    <button class="backend-btn" data-backend="opencode" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenCode</button>
-    <button class="backend-btn" data-backend="claude" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Claude</button>
-    <button class="backend-btn" data-backend="codex" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Codex</button>
+  <span class="meta" style="flex-basis:100%;display:block;margin-top:4px">Provider:
+    <button class="provider-btn" data-provider="gemini" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Gemini</button>
+    <button class="provider-btn" data-provider="openrouter" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenRouter</button>
+    <button class="provider-btn" data-provider="ollama" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Ollama</button>
   </span>
 </div>
 <main>
@@ -925,8 +961,8 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   <div class="panel" style="margin-top:16px;">
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('transcript', this)">Live transcript</button>
-      <button class="tab-btn" onclick="switchTab('memory', this)">MEMORY.md</button>
-      <button class="tab-btn" onclick="switchTab('sessionlog', this)">SESSION_LOG.md</button>
+      <button class="tab-btn" onclick="switchTab('memory', this)">MEMORY.txt</button>
+      <button class="tab-btn" onclick="switchTab('sessionlog', this)">SESSION_LOG.txt</button>
       <button class="tab-btn" onclick="switchTab('errorlog', this)">Error Log</button>
     </div>
     <div id="transcript-tab" class="tab-content active">
@@ -965,7 +1001,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   setInterval(renderScanTimer, 1000);
   var stopRequested = false;
   var queueMode = false, modelsLoaded = false;
-  var backend = "opencode", backends = ["opencode", "claude", "codex"];
+  var provider = "gemini", providers = ["gemini", "openrouter", "ollama"];
   var agentEvents = {};
   var errorLog = [], logSeeded = false;
   var reconnectT = null, sseRetries = 0, modelsRetryT = null;
@@ -975,6 +1011,10 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+  function fmtErr(v) {
+    if (typeof v === "string") return v;
+    try { return JSON.stringify(v) || String(v); } catch (_) { return String(v); }
   }
   function setConn(live, label) {
     connEl.className = "conn " + (live ? "live" : "dead");
@@ -1044,22 +1084,22 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       })
       .catch(function () { renderNotice("stop failed — network error"); });
   }
-  function renderBackend() {
-    var btns = document.querySelectorAll(".backend-btn");
+  function renderProvider() {
+    var btns = document.querySelectorAll(".provider-btn");
     for (var k = 0; k < btns.length; k++) {
-      var active = btns[k].getAttribute("data-backend") === backend;
+      var active = btns[k].getAttribute("data-provider") === provider;
       btns[k].style.borderColor = active ? "var(--accent)" : "var(--border)";
       btns[k].style.color = active ? "var(--accent)" : "var(--text)";
       btns[k].disabled = runActive;
     }
   }
-  function postBackend(b) {
-    backend = b;
-    renderBackend();
-    fetch("/api/backend", {
+  function postProvider(p) {
+    provider = p;
+    renderProvider();
+    fetch("/api/provider", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ backend: b })
+      body: JSON.stringify({ provider: p })
     }).then(function (r) { return r.json(); })
       .then(function () { fetchModels(); })
       .catch(function () { });
@@ -1148,7 +1188,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
       .then(function (d) {
         el.textContent = d.content || "";
       })
-      .catch(function () { el.textContent = "Error loading MEMORY.md"; });
+      .catch(function () { el.textContent = "Error loading MEMORY.txt"; });
   }
 function fetchSessionLog() {
     var el = $("sessionlog-content");
@@ -1158,7 +1198,7 @@ function fetchSessionLog() {
       .then(function (d) {
         el.textContent = d.content || "";
       })
-       .catch(function () { el.textContent = "Error loading SESSION_LOG.md"; });
+       .catch(function () { el.textContent = "Error loading SESSION_LOG.txt"; });
    }
    function renderErrorLog() {
     var box = $("errorlog-content"), empty = $("errorlog-empty");
@@ -1211,68 +1251,68 @@ function fetchSessionLog() {
        if (sel) sel.disabled = disabled;
      });
    }
-   function renderModels(data) {
-     var box = $("models");
-     if (!box) return;
-     var available = data.available || [];
-     var models = data.models || {};
-     var html = "";
-     ROLES.forEach(function (r) {
-       var current = models[r] || "";
-       var opts = "";
-       available.forEach(function (m) {
-         var sel = current === m ? " selected" : "";
-         opts += '<option value="' + esc(m) + '"' + sel + '>' + esc(m) + '</option>';
-       });
-       var listId = "models-" + backend;
-       html += '<div class="row" style="margin-bottom:8px">' +
-         '<span class="role">' + esc(r) + '</span>' +
-         '<input list="' + listId + '" id="model-' + r + '" data-role="' + r + '" value="' + esc(current) + '" ' +
-         'style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font:inherit">' +
-         '<datalist id="' + listId + '">' + opts + '</datalist></div>';
-     });
-     box.innerHTML = html;
-     setModelSelectsDisabled(runActive);
-     ROLES.forEach(function (r) {
-       var inp = $("model-" + r);
-       if (!inp) return;
-       inp.addEventListener("change", function () {
-         postModel(inp.getAttribute("data-role"), inp.value);
-       });
-     });
-   }
-   function postModel(role, model) {
-     var msg = $("modelsmsg");
-     if (msg) msg.textContent = "Saving…";
-     fetch("/api/models", {
-       method: "POST",
-       headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({ role: role, model: model, backend: backend })
-     }).then(function (r) {
-       if (r.status === 409) return { ok: false, error: "a run is in progress; cannot change models" };
-       return r.json();
-     }).then(function (d) {
-       fetchModels();
-       if (msg) {
-         msg.textContent = (d && d.ok) ? "Saved" : ((d && d.error) || "update failed");
-         if (d && d.ok) setTimeout(function () { msg.textContent = ""; }, 1500);
-       }
-     }).catch(function () {
-       fetchModels();
-       if (msg) msg.textContent = "update failed — network error";
-     });
-   }
-function fetchModels() {
-      fetch("/api/models?backend=" + encodeURIComponent(backend)).then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
-          renderModels(d);
-        })
-        .catch(function () {
-          if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
-          modelsRetryT = setTimeout(fetchModels, 2000);
+function renderModels(data) {
+      var box = $("models");
+      if (!box) return;
+      var available = data.available || [];
+      var models = data.models || {};
+      var html = "";
+      ROLES.forEach(function (r) {
+        var current = models[r] || "";
+        var opts = "";
+        available.forEach(function (m) {
+          var sel = current === m ? " selected" : "";
+          opts += '<option value="' + esc(m) + '"' + sel + '>' + esc(m) + '</option>';
         });
+        var listId = "models-" + provider;
+        html += '<div class="row" style="margin-bottom:8px">' +
+          '<span class="role">' + esc(r) + '</span>' +
+          '<input list="' + listId + '" id="model-' + r + '" data-role="' + r + '" value="' + esc(current) + '" ' +
+          'style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font:inherit">' +
+          '<datalist id="' + listId + '">' + opts + '</datalist></div>';
+      });
+      box.innerHTML = html;
+      setModelSelectsDisabled(runActive);
+      ROLES.forEach(function (r) {
+        var inp = $("model-" + r);
+        if (!inp) return;
+        inp.addEventListener("change", function () {
+          postModel(inp.getAttribute("data-role"), inp.value);
+        });
+      });
     }
+function postModel(role, model) {
+      var msg = $("modelsmsg");
+      if (msg) msg.textContent = "Saving…";
+      fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: role, model: model, provider: provider })
+      }).then(function (r) {
+        if (r.status === 409) return { ok: false, error: "a run is in progress; cannot change models" };
+        return r.json();
+      }).then(function (d) {
+        fetchModels();
+        if (msg) {
+          msg.textContent = (d && d.ok) ? "Saved" : ((d && d.error) || "update failed");
+          if (d && d.ok) setTimeout(function () { msg.textContent = ""; }, 1500);
+        }
+      }).catch(function () {
+        fetchModels();
+        if (msg) msg.textContent = "update failed — network error";
+      });
+    }
+function fetchModels() {
+       fetch("/api/models?provider=" + encodeURIComponent(provider)).then(function (r) { return r.json(); })
+         .then(function (d) {
+           if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
+           renderModels(d);
+         })
+         .catch(function () {
+           if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
+           modelsRetryT = setTimeout(fetchModels, 2000);
+         });
+     }
 function syncModelsPanel() {
       var p = $("modelspanel");
       if (!p) return;
@@ -1282,7 +1322,7 @@ function syncModelsPanel() {
         fetchModels();
       }
       setModelSelectsDisabled(runActive);
-      renderBackend();
+      renderProvider();
     }
    function syncStartPanel() {
       var sp = $("startpanel");
@@ -1307,7 +1347,7 @@ function syncModelsPanel() {
     if (a.state === "done" && a.costUsd != null) meta.push(fmtCost(a.costUsd));
     if (a.state === "done" && a.tokens != null) meta.push(fmtTokens(a.tokens));
     if (meta.length) html += '<div class="meta-line">' + esc(meta.join(" · ")) + '</div>';
-    if (a.error) html += '<div class="err">' + esc(a.error) + '</div>';
+    if (a.error) html += '<div class="err">' + esc(fmtErr(a.error)) + '</div>';
     return html + "</div>";
   }
   function renderAgents() {
@@ -1375,13 +1415,52 @@ function syncModelsPanel() {
     return false;
   }
   function formatAgentEvent(ev) {
-    var type = ev.type || "unknown";
+    var t = ev.t || ev.type || "unknown";
     var part = ev.part || {};
-    if (type === "step_start") return "";
-    var html = '<div class="activity-item"><span class="a-type">' + esc(type) + '</span>';
-    if (type === "text" && typeof part.text === "string") {
+    if (t === "step_start") return "";
+    var html = '<div class="activity-item"><span class="a-type">' + esc(t) + '</span>';
+    if (t === "init") {
+      var parts = [];
+      if (ev.role) parts.push("role: " + esc(ev.role));
+      if (ev.model) parts.push("model: " + esc(ev.model));
+      if (ev.provider) parts.push("provider: " + esc(ev.provider));
+      if (ev.sessionId) parts.push("session: " + esc(ev.sessionId));
+      if (parts.length) html += '<div class="a-text">' + esc(parts.join(" · ")) + '</div>';
+    } else if (t === "text" && typeof part.text === "string") {
       html += '<div class="a-text">' + esc(part.text.slice(0, 500)) + '</div>';
-    } else if (type === "tool_use" || part.type === "tool") {
+    } else if (t === "tool_call") {
+      var name = "⚙ " + (ev.name || "");
+      html += ' <span class="a-tool">' + esc(name) + '</span>';
+      if (ev.input) {
+        var preview = ev.input.command || ev.input.filePath || ev.input.pattern || ev.input.url || ev.input.query || "";
+        if (!preview && Object.keys(ev.input).length) {
+          try { preview = JSON.stringify(ev.input); } catch (_) { preview = ""; }
+        }
+        if (preview) html += '<div class="a-text">' + esc(preview.slice(0, 120)) + '</div>';
+      }
+    } else if (t === "tool_result") {
+      var name = "⚙ " + (ev.name || "");
+      var ok = ev.ok ? "✓" : "✗";
+      html += ' <span class="a-tool">' + esc(name) + '</span>';
+      html += ' <span class="a-result">' + ok + '</span>';
+      if (ev.ms !== undefined) html += ' <span class="a-result">' + ev.ms + 'ms</span>';
+      if (ev.bytesOut !== undefined) html += ' <span class="a-result">' + ev.bytesOut + 'B</span>';
+    } else if (t === "step_finish") {
+      var usage = ev.usage || ev.tokens || (part.tokens ? part.tokens : {});
+      var cost = typeof ev.costUsd === "number" ? ev.costUsd : (typeof part.cost === "number" ? part.cost : 0);
+      var summary = "";
+      if (usage.input) summary += "in " + usage.input;
+      if (usage.output) summary += (summary ? " · " : "") + "out " + usage.output;
+      if (usage.reasoning) summary += (summary ? " · " : "") + "reasoning " + usage.reasoning;
+      if (usage.cached) summary += (summary ? " · " : "") + "cached " + usage.cached;
+      if (cost) summary += (summary ? " · " : "") + "$" + cost.toFixed(6);
+      if (summary) html += ' <span class="a-result">·</span> ' + esc(summary);
+    } else if (t === "error") {
+      var errMsg = ev.error || ev.message || "unknown error";
+      html += '<div class="a-text" style="color:var(--red)">' + esc(fmtErr(errMsg).slice(0, 500)) + '</div>';
+    } else if (t === "result" && typeof ev.text === "string") {
+      html += '<div class="a-text">' + esc(ev.text.slice(0, 500)) + '</div>';
+    } else if (t === "tool_use" || part.type === "tool") {
       var name = "⚙ " + (part.tool || "");
       html += ' <span class="a-tool">' + esc(name) + '</span>';
       var status = part.state && part.state.status === "completed" ? "✓" : "✗";
@@ -1395,16 +1474,8 @@ function syncModelsPanel() {
       if (status === "✗" && part.state && part.state.output) {
         html += '<div class="a-text">' + esc(String(part.state.output).slice(0, 200)) + '</div>';
       }
-    } else if (type === "step_finish") {
-      var tokens = part.tokens || {};
-      var cost = typeof part.cost === "number" ? part.cost : 0;
-      var summary = "";
-      if (tokens.input) summary += "in " + tokens.input;
-      if (tokens.output) summary += (summary ? " · " : "") + "out " + tokens.output;
-      if (cost) summary += (summary ? " · " : "") + "$" + cost.toFixed(6);
-      if (summary) html += ' <span class="a-result">·</span> ' + esc(summary);
     } else {
-      html += '<code>' + esc(JSON.stringify(part).slice(0, 120)) + '</code>';
+      html += '<code>' + esc(JSON.stringify(ev).slice(0, 120)) + '</code>';
     }
     html += '</div>';
     return html;
@@ -1437,10 +1508,10 @@ function syncModelsPanel() {
     if (typeof s.runActive === "boolean") runActive = s.runActive;
     if (typeof s.queueMode === "boolean") queueMode = s.queueMode;
     if (typeof s.stopRequested === "boolean") stopRequested = s.stopRequested;
-    if (s.backend && backends.indexOf(s.backend) !== -1) {
-      var prev = backend;
-      backend = s.backend;
-      if (prev !== backend && modelsLoaded) fetchModels();
+    if (s.provider && providers.indexOf(s.provider) !== -1) {
+      var prev = provider;
+      provider = s.provider;
+      if (prev !== provider && modelsLoaded) fetchModels();
     }
     if (typeof s.notice !== "undefined") renderNotice(s.notice);
     if (typeof s.nextScanAt !== "undefined") { nextScanAt = s.nextScanAt; renderScanTimer(); }
@@ -1467,7 +1538,7 @@ function syncModelsPanel() {
     fetch("/api/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo: value, backend: backend })
+      body: JSON.stringify({ repo: value, provider: provider })
     }).then(function (r) {
       if (r.status >= 400) {
         return r.json().catch(function () { return {}; }).then(function (d) {
@@ -1528,17 +1599,17 @@ function syncModelsPanel() {
       if (!d) return;
       if (modelsRetryT) { clearTimeout(modelsRetryT); modelsRetryT = null; }
       modelsLoaded = true;
-      if (d.backend && backends.indexOf(d.backend) !== -1) backend = d.backend;
+      if (d.provider && providers.indexOf(d.provider) !== -1) provider = d.provider;
       renderModels(d);
-      renderBackend();
+      renderProvider();
     });
-    es.addEventListener("backend", function (e) {
+    es.addEventListener("provider", function (e) {
       var d = parseEv(e);
-      if (d && d.backend && backends.indexOf(d.backend) !== -1) {
-        var prev = backend;
-        backend = d.backend;
-        renderBackend();
-        if (prev !== backend && modelsLoaded) fetchModels();
+      if (d && d.provider && providers.indexOf(d.provider) !== -1) {
+        var prev = provider;
+        provider = d.provider;
+        renderProvider();
+        if (prev !== provider && modelsLoaded) fetchModels();
       }
     });
     es.addEventListener("output", function (e) {
@@ -1578,14 +1649,14 @@ function syncModelsPanel() {
     $("repoinput").addEventListener("keydown", function (e) {
       if (e.key === "Enter") startQueue();
     });
-    var backendBtns = document.querySelectorAll(".backend-btn");
-    for (var bi = 0; bi < backendBtns.length; bi++) {
-      backendBtns[bi].addEventListener("click", function () {
+    var providerBtns = document.querySelectorAll(".provider-btn");
+    for (var pi = 0; pi < providerBtns.length; pi++) {
+      providerBtns[pi].addEventListener("click", function () {
         if (runActive) return;
-        postBackend(this.getAttribute("data-backend"));
+        postProvider(this.getAttribute("data-provider"));
       });
     }
-    renderBackend();
+    renderProvider();
     fetchGh();
     setInterval(fetchGh, 5000);
     logEl.addEventListener("scroll", function () {

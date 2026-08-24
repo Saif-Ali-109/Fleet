@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
 import { newDashboardState, renderDashboard } from "../tui/dashboard.ts";
 import { WebDashboard, type WebhookResponse } from "../dashboard/webDashboard.ts";
-import type { Role } from "../types.ts";
+import { availableModels } from "../models/modelPolicy.ts";
+import { listModelsForProvider } from "../providers/registry.ts";
+import type { ProviderName, Role } from "../types.ts";
+
+vi.mock("../providers/registry.ts", () => ({
+  listModelsForProvider: vi.fn(async () => [] as string[]),
+}));
+
+const listModelsMock = vi.mocked(listModelsForProvider);
 
 const ROLES: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
 
@@ -36,14 +44,95 @@ describe("dashboard", () => {
       }
     });
 
-    it("defaults backend to opencode", () => {
+  describe("embedded page provider wiring (P8)", () => {
+    const src = readFileSync(
+      new URL("../dashboard/webDashboard.ts", import.meta.url),
+      "utf8",
+    );
+
+    it("purges all dead backend-era identifiers", () => {
+      expect(src).not.toContain("backend-btn");
+      expect(src).not.toContain("data-backend");
+      expect(src).not.toContain("postBackend");
+      expect(src).not.toContain("renderBackend");
+    });
+
+    it("wires the onLoad block to .provider-btn / postProvider / renderProvider", () => {
+      const onLoad = src.match(/function onLoad\(\) \{[\s\S]*?\n  \}/);
+      expect(onLoad).not.toBeNull();
+      expect(onLoad![0]).toContain('querySelectorAll(".provider-btn")');
+      expect(onLoad![0]).toContain('this.getAttribute("data-provider")');
+      expect(onLoad![0]).toContain("postProvider(");
+      expect(onLoad![0]).toContain("renderProvider();");
+    });
+
+    it("renders provider buttons with data-provider attributes in the HTML", () => {
+      for (const p of ["gemini", "openrouter", "ollama"]) {
+        expect(src).toContain(`class="provider-btn" data-provider="${p}"`);
+      }
+    });
+  });
+
+  describe("GET /api/models (live list + static fallback)", () => {
+    let dashboard: WebDashboard;
+    let baseUrl: string;
+
+    beforeEach(() => {
+      listModelsMock.mockClear();
+      listModelsMock.mockImplementation(async () => [] as string[]);
+    });
+
+    afterEach(async () => {
+      await dashboard?.close();
+    });
+
+    async function setup(provider: ProviderName = "gemini") {
+      dashboard = new WebDashboard(0, "/tmp", undefined, provider, null);
+      const info = await dashboard.start();
+      expect(info).not.toBeNull();
+      baseUrl = info!.url;
+    }
+
+    it("serves the deduped live model list from registry.listModelsForProvider", async () => {
+      await setup();
+      listModelsMock.mockImplementation(
+        async () => ["zeta/one", "alpha/two", "zeta/one"],
+      );
+      const res = await fetch(`${baseUrl}api/models?provider=openrouter`);
+      expect(res.status).toBe(200);
+      const json = await res.json() as { models: Record<string, string>; available: string[] };
+      expect(json.available).toEqual(["zeta/one", "alpha/two"]);
+      expect(json.models).toEqual({});
+      expect(listModelsMock).toHaveBeenCalledWith("openrouter");
+    });
+
+    it("falls back to static tier defaults when the live list is empty (offline/error)", async () => {
+      await setup();
+      const res = await fetch(`${baseUrl}api/models?provider=gemini`);
+      expect(res.status).toBe(200);
+      const json = await res.json() as { available: string[] };
+      expect(json.available).toEqual([...availableModels("gemini")]);
+      expect(json.available.length).toBeGreaterThan(0);
+    });
+
+    it("falls back to the active provider's tier defaults for an unknown provider param", async () => {
+      await setup("openrouter");
+      const res = await fetch(`${baseUrl}api/models?provider=nonsense`);
+      expect(res.status).toBe(200);
+      const json = await res.json() as { available: string[] };
+      expect(json.available).toEqual([...availableModels("openrouter")]);
+      expect(listModelsMock).toHaveBeenCalledWith("openrouter");
+    });
+  });
+
+    it("defaults backend to gemini (primary provider path)", () => {
       const d = newDashboardState("run-1", "owner/repo", 7);
-      expect(d.backend).toBe("opencode");
+      expect(d.backend).toBe("gemini");
     });
 
     it("records a supplied backend", () => {
-      const d = newDashboardState("run-1", "owner/repo", 7, "codex");
-      expect(d.backend).toBe("codex");
+      const d = newDashboardState("run-1", "owner/repo", 7, "ollama");
+      expect(d.backend).toBe("ollama");
     });
   });
 
@@ -56,9 +145,9 @@ describe("dashboard", () => {
     });
 
     it("shows the backend in the header", () => {
-      const d = newDashboardState("run-42", "owner/repo", 7, "claude");
+      const d = newDashboardState("run-42", "owner/repo", 7, "openrouter");
       const out = renderDashboard(d);
-      expect(out).toContain("claude");
+      expect(out).toContain("openrouter");
     });
 
     it("lists every role", () => {
@@ -144,7 +233,7 @@ describe("dashboard", () => {
     async function setupDashboard(
       onWebhook?: (headers: Record<string, string | string[] | undefined>, rawBody: string) => Promise<WebhookResponse>,
     ) {
-      dashboard = new WebDashboard(0, "/tmp", undefined, "opencode", null, onWebhook);
+      dashboard = new WebDashboard(0, "/tmp", undefined, "gemini", null, onWebhook);
       const info = await dashboard.start();
       expect(info).not.toBeNull();
       baseUrl = info!.url;
@@ -277,16 +366,25 @@ describe("dashboard", () => {
       /function formatAgentEvent\(ev\) \{[\s\S]*?^  \}/m,
     );
     if (!match) throw new Error("Could not extract formatAgentEvent from source");
+    // formatAgentEvent calls the fmtErr client helper; extract it too so the
+    // evaluated function sees the real source implementation.
+    const errMatch = src.match(/function fmtErr\(v\) \{[\s\S]*?\n  \}/);
+    if (!errMatch) throw new Error("Could not extract fmtErr from source");
 
     const esc = (s: unknown) => String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
     // eslint-disable-next-line no-eval
-    const fn = eval("(function(esc){ " + match[0] + " return formatAgentEvent; })") as (
+    const fmtErr = eval("(function(){ " + errMatch[0] + " return fmtErr; })")() as (
+      v: unknown,
+    ) => string;
+    // eslint-disable-next-line no-eval
+    const fn = eval("(function(esc, fmtErr){ " + match[0] + " return formatAgentEvent; })") as (
       esc: (s: unknown) => string,
+      fmtErr: (v: unknown) => string,
     ) => (ev: Record<string, unknown>) => string;
-    const format = fn(esc);
+    const format = fn(esc, fmtErr);
 
     it("returns empty string for step_start", () => {
       const ev = {
@@ -363,6 +461,57 @@ describe("dashboard", () => {
       const html = format(ev);
       expect(html).toContain("weird_thing");
       expect(html).toContain("<code>");
+    });
+
+    it("renders object error payloads as JSON, never [object Object]", () => {
+      const html = format({ t: "error", error: { message: "boom" } });
+      expect(html).toContain('{"message":"boom"}');
+      expect(html).not.toContain("[object Object]");
+    });
+
+    it("renders string error payloads verbatim via fmtErr", () => {
+      const html = format({ t: "error", error: "plain failure" });
+      expect(html).toContain("plain failure");
+    });
+  });
+
+  describe("embedded error formatting hardening (fmtErr)", () => {
+    const src = readFileSync(
+      new URL("../dashboard/webDashboard.ts", import.meta.url),
+      "utf8",
+    );
+
+    it("defines the fmtErr client helper next to esc", () => {
+      expect(src).toMatch(/function fmtErr\(v\) \{/);
+      expect(src).toContain("if (typeof v === \"string\") return v;");
+      expect(src).toContain("JSON.stringify(v)");
+    });
+
+    it("routes card() errors through fmtErr instead of raw esc()", () => {
+      expect(src).toContain("esc(fmtErr(a.error))");
+      expect(src).not.toContain("esc(a.error)");
+    });
+
+    it("replaces String(errMsg) with fmtErr(errMsg) in formatAgentEvent's error branch", () => {
+      expect(src).toContain("esc(fmtErr(errMsg).slice(0, 500))");
+      expect(src).not.toContain("String(errMsg)");
+    });
+  });
+
+  describe("outputs / agentEvents isolation", () => {
+    it("keeps pushOutput strings out of agentEvents and vice versa", () => {
+      const dash = new WebDashboard(0, "/tmp", undefined, "gemini", null);
+      dash.pushOutput("planner", "final answer text");
+      dash.pushAgentEvent("planner", { t: "init" });
+      const internal = dash as unknown as {
+        outputs: Record<Role, string[]>;
+        agentEvents: Record<Role, Record<string, unknown>[]>;
+      };
+      expect(internal.outputs.planner).toEqual(["final answer text"]);
+      expect(internal.agentEvents.planner).toEqual([{ t: "init" }]);
+      expect(internal.agentEvents.planner).not.toBe(internal.outputs.planner);
+      expect(internal.agentEvents.planner.some((e) => typeof e === "string")).toBe(false);
+      expect(internal.outputs.planner.every((c) => typeof c === "string")).toBe(true);
     });
   });
 });

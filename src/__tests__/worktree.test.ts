@@ -113,44 +113,24 @@ describe("setupWorktree", () => {
     }
   });
 
-  it("provisions .fleet skills into the worktree and keeps them out of commits", async () => {
+  it("no longer copies skills to worktrees (skills loaded via load_skill tool)", async () => {
     const { remote } = mkRemote();
     const run = newRunDir("skills");
-    const originalCwd = process.cwd();
-    const fleetRoot = mkdtempSync(join(tmpdir(), "worktree-fleet-"));
-    mkdirSync(join(fleetRoot, ".fleet", "opencode", "skills", "demo-skill"), { recursive: true });
-    writeFileSync(
-      join(fleetRoot, ".fleet", "opencode", "skills", "demo-skill", "SKILL.md"),
-      "demo skill body\n",
-      "utf8",
-    );
-    try {
-      // copyFleetSkills sources skills from process.cwd(); run from a temp root
-      // that owns the demo skill (each vitest file runs in its own fork).
-      process.chdir(fleetRoot);
-      const h = await setupWorktree(remote, run, "fix-issue-12");
+    const h = await setupWorktree(remote, run, "fix-issue-12");
 
-      expect(existsSync(join(h.worktreeDir, ".opencode", "skills", "demo-skill", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(h.worktreeDir, ".claude", "skills", "demo-skill", "SKILL.md"))).toBe(true);
+    // Skills are no longer copied to worktrees; they're loaded via load_skill tool at runtime
+    expect(existsSync(join(h.worktreeDir, ".opencode", "skills"))).toBe(false);
+    expect(existsSync(join(h.worktreeDir, ".claude", "skills"))).toBe(false);
 
-      // Exclusions land in the per-worktree git dir (resolved via the .git FILE), never the shared clone.
-      const raw = readFileSync(join(h.worktreeDir, ".git"), "utf8").trim();
-      expect(raw.startsWith("gitdir:")).toBe(true);
-      const perWorktreeGitDir = raw.slice("gitdir:".length).trim();
-      const exclude = readFileSync(join(perWorktreeGitDir, "info", "exclude"), "utf8");
-      expect(exclude).toContain(".opencode/");
-      expect(exclude).toContain(".claude/skills/");
-
-      const sharedExcludePath = join(h.repoDir, ".git", "info", "exclude");
-      if (existsSync(sharedExcludePath)) {
-        const shared = readFileSync(sharedExcludePath, "utf8");
-        expect(shared).not.toContain(".opencode/");
-        expect(shared).not.toContain(".claude/skills/");
-      }
-    } finally {
-      process.chdir(originalCwd);
-      rmSync(run, { recursive: true, force: true });
-      rmSync(fleetRoot, { recursive: true, force: true });
+    // No skill exclusions in per-worktree git dir since no skills are copied
+    const raw = readFileSync(join(h.worktreeDir, ".git"), "utf8").trim();
+    expect(raw.startsWith("gitdir:")).toBe(true);
+    const perWorktreeGitDir = raw.slice("gitdir:".length).trim();
+    const excludePath = join(perWorktreeGitDir, "info", "exclude");
+    if (existsSync(excludePath)) {
+      const exclude = readFileSync(excludePath, "utf8");
+      expect(exclude).not.toContain(".opencode/");
+      expect(exclude).not.toContain(".claude/skills/");
     }
   });
 });

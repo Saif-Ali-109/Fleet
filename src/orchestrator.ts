@@ -1,15 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { runWorker } from "./agentRunner.ts";
-import { gate } from "./gates.ts";
 import type { WorktreeHandle } from "./git/worktree.ts";
 import {
-  changedFiles,
   cleanupWorktree,
   diffAgainstBase,
-  diffStatAgainstBase,
   setupWorktree,
 } from "./git/worktree.ts";
 import {
@@ -37,16 +34,15 @@ import {
 } from "./workflow/coder.ts";
 import { runTester } from "./workflow/tester.ts";
 import { ScoutTracker } from "./workflow/scoutTracker.ts";
-import { detectTestCommand } from "./runner/backends.ts";
+import { detectTestCommand } from "./fleet/testCmd.ts";
 import { generateMemory } from "./db/queries/summaryReport.ts";
 import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.ts";
 import { policyFor } from "./models/modelPolicy.ts";
-import { MAX_IMPL_ITERATIONS, planRoute } from "./router.ts";
+import { planRoute } from "./router.ts";
 import type { DashboardState } from "./tui/dashboard.ts";
 import { newDashboardState, renderDashboard } from "./tui/dashboard.ts";
 import type {
   AgentResult,
-  Backend,
   FixSpec,
   Issue,
   Plan,
@@ -54,8 +50,26 @@ import type {
   RolePolicy,
   RunContext,
 } from "./types.ts";
+import type { ProviderName } from "./types.ts";
 
 export type RunStatus = "completed" | "aborted" | "failed";
+
+const CONTRIBUTING_MAX_CHARS = 4000;
+
+/** Commit-convention guidance for coder/pr prompts: the repo's CONTRIBUTING.md when present, else a default. */
+export async function readContributionGuidance(worktreeDir: string): Promise<string> {
+  try {
+    const raw = await readFile(join(worktreeDir, "CONTRIBUTING.md"), "utf8");
+    return [
+      "## Contribution conventions",
+      "The target repository defines contribution conventions. Follow them exactly for commit messages, PR title, and PR description:",
+      "",
+      raw.slice(0, CONTRIBUTING_MAX_CHARS),
+    ].join("\n");
+  } catch {
+    return '## Commit conventions\nUse conventional commit style (e.g. "fix: ...") for all commit messages.';
+  }
+}
 
 /** Live web-mirror hooks; the web dashboard pushes these on every TUI render/text chunk. */
 export interface WebFeed {
@@ -72,7 +86,7 @@ export interface RunSummary {
   status: RunStatus;
   prUrl?: string;
   failure?: string;
-  backend: Backend;
+  backend: ProviderName;
   agents: Record<Role, AgentResult>;
   totalCostUsd: number;
   iterationsUsed: number;
@@ -83,8 +97,14 @@ export interface RunSummary {
 const ROLES: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
 type Phase = DashboardState["phase"];
 
-/** Cap on the diff sent to the reviewer task (tunable). Gate 3 uses a stat summary instead. */
+/** Cap on the diff sent to the reviewer task (tunable). The final review uses a stat summary instead. */
 const MAX_REVIEW_DIFF_CHARS = Number(process.env.MAX_REVIEW_DIFF_CHARS ?? 25_000);
+
+/**
+ * SPEC D11: reviewer findings get at most ONE coder auto-fix round; a second
+ * rejection is a hard run failure. There are no human approval gates.
+ */
+const AUTO_FIX_MAX_ROUNDS = 1;
 
 /** Strip optional ```json fences and parse the first balanced {...} object in `text`. */
 export function extractJson<T>(text: string): T | null {
@@ -115,7 +135,7 @@ export function extractJson<T>(text: string): T | null {
       }
     }
   }
-  // Free OpenCode Zen models cap output tokens, so responses can be truncated mid-JSON.
+  // Some providers cap output tokens, so responses can be truncated mid-JSON.
   // Salvage the unclosed object by appending closing quote/brace/array tails until it parses.
   const base = cleaned.slice(start);
   const maxK = Math.min(depth, 25);
@@ -174,7 +194,7 @@ async function sorEmit(
   ctx: RunContext | { runId: string; dryRun?: boolean },
   event: Partial<SorEvent>,
 ): Promise<void> {
-  const backend = "backend" in ctx ? ctx.backend : undefined;
+  const backend = "provider" in ctx ? ctx.provider : undefined;
   const sorEvent: SorEvent = {
     run_id: ctx.runId,
     event_type: event.event_type ?? "phase",
@@ -193,14 +213,14 @@ async function sorEmit(
   }
 }
 
-// The Manager (not an LLM): issue intake → 3 human gates → 6 workers → PR.
+// The Manager (not an LLM): issue intake → 6 workers (no human gates) → PR.
 export async function runOrchestrator(
   ctx: RunContext,
-  opts: { interactive: boolean; web?: WebFeed },
+  opts: { web?: WebFeed },
 ): Promise<RunSummary> {
   const startedAt = Date.now();
   const web = opts.web;
-  const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.backend);
+  const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.provider ?? "gemini");
   const agents = {} as Record<Role, AgentResult>;
   const scoutTracker = new ScoutTracker();
   let runId: string | undefined;
@@ -233,7 +253,7 @@ export async function runOrchestrator(
     status,
     prUrl,
     failure,
-    backend: ctx.backend ?? "opencode",
+    backend: ctx.provider ?? "gemini",
     agents,
     totalCostUsd: totalCostUsd(),
     iterationsUsed,
@@ -279,7 +299,7 @@ export async function runOrchestrator(
             `Managed run \`${ctx.runId}\` completed.`,
             prUrl ? `- PR: ${prUrl}` : "- PR: (none)",
             `- Total cost: $${totalCostUsd().toFixed(4)}`,
-            `- Backend: ${ctx.backend ?? "opencode"}`,
+            `- Backend: ${ctx.provider ?? "gemini"}`,
           ].join("\n");
           await commentOnIssue(owner, repo, ctx.issue.number, lines);
         } else {
@@ -379,7 +399,7 @@ export async function runOrchestrator(
       runId = await db.createRun({
         repo: ctx.issue.repo,
         issue_number: ctx.issue.number,
-        backend: ctx.backend ?? "opencode",
+        backend: ctx.provider ?? "gemini",
       });
       await db.updateRunStatus({ run_id: runId, phase: "start", status: "running", iteration: 0 });
     }
@@ -403,30 +423,6 @@ export async function runOrchestrator(
       await logLine(ctx.rootDir, "worktree ready at " + wt.worktreeDir + " base " + wt.baseBranch);
     }
 
-    setPhase("gate1");
-    pushState();
-    if (runId) {
-      await db.updateRunStatus({ run_id: runId, phase: "gate1", status: "running", iteration: 0 });
-    }
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "gate1", status: "running", iteration: 0 },
-    });
-    const g1 = await gate(
-      "Gate 1 · Confirm intent",
-      `Issue #${ctx.issue.number}: ${ctx.issue.title}\n\n${ctx.issue.body}`,
-      { interactive: opts.interactive, captureFeedbackOnReject: false },
-    );
-    if (!g1.approved) {
-      setPhase("aborted");
-      pushState();
-      await logLine(ctx.rootDir, "run aborted at gate 1");
-      await finalize("aborted", {}, "rejected at Gate 1");
-      return makeSummary("aborted");
-    }
-    dash.lastGate = "gate1";
-
     const skeleton = await buildSkeletonMap(ctx.worktreeDir);
 
     const analyzerTask = [
@@ -442,7 +438,7 @@ export async function runOrchestrator(
       `Return ONLY one JSON object with exactly this shape and nothing else:`,
       `{"summary": "...", "rootCause": "...", "suspectFiles": ["..."], "affectedSymbols": ["..."], "reproduction": "...", "testStrategy": "...", "risks": ["..."], "confidence": "low" | "medium" | "high"}`,
     ].join("\n");
-    const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer", ctx.backend));
+    const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer", ctx.provider ?? "gemini"));
     if (!a.ok) {
       setPhase("failed");
       pushState();
@@ -511,7 +507,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
       `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
       `{"approach": "...", "steps": ["..."], "filesToChange": ["..."], "testsToAddOrUpdate": ["..."], "acceptanceCriteria": ["..."], "outOfScope": ["..."], "filesNeeded": "string[]"}`,
     ].join("\n");
-    const p = await runAgent("planner", "plan", plannerTask, policyFor("planner", ctx.backend));
+    const p = await runAgent("planner", "plan", plannerTask, policyFor("planner", ctx.provider ?? "gemini"));
     if (!p.ok) {
       setPhase("failed");
       pushState();
@@ -585,29 +581,6 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
     ].join("\n");
     await writeFile(join(ctx.runDir, "plan.md"), planMd + "\n");
 
-    setPhase("gate2");
-    pushState();
-    if (runId) {
-      await db.updateRunStatus({ run_id: runId, phase: "gate2", status: "running", iteration: iterationsUsed });
-    }
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "gate2", status: "running", iteration: iterationsUsed },
-    });
-    const g2 = await gate("Gate 2 · Approve plan", planMd, {
-      interactive: opts.interactive,
-      captureFeedbackOnReject: false,
-    });
-    if (!g2.approved) {
-      setPhase("aborted");
-      pushState();
-      await logLine(ctx.rootDir, "run aborted at gate 2");
-      await finalize("aborted", {}, "rejected at Gate 2");
-      return makeSummary("aborted");
-    }
-    dash.lastGate = "gate2";
-
     const route = planRoute(ctx.issue);
     const loopStep = route.find((s) => s.kind === "loop");
     const implRoles: Role[] = loopStep?.roles ?? ["coder"];
@@ -632,18 +605,23 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
         "",
         `Implement this plan in the repo at ${ctx.worktreeDir} (branch ${ctx.branch}).`,
         "Make the code changes, run the relevant tests, and commit to the branch.",
+        "",
+        commitGuidance,
       ];
-      if (feedback) lines.push("", "FEEDBACK FROM REVIEW OR GATE:", feedback);
+      if (feedback) lines.push("", "FEEDBACK FROM REVIEWER (auto-fix round):", feedback);
       return lines.join("\n");
     };
 
     let feedback: string | undefined;
+    let fixRoundsUsed = 0;
     let approved = false;
 
     const testCommand = detectTestCommand(ctx.worktreeDir);
     await logLine(ctx.rootDir, `detected test command: ${testCommand}`);
+    const commitGuidance = await readContributionGuidance(ctx.worktreeDir);
 
-    for (let iter = 1; iter <= MAX_IMPL_ITERATIONS; iter++) {
+    // Initial implementation + at most AUTO_FIX_MAX_ROUNDS review-driven fixes.
+    for (let iter = 1; iter <= 1 + AUTO_FIX_MAX_ROUNDS; iter++) {
       iterationsUsed = iter;
       dash.loopIteration = iter;
 
@@ -659,7 +637,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
 
       for (const role of implRoles) {
         const task = implTask(feedback);
-        const policy = policyFor(role, ctx.backend);
+        const policy = policyFor(role, ctx.provider ?? "gemini");
 
         if (!runId) {
           const res = await runAgent(role, "implement", task, policy);
@@ -842,7 +820,7 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
         "reviewer",
         "review",
         reviewerTask,
-        policyFor("reviewer", ctx.backend),
+        policyFor("reviewer", ctx.provider ?? "gemini"),
       );
       if (!r.ok) {
         setPhase("failed");
@@ -860,64 +838,47 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
         const normalized = (verdict?.verdict ?? "").trim().toUpperCase();
         const isRequestChanges = normalized === "REQUEST_CHANGES";
         const isApprove = normalized === "APPROVE";
-        // Missing / malformed / unrecognized verdict is a soft-fail: require a
-        // human to resolve it rather than silently fast-tracking to Gate 3.
+        // Missing / malformed / unrecognized verdict counts as a rejection: it
+        // feeds the single auto-fix round, then hard-fails (SPEC D11 — no
+        // human is left to resolve ambiguity).
         if (isRequestChanges || !isApprove) {
-          const feedback = isRequestChanges
+          const reviewerFeedback = isRequestChanges
             ? [verdict?.rationale, ...(verdict?.blockingIssues ?? [])].filter(Boolean).join("\n") ||
               "reviewer requested changes"
             : (verdict?.verdict === undefined
                 ? "reviewer verdict missing/empty"
                 : `unrecognized reviewer verdict "${verdict.verdict}" (expected APPROVE or REQUEST_CHANGES)`);
-          if (iter < MAX_IMPL_ITERATIONS) {
+          if (fixRoundsUsed < AUTO_FIX_MAX_ROUNDS) {
+            fixRoundsUsed += 1;
+            feedback = reviewerFeedback;
+            await logLine(
+              ctx.rootDir,
+              `reviewer requested changes — coder auto-fix round ${fixRoundsUsed}/${AUTO_FIX_MAX_ROUNDS}`,
+            );
+            await sorEmit(ctx, {
+              event_type: "phase",
+              actor: "manager",
+              payload: {
+                phase: "review",
+                status: "changes_requested",
+                iteration: iter,
+                autofix_round: fixRoundsUsed,
+                autofix_max_rounds: AUTO_FIX_MAX_ROUNDS,
+                feedback: reviewerFeedback,
+              },
+            });
             continue;
           }
           setPhase("failed");
           pushState();
-          await finalize("failed", {}, feedback);
-          return makeSummary("failed", feedback);
+          await logLine(ctx.rootDir, "reviewer rejected after final auto-fix round");
+          await finalize("failed", {}, reviewerFeedback);
+          return makeSummary("failed", reviewerFeedback);
         }
       }
 
-      const files = ctx.dryRun ? [] : await changedFiles(wt);
-      const diffStat = ctx.dryRun ? "[dry-run] stat unavailable" : await diffStatAgainstBase(wt);
-      const gateBody = [
-        "Changed files:",
-        ...files.map((f) => `- ${f}`),
-        "",
-        `## Diff stat against ${wt.baseBranch}`,
-        "",
-        diffStat,
-        "",
-        "The full diff (up to 60,000 chars) was already reviewed by the Reviewer above; this file-level summary is for final sign-off. Reject with feedback to trigger another iteration.",
-      ].join("\n");
-      setPhase("gate3");
-      pushState();
-      if (runId) {
-        await db.updateRunStatus({ run_id: runId, phase: "gate3", status: "running", iteration: iterationsUsed });
-      }
-      await sorEmit(ctx, {
-        event_type: "phase",
-        actor: "manager",
-        payload: { phase: "gate3", status: "running", iteration: iterationsUsed },
-      });
-      const g3 = await gate("Gate 3 · Approve final diff", gateBody, {
-        interactive: opts.interactive,
-        captureFeedbackOnReject: true,
-      });
-      if (g3.approved) {
-        approved = true;
-        break;
-      }
-      if (g3.feedback && iter < MAX_IMPL_ITERATIONS) {
-        feedback = g3.feedback;
-        continue;
-      }
-      setPhase("aborted");
-      pushState();
-      await logLine(ctx.rootDir, "run aborted at gate 3");
-      await finalize("aborted", {}, "rejected at Gate 3");
-      return makeSummary("aborted");
+      approved = true;
+      break;
     }
 
     if (!approved) {
@@ -937,8 +898,10 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
       `PR title: Fix #${ctx.issue.number}: ${ctx.issue.title}`,
       `PR body must start with: Closes #${ctx.issue.number}`,
       `Managed run: ${ctx.runId}.`,
+      "",
+      await readContributionGuidance(ctx.worktreeDir),
     ].join("\n");
-    const pr = await runAgent("pr", "pr", prTask, policyFor("pr", ctx.backend));
+    const pr = await runAgent("pr", "pr", prTask, policyFor("pr", ctx.provider ?? "gemini"));
     const extractPrUrl = (text: string): string | undefined =>
       /https?:\/\/[^\s)"']+\/pull\/\d+/.exec(text)?.[0];
     if (pr.ok) {
@@ -1042,11 +1005,13 @@ await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null,
       ].join("\n"),
     );
     await writeFile(join(ctx.runDir, "result.json"), JSON.stringify(summary, null, 2) + "\n");
-    await finalize("completed", { gate1: "approved", gate2: "approved", gate3: "approved" });
+    await finalize("completed", {
+      review: "auto_approved",
+    });
     try {
       await generateMemory(ctx.rootDir);
     } catch (e) {
-      await logLine(ctx.rootDir, "MEMORY.md regeneration failed: " + String(e));
+      await logLine(ctx.rootDir, "MEMORY.txt regeneration failed: " + String(e));
     }
     return summary;
   } catch (e) {

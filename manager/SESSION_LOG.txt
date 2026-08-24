@@ -1,0 +1,10 @@
+# SESSION_LOG.txt — run 2026-08-24T18-07-15-613Z
+
+- Started: 2026-08-24T18:07:24.036Z
+- Repo: saif-ali-109/demo-repo
+- Issue: #26 — Add --json output mode to the CLI
+- Traces: `.runs/2026-08-24T18-07-15-613Z/traces/*.jsonl`
+
+## Timeline
+- `2026-08-24T18:07:24.039Z` run started
+- `2026-08-24T18:07:25.584Z` worktree ready at /home/ain/Desktop/Multi-Orchestration/Multi-Orchestration/.runs/2026-08-24T18-07-15-613Z/worktree base main

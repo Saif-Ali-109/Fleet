@@ -34,6 +34,18 @@ interface AuditEventRow {
   created_at: Date;
 }
 
+/** Coerce a value into something pg can bind to a JSONB column without loss.
+ *  Primitives must be pre-serialized (a bare string would otherwise be cast by
+ *  Postgres as raw JSON syntax and rejected); objects/arrays pass through for
+ *  pg's own serialization; null stays null. */
+export function toJsonbParam(v: unknown): unknown {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+    return JSON.stringify(v);
+  }
+  return v;
+}
+
 function requireSigningKey(): string {
   const key = process.env.SOR_SIGNING_KEY;
   if (!key || key.length === 0) {
@@ -81,9 +93,9 @@ export async function appendAuditEvent(pool: Pool, event: SorEvent): Promise<voi
         event.actor,
         event.backend,
         event.tool_name,
-         event.tool_input ?? null,
-         event.tool_output ?? null,
-         event.payload,
+        toJsonbParam(event.tool_input),
+        toJsonbParam(event.tool_output),
+        toJsonbParam(event.payload),
          chain.hash,
          hash,
          normalized.created_at,

@@ -54,7 +54,7 @@ export interface CoderResult {
 
 /**
  * Coder phases. `parse-spec` and `edit-repo` share ONE worker spawn (they used
- * to each spawn a worker, re-billing the ~4.5k opencode system prompt twice);
+ * to each spawn a worker, re-billing the system prompt twice);
  * keeping both checkpoint step names preserves `agent_steps` semantics and the
  * `checkpoint.test.ts` assertions untouched. The other phases keep their
  * one-spawn-per-step mapping.
@@ -79,21 +79,20 @@ export async function runCoder(
 ): Promise<CoderResult> {
   const completed = await safeCompleted(runId, iteration);
   const results: AgentResult[] = [];
-  // Session captured from the first spawn; reused for later phases (model-bound, so discarded on fallback).
-  const session: { id: string | undefined } = { id: undefined };
   for (const phase of CODER_PHASES) {
     const pending = phase.steps.filter((s) => !completed.includes(s));
     if (pending.length === 0) continue;
-    const ids = await Promise.all(
-      pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as CoderStep)),
-    );
+    let ids: string[] = [];
     try {
-      await runPhase(ctx, opts, phase.kind, results, session);
+      ids = await Promise.all(
+        pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as CoderStep)),
+      );
+      await runPhase(ctx, opts, phase.kind, results);
       await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await Promise.all(
-        pending.map((s, i) => checkpoint.markStepFailed(ids[i]!, `${s}: ${message}`)),
+        ids.map((id, i) => checkpoint.markStepFailed(id, `${pending[i]}: ${message}`)),
       );
       return {
         ok: false,
@@ -115,20 +114,19 @@ async function runPhase(
   opts: CoderOptions,
   kind: (typeof CODER_PHASES)[number]["kind"],
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<void> {
   switch (kind) {
     case "parse-edit":
-      await runParseEdit(ctx, opts, results, session);
+      await runParseEdit(ctx, opts, results);
       return;
     case "run-tests":
-      await runTests(ctx, opts, "run-tests", results, session);
+      await runTests(ctx, opts, "run-tests", results);
       return;
     case "commit":
       await commitChanges(ctx, opts, "commit");
       return;
     case "verify-diff":
-      await worker(ctx, opts, "verify-diff", "verify the diff matches the plan expectations", results, session);
+      await worker(ctx, opts, "verify-diff", "verify the diff matches the plan expectations", results);
       return;
   }
 }
@@ -144,7 +142,6 @@ async function runParseEdit(
   ctx: RunContext,
   opts: CoderOptions,
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<void> {
   const task =
     `${opts.task}` +
@@ -154,29 +151,30 @@ async function runParseEdit(
     onEvent: opts.onEvent,
   });
   results.push(res);
-  // Sessions are model-bound — discard if a fallback model was used.
-  session.id = res.ok && (!res.attempts || res.attempts.length === 1) ? res.sessionID ?? undefined : undefined;
-  return;
 }
 
+/**
+ * One single-shot worker spawn for a step: every attempt receives the FULL task
+ * plus the step instruction. There is no cross-process session resume — the
+ * orchestrator owns all iteration policy via its own auto-fix cap.
+ */
 async function worker(
   ctx: RunContext,
   opts: CoderOptions,
   step: CoderStep,
   instruction: string,
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<AgentResult> {
-  // On resume, send only the step instruction (the session already holds the base task).
-  const task =
-    session.id !== undefined
-      ? `Workflow step "${step}": ${instruction}`
-      : `${opts.task}\n\nWorkflow step "${step}": ${instruction}`;
-  const res = await runWorker(ROLE, task, ctx, opts.policy, {
-    onText: opts.onText,
-    onEvent: opts.onEvent,
-    resumeSessionID: session.id,
-  });
+  const res = await runWorker(
+    ROLE,
+    `${opts.task}\n\nWorkflow step "${step}": ${instruction}`,
+    ctx,
+    opts.policy,
+    {
+      onText: opts.onText,
+      onEvent: opts.onEvent,
+    },
+  );
   results.push(res);
   return res;
 }
@@ -187,7 +185,6 @@ async function runTests(
   opts: CoderOptions,
   step: CoderStep,
   results: AgentResult[],
-  session: { id: string | undefined },
 ): Promise<void> {
   const cmd = opts.testCommand ?? "git status --porcelain";
   const res = await worker(
@@ -197,7 +194,6 @@ async function runTests(
     `run the test suite with \`${cmd}\` in the worktree (${opts.worktreeDir}); ` +
       `fix any failing tests; \`${cmd}\` MUST exit 0 with all tests passing before this phase completes.`,
     results,
-    session,
   );
   if (!res.ok) {
     throw new Error(res.error ?? "coder test-verification worker failed");
