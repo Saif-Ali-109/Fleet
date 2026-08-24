@@ -65,11 +65,13 @@ jobs:
       - name: Verify SOR hash chain
         env:
           DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
-          SOR_SIGNING_KEY: ${{ secrets.SOR_SIGNING_KEY || 'ci-dummy-signing-key' }}
+          # Fresh CI database has an empty chain; a dummy key satisfies the
+          # "key must be set" guard. Real keys live only in local .env.
+          SOR_SIGNING_KEY: ci-dummy-signing-key
         run: npm run sor:verify
 
       - name: Dry-run smoke (orchestration spine)
         env:
           DATABASE_URL: postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable
-          SOR_SIGNING_KEY: ${{ secrets.SOR_SIGNING_KEY || 'ci-dummy-signing-key' }}
+          SOR_SIGNING_KEY: ci-dummy-signing-key
         run: npm run dry -- --repo octocat/Hello-World --issue 1 --no-web
