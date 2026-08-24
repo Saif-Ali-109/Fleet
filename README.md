@@ -76,5 +76,3 @@ Model resolution order: dashboard override > env > tier defaults (strong for ana
 ```bash
 npm run typecheck && npm test
 ```
-
-Commit per logical unit; every task ends green.
