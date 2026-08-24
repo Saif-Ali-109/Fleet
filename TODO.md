@@ -98,3 +98,7 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
 - SOR writes stay NON-FATAL; sor:verify stays green always.
 - No new dependencies beyond SPEC §12 without asking.
 - Subagent strategy per USER.md (sequential unless file sets fully disjoint).
+
+## Debt (from 8cfb9b1 verification)
+- [ ] MCP `finalize_run` gate_status binds caller strings raw into jsonb (src/mcp/server.ts:238 → client.ts:205) — same class as the tool_output bug; pre-stringify or validate
+- [ ] orchestrator/agentRunner SOR payload ($9) bound without toJsonbParam — safe today (objects only), add coercion for future-proofing
