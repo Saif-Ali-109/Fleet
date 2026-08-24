@@ -72,16 +72,17 @@ export async function runTester(
   for (const phase of TESTER_PHASES) {
     const pending = phase.steps.filter((s) => !completed.includes(s));
     if (pending.length === 0) continue;
-    const ids = await Promise.all(
-      pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as TesterStep)),
-    );
+    let ids: string[] = [];
     try {
+      ids = await Promise.all(
+        pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as TesterStep)),
+      );
       await runPhase(ctx, opts, phase.kind, results);
       await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await Promise.all(
-        pending.map((s, i) => checkpoint.markStepFailed(ids[i]!, `${s}: ${message}`)),
+        ids.map((id, i) => checkpoint.markStepFailed(id, `${pending[i]}: ${message}`)),
       );
       return {
         ok: false,

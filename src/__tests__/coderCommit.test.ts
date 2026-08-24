@@ -1,11 +1,54 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commitMessageFor } from "../orchestrator.ts";
-import { commitChanges } from "../workflow/coder.ts";
-import type { Issue, Plan, RolePolicy, RunContext } from "../types.ts";
+import { commitChanges, runCoder } from "../workflow/coder.ts";
+import { checkpoint } from "../db/checkpoint.ts";
+import { runWorker } from "../agentRunner.ts";
+import type { AgentResult, Issue, Plan, RolePolicy, RunContext } from "../types.ts";
+
+vi.mock("../db/checkpoint.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/checkpoint.ts")>();
+  return {
+    ...actual,
+    checkpoint: {
+      ...actual.checkpoint,
+      getCompletedSteps: vi.fn(),
+      startStep: vi.fn(),
+      markStepSuccess: vi.fn(),
+      markStepFailed: vi.fn(),
+    },
+  };
+});
+
+vi.mock("../agentRunner.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../agentRunner.ts")>();
+  return {
+    ...actual,
+    runWorker: vi.fn(),
+  };
+});
+
+const checkpointMock = vi.mocked(checkpoint, true);
+const runWorkerMock = vi.mocked(runWorker);
+
+function fakeAgentResult(ok: boolean): AgentResult {
+  return {
+    role: "coder",
+    ok,
+    sessionID: null,
+    model: "test-model",
+    provider: "gemini",
+    text: "",
+    tokens: { input: 0, output: 0, reasoning: 0, cached: 0, cacheWrite: 0, total: 0 },
+    costUsd: 0,
+    tracePath: "",
+    startedAt: 0,
+    endedAt: 0,
+  };
+}
 
 function fakeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "coder-commit-"));
@@ -193,6 +236,50 @@ describe("commitChanges", () => {
       await commitChanges(ctxFor(dir), optsFor(dir, "fix: real change"), "commit");
       expect(git(dir, ["rev-list", "--count", "HEAD"]).trim()).toBe("2");
       expect(git(dir, ["log", "-1", "--format=%s"]).trim()).toBe("fix: real change");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("runCoder resume", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function resumeCtx(dir: string): RunContext {
+    return { ...ctxFor(dir), dryRun: true };
+  }
+
+  it("resumes past leftover success steps and re-runs a failed run-tests step without throwing", async () => {
+    checkpointMock.getCompletedSteps.mockResolvedValue(["parse-spec", "edit-repo"]);
+    checkpointMock.startStep.mockResolvedValue("step-run-tests");
+    checkpointMock.markStepSuccess.mockResolvedValue(undefined);
+    checkpointMock.markStepFailed.mockResolvedValue(undefined);
+    runWorkerMock.mockResolvedValue(fakeAgentResult(true));
+    const dir = fakeRepo();
+    try {
+      const result = await runCoder(resumeCtx(dir), optsFor(dir), "run-1", 1);
+      expect(result.ok).toBe(true);
+      expect(checkpointMock.startStep).toHaveBeenCalledWith("run-1", "coder", 1, "run-tests");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns ok:false instead of throwing when startStep hits the unique constraint", async () => {
+    checkpointMock.getCompletedSteps.mockResolvedValue([]);
+    checkpointMock.startStep.mockRejectedValue(
+      new Error(
+        'duplicate key value violates unique constraint "agent_steps_run_role_iteration_step_key"',
+      ),
+    );
+    const dir = fakeRepo();
+    try {
+      const result = await runCoder(resumeCtx(dir), optsFor(dir), "run-1", 1);
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("parse-spec+edit-repo");
+      expect(result.error).toContain("agent_steps_run_role_iteration_step_key");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
