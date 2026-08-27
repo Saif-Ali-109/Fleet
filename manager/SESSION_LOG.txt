@@ -1,0 +1,10 @@
+# SESSION_LOG.txt — run 2026-08-27T15-45-25-360Z
+
+- Started: 2026-08-27T15:45:32.677Z
+- Repo: saif-ali-109/demo-repo
+- Issue: #26 — Add --json output mode to the CLI
+- Traces: `.runs/2026-08-27T15-45-25-360Z/traces/*.jsonl`
+
+## Timeline
+- `2026-08-27T15:45:32.678Z` run started
+- `2026-08-27T15:45:34.644Z` worktree ready at /home/ain/Desktop/fleet/fleet/.runs/2026-08-27T15-45-25-360Z/worktree base main

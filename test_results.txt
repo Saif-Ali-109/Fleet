@@ -1,0 +1,2456 @@
+
+ RUN  v3.2.7 /home/ain/Desktop/fleet/fleet
+
+stdout | src/sor/__tests__/verify.test.ts
+Test file loaded
+
+stdout | src/sor/__tests__/verify.test.ts
+Database version: PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+
+stderr | src/sor/__tests__/verify.test.ts
+Database check failed: TypeError: Cannot read properties of undefined (reading 'find')
+    at /home/ain/Desktop/fleet/fleet/src/sor/__tests__/verify.test.ts:17:77
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠹ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠹ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ coder: gemini-a rate limited (rpm) → gemini-b
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠹ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created
+[testCmd] no test command detected in /tmp/orch-d11-UbSC4n/wt; falling back to `git status --porcelain` (a clean diff is the only pass condition)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ tester: gemini-c rate limited (rpm) → gemini-d
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[testCmd] no test command detected in /tmp/orch-d11-YtgWQk/wt; falling back to `git status --porcelain` (a clean diff is the only pass condition)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[testCmd] no test command detected in /tmp/orch-d11-I82Qln/wt; falling back to `git status --porcelain` (a clean diff is the only pass condition)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠸ gemini-2.5-flash
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 2  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: failed       loop: 2  [░░░░░░░░░░░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠸ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL
+[testCmd] no test command detected in /tmp/orch-d11-FMVHfJ/wt; falling back to `git status --porcelain` (a clean diff is the only pass condition)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠ analyzer: gemini-a available again → switching back
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure
+[testCmd] no test command detected in /tmp/orch-d11-JYvqiW/wt; falling back to `git status --porcelain` (a clean diff is the only pass condition)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✗ analyzer  [░░░░░░░░░░░░░░░░░░░░]   ✗ failed
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: failed       loop: 1  [░░░░░░░░░░░░░░░░░░░░]
+│  ✗ analyzer  [░░░░░░░░░░░░░░░░░░░░]   ✗ failed
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > keeps hard-failure semantics: a failed worker aborts immediately, no autofix
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: ⏸ paused     loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present
+[testCmd] no test command detected in /tmp/orch-d11-cBAutL/wt; falling back to `git status --porcelain` (a clean diff is the only pass condition)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent
+[testCmd] no test command detected in /tmp/orch-d11-XL4oic/wt; falling back to `git status --porcelain` (a clean diff is the only pass condition)
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠼ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+stderr | src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent
+[callStats] upsert failed (non-fatal): pool.query is not a function
+
+ ❯ src/__tests__/orchestrator.test.ts (10 tests | 6 failed) 154ms
+   ✓ orchestrator SPEC D11 auto-flow > rejects invalid Gemini quota configuration before startup side effects 10ms
+   × orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created 55ms
+     → Cannot read properties of undefined (reading 'split')
+   × orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves 17ms
+     → Cannot read properties of undefined (reading 'split')
+   ✓ orchestrator SPEC D11 auto-flow > fails the run when the reviewer rejects again after the single auto-fix round 21ms
+   × orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL 12ms
+     → Cannot read properties of undefined (reading 'split')
+   × orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure 14ms
+     → Cannot read properties of undefined (reading 'split')
+   ✓ orchestrator SPEC D11 auto-flow > keeps hard-failure semantics: a failed worker aborts immediately, no autofix 3ms
+   × orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present 12ms
+     → Cannot read properties of undefined (reading 'split')
+   × orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent 6ms
+     → Cannot read properties of undefined (reading 'split')
+   ✓ orchestrator SPEC D11 auto-flow > truncates CONTRIBUTING.md content to the 4000-char cap 3ms
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠼ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: ⏸ paused     loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: ⏸ paused     loop: 1  [██████████░░░░░░░░░░]
+│  ✗ analyzer  [░░░░░░░░░░░░░░░░░░░░]   ✗ aborted by user
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: failed       loop: 1  [░░░░░░░░░░░░░░░░░░░░]
+│  ✗ analyzer  [░░░░░░░░░░░░░░░░░░░░]   ✗ aborted by user
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+
+│ ⚠⚠ all Gemini models RPD exhausted for tester — change your API key, then Resume
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ planner   [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: plan         loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ coder     [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ tester    [██████████░░░░░░░░░░] ⠴ gemini-2.5-flash
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: implement    loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ▸ reviewer  [██████████░░░░░░░░░░] ⠴ gemini-2.5-pro
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run test-run ─ acme/widget#7 ─ gemini ────────┐
+│ phase: review       loop: 1  [██████████░░░░░░░░░░]
+│  ✓ analyzer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ planner   [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ coder     [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ tester    [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  ✓ reviewer  [████████████████████]   $0.000 · 0 tok (in 0 / out 0 / cached 0)
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+ ❯ src/__tests__/orchestratorQuota.test.ts (10 tests | 6 failed) 265ms
+   × orchestrator quota event handling > announces model_switch on console, SESSION_LOG, SOR, live state and web feed 93ms
+     → Cannot read properties of undefined (reading 'split')
+   × orchestrator quota event handling > announces model_recovered with the switching-back message 32ms
+     → Cannot read properties of undefined (reading 'split')
+   × orchestrator quota event handling > pauses on all_models_exhausted instead of killing workers, and resume restarts the run 81ms
+     → Cannot read properties of undefined (reading 'split')
+   ✓ orchestrator quota event handling > finalizes failed normally when the user Stops during the pause, writing result.json 6ms
+   ✓ orchestrator quota event handling > collapses consecutive duplicate model ids when reporting fallbacks 1ms
+   × orchestrator quota event handling > logs the fallback line with consecutive duplicates collapsed and skips single-model walks 16ms
+     → Cannot read properties of undefined (reading 'split')
+   × orchestrator quota event handling > unsubscribes when the run ends: post-run events reach nothing 14ms
+     → Cannot read properties of undefined (reading 'split')
+   × orchestrator quota event handling > skips the boot gates entirely for a dry-run even with broken quota env 13ms
+     → Cannot read properties of undefined (reading 'split')
+   ✓ orchestrator quota event handling > fails fast before any side effects when a role chain var is missing on a real run 3ms
+   ✓ orchestrator quota event handling > assertGeminiModelChainConfiguration throws listing the missing role var (stubbed env) 3ms
+ ❯ src/__tests__/audit.test.ts (11 tests | 3 failed) 21ms
+   ✓ toJsonbParam > wraps strings as quoted jsonb scalars 3ms
+   ✓ toJsonbParam > stringifies markdown-ish tool output losslessly 1ms
+   ✓ toJsonbParam > stringifies numbers as jsonb numeric scalars 0ms
+   ✓ toJsonbParam > stringifies booleans as jsonb scalar literals 0ms
+   ✓ toJsonbParam > roundtrips primitives to identical JS values via JSON.parse 0ms
+   ✓ toJsonbParam > passes objects through untouched for pg serialization 0ms
+   ✓ toJsonbParam > passes arrays through untouched for pg serialization 0ms
+   ✓ toJsonbParam > maps null and undefined to null 0ms
+   × appendAuditEvent payload bind > wraps a primitive payload into its jsonb-safe stringified $9 bind 10ms
+     → SOR_KEY_V1 is not set. Set it in .env or export it before using the current key.
+   × appendAuditEvent payload bind > passes object payloads through untouched (bind identity preserved) 2ms
+     → SOR_KEY_V1 is not set. Set it in .env or export it before using the current key.
+   × appendAuditEvent payload bind > signs the raw event, not the coerced bind (hash-chain inputs unchanged) 1ms
+     → SOR_KEY_V1 is not set. Set it in .env or export it before using the current key.
+ ❯ src/sor/__tests__/verify.test.ts (12 tests | 10 failed) 988ms
+   × verifyChain > verifies an empty chain as ok 142ms
+     → expected false to be true // Object.is equality
+   × verifyChain > verifies multiple valid events 80ms
+     → expected false to be true // Object.is equality
+   × verifyChain > detects tampered prev_hash 63ms
+     → expected 1 to be 2 // Object.is equality
+   × verifyChain > detects tampered hash (stored hash doesn't match recomputed) 62ms
+     → expected 1 to be 2 // Object.is equality
+   ✓ verifyChain > detects wrong signing key 69ms
+   × verifyChain > counts events by type correctly 56ms
+     → expected false to be true // Object.is equality
+   × verifyChain > handles null run_id, backend, tool_name, tool_input, tool_output 59ms
+     → expected false to be true // Object.is equality
+   × verifyChain > verifies chain with events that have empty payload 58ms
+     → expected false to be true // Object.is equality
+   ✓ verifyChain > verifies chain where first event has wrong prev_hash (not GENESIS_HASH) 60ms
+   × verifyChain > verifies chain where a middle event is skipped (gap in seq) but hashes are correct 63ms
+     → expected false to be true // Object.is equality
+   × verifyChain > verifies chain where events are out of order in insertion but ordered by seq in query 63ms
+     → expected false to be true // Object.is equality
+   × verifyChain > verifies chain with many events (stress) 152ms
+     → expected false to be true // Object.is equality
+ ✓ src/__tests__/workerMain.e2e.test.ts (5 tests) 7335ms
+   ✓ worker main.ts fork e2e > dryRun job emits canned events, exits 0, and never touches the network  1320ms
+   ✓ worker main.ts fork e2e > provider-backed job against a local OpenAI-compatible stub runs to result + step_finish, exit 0  1345ms
+   ✓ worker main.ts fork e2e > fails promptly when Gemini reservation IPC is unavailable  1363ms
+   ✓ worker main.ts fork e2e > SIGTERM mid-run produces an error event and a nonzero exit  2200ms
+   ✓ worker main.ts fork e2e > malformed job stdin yields an error event and nonzero exit without any model call  1100ms
+ ✓ src/__tests__/fleetMcpStdio.test.ts (7 tests) 8171ms
+   ✓ MCP stdio integration — denied role (coder) over real server > listTools yields no tools for denied role coder  1233ms
+   ✓ MCP stdio integration — denied role (coder) over real server > callTool get_issue is denied for coder  1056ms
+   ✓ MCP stdio integration — denied role (coder) over real server > callTool create_pr is denied for coder even with spoofed _meta role analyzer  1185ms
+   ✓ MCP stdio integration — unknown/unmapped role denies everything > listTools yields nothing and callTool is denied for unmapped role intruder  1618ms
+   ✓ MCP stdio integration — allowed role (analyzer) positive control > listTools exposes exactly the analyzer allowlist  1049ms
+   ✓ MCP stdio integration — allowed role (analyzer) positive control > callTool get_issue executes through gh-backed handler  1037ms
+   ✓ MCP stdio integration — allowed role (analyzer) positive control > callTool create_pr stays denied for analyzer  988ms
+ ✓ src/__tests__/agentRunnerTimeout.test.ts (1 test) 1502ms
+   ✓ runWorker timeout > SIGTERMs the fork on WORKER_TIMEOUT_MS, escalates to SIGKILL after grace, and records the timeout error  1500ms
+ ✓ src/__tests__/workerCheckpoint.test.ts (3 tests) 3356ms
+   ✓ worker resumeFrom checkpoint loading > seeds the conversation from checkpoint.messages instead of constructing prompts  1327ms
+   ✓ worker resumeFrom checkpoint loading > fails fast before any LLM call when the checkpoint file is missing  941ms
+   ✓ worker resumeFrom checkpoint loading > fails fast before any LLM call when the checkpoint file is corrupt  1084ms
+ ✓ src/__tests__/worktree.test.ts (5 tests) 700ms
+ ✓ src/__tests__/fleetTools.test.ts (36 tests) 479ms
+   ✓ bash tool > kills long-running commands at the timeout cap  304ms
+ ✓ src/__tests__/coderCommit.test.ts (13 tests) 466ms
+ ✓ src/git/__tests__/snapshotReader.test.ts (6 tests) 244ms
+stderr | src/__tests__/sorEmitter.test.ts > non-fatal SOR writes > loop survives a sink whose methods throw synchronously
+[sor] tool_call skipped: sink exploded
+
+stderr | src/__tests__/sorEmitter.test.ts > non-fatal SOR writes > loop survives a sink whose methods throw synchronously
+[sor] tool_result skipped: sink exploded
+
+ ✓ src/__tests__/sorEmitter.test.ts (15 tests) 233ms
+ ✓ src/__tests__/mcp-server.test.ts (18 tests) 221ms
+ ✓ src/__tests__/fleetLoop.test.ts (42 tests) 130ms
+ ✓ src/__tests__/analytics.test.ts (6 tests) 141ms
+ ✓ src/__tests__/hiring.test.ts (10 tests) 121ms
+ ✓ src/__tests__/clientRepoCase.test.ts (3 tests) 117ms
+ ✓ src/__tests__/checkpoint.test.ts (7 tests) 135ms
+ ✓ src/__tests__/agentRunner.test.ts (37 tests) 15380ms
+   ✓ runWorker > forks ONE JSON job into the worker and reads the answer back from the redirected trace stream  352ms
+   ✓ runWorker > threads opts.extraTask through the job ctx verbatim  363ms
+   ✓ runWorker > walks FLEET_PROVIDERS on runtime failure and records every attempt with its provider  844ms
+   ✓ runWorker > keeps an explicitly selected provider authoritative over FLEET_PROVIDERS  353ms
+   ✓ runWorker > does not validate Gemini quota configuration for an explicitly selected non-Gemini provider  447ms
+   ✓ runWorker Gemini quota chain walk > switches to the fallback on an rpm block and succeeds without a recovery event  756ms
+   ✓ runWorker Gemini quota chain walk > restarts the chain from the top after a capped sleep until the primary recovers  2527ms
+   ✓ runWorker Gemini quota chain walk > pauses on all-RPD instead of failing, then resumes from the chain top seeded with the checkpoint  1631ms
+   ✓ runWorker Gemini quota chain walk > re-enters the pause (loop-safe) when the resumed key is exhausted again  2842ms
+   ✓ runWorker Gemini quota chain walk > finalizes failed through the normal path when the user Stops during the pause  788ms
+   ✓ runWorker Gemini quota chain walk > restarts from the top without ctx.resumeFrom when no checkpoint exists on disk  1544ms
+   ✓ runWorker Gemini quota chain walk > stops immediately with the raw error on a non-temporary unknown failure  318ms
+   ✓ runWorker Gemini quota chain walk > falls back on a 503 HTTP status error and succeeds on the next model  709ms
+   ✓ runWorker Gemini quota chain walk > exhausts all models when every one returns a 503 HTTP status error  658ms
+   ✓ runWorker Gemini quota chain walk > falls back on a 500 HTTP status error the same way as 503  803ms
+   ✓ runWorker Gemini quota chain walk > keeps the openrouter walk single-model and quota-event-free  356ms
+stdout | src/__tests__/summaryReport.test.ts > summaryReport MEMORY.txt merge > generateMemory merges into an existing file, preserving hand-curated sections
+[generate-memory] wrote /tmp/memory-merge-yD9EM3/manager/MEMORY.txt (3 migrations applied)
+
+stdout | src/__tests__/summaryReport.test.ts > summaryReport MEMORY.txt merge > generateMemory falls back to full overwrite when the file lacks delimiters
+[generate-memory] wrote /tmp/memory-fallback-ZoHsr4/manager/MEMORY.txt (3 migrations applied)
+
+ ✓ src/__tests__/summaryReport.test.ts (6 tests) 42ms
+ ✓ src/__tests__/modelPolicy.test.ts (32 tests) 49ms
+ ✓ src/__tests__/providersRegistry.test.ts (24 tests) 43ms
+ ✓ src/__tests__/snapshotReaderEnv.test.ts (10 tests) 51ms
+ ✓ src/__tests__/sessionLog.test.ts (5 tests) 31ms
+ ✓ src/sor/__tests__/signer.test.ts (27 tests) 22ms
+ ✓ src/__tests__/indexShutdown.test.ts (14 tests) 43ms
+stdout | Object.handleSignal (/home/ain/Desktop/fleet/fleet/src/index.ts:82:17)
+[shutdown] SIGTERM received again — forcing exit.
+
+ ✓ src/__tests__/fleetMcpAllowlist.test.ts (25 tests) 16ms
+ ✓ src/sor/__tests__/ingest.test.ts (13 tests) 16ms
+
+┌─ Fleet ─ run 2026-08-27T03-33-32-280Z ─ Saif-Ali-109/Demo-Repo#26 ─ openrouter ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ▸ analyzer  [██████████░░░░░░░░░░] ⠇ gemini-2.5-pro
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run 2026-08-27T03-33-32-280Z ─ Saif-Ali-109/Demo-Repo#26 ─ openrouter ────────┐
+│ phase: analyze      loop: 1  [██████████░░░░░░░░░░]
+│  ✗ analyzer  [░░░░░░░░░░░░░░░░░░░░]   ✗ aborted by user
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Fleet ─ run 2026-08-27T03-33-32-280Z ─ Saif-Ali-109/Demo-Repo#26 ─ openrouter ────────┐
+│ phase: failed       loop: 1  [░░░░░░░░░░░░░░░░░░░░]
+│  ✗ analyzer  [░░░░░░░░░░░░░░░░░░░░]   ✗ aborted by user
+│  · planner   [░░░░░░░░░░░░░░░░░░░░]   
+│  · coder     [░░░░░░░░░░░░░░░░░░░░]   
+│  · tester    [░░░░░░░░░░░░░░░░░░░░]   
+│  · reviewer  [░░░░░░░░░░░░░░░░░░░░]   
+│  · pr        [░░░░░░░░░░░░░░░░░░░░]   
+└──────────────────────────────────────────────────────────────┘
+ ✓ src/__tests__/shutdownFinalize.test.ts (1 test) 34ms
+ ✓ src/__tests__/detectTestCommand.test.ts (7 tests) 17ms
+ ✓ src/__tests__/fleetSkills.test.ts (31 tests) 21ms
+ ✓ src/__tests__/ghListOpenIssues.test.ts (5 tests) 20ms
+ ✓ src/gemini/quotaConfig.test.ts (20 tests) 20ms
+ ✓ src/utils/json.test.ts (4 tests) 16ms
+ ✓ src/__tests__/daemon.test.ts (17 tests) 21ms
+ ✓ src/__tests__/modelDefaults.test.ts (5 tests) 18ms
+ ✓ src/__tests__/ghLifecycle.test.ts (10 tests) 14ms
+stderr | src/__tests__/extractJson.test.ts > extractJson > truncation handling (some providers cap output tokens) > salvages an unclosed object by appending closing braces
+[json] Salvaged truncated JSON via extractJson
+
+stderr | src/__tests__/extractJson.test.ts > extractJson > truncation handling (some providers cap output tokens) > salvages a deeply-nested object missing its closing braces
+[json] Salvaged truncated JSON via extractJson
+
+stderr | src/__tests__/extractJson.test.ts > extractJson > truncation handling (some providers cap output tokens) > salvages an object truncated mid-string-value by appending a closing quote + brace
+[json] Salvaged truncated JSON via extractJson
+
+stderr | src/__tests__/extractJson.test.ts > extractJson > truncation handling (some providers cap output tokens) > salvages a FixSpec-shaped object whose last string value is truncated
+[json] Salvaged truncated JSON via extractJson
+
+stderr | src/__tests__/extractJson.test.ts > extractJson > truncation handling (some providers cap output tokens) > salvages a nested object missing both inner and outer braces
+[json] Salvaged truncated JSON via extractJson
+
+stderr | src/__tests__/extractJson.test.ts > extractJson > truncation handling (some providers cap output tokens) > salvages a complete value followed by a truncated string then missing brace
+[json] Salvaged truncated JSON via extractJson
+
+stderr | src/__tests__/extractJson.test.ts > extractJson > truncation handling (some providers cap output tokens) > salvages an object whose array value is truncated mid-string
+[json] Salvaged truncated JSON via extractJson
+
+ ✓ src/__tests__/extractJson.test.ts (25 tests) 30ms
+ ✓ src/__tests__/webhook.test.ts (19 tests) 28ms
+ ✓ src/__tests__/fleetAgents.test.ts (17 tests | 6 skipped) 39ms
+ ✓ src/__tests__/github.test.ts (18 tests) 16ms
+ ✓ src/__tests__/migrations.test.ts (9 tests) 18ms
+ ✓ src/__tests__/providersBashExitCode.test.ts (8 tests) 10ms
+stderr | src/__tests__/callStats.test.ts > callStats > upsertAgentCallStats > does not throw on pool.query rejection
+[callStats] upsert failed (non-fatal): connection lost
+
+stderr | src/__tests__/callStats.test.ts > callStats > sessionCallTotals > returns zeros on error
+[callStats] totals query failed (non-fatal): table missing
+
+ ✓ src/__tests__/callStats.test.ts (4 tests) 19ms
+ ✓ src/__tests__/quotaConfig.test.ts (4 tests) 13ms
+ ✓ src/git/__tests__/pruneOldRunDirs.test.ts (3 tests) 13ms
+ ✓ src/__tests__/quotaEvents.test.ts (6 tests) 15ms
+ ✓ src/__tests__/router.test.ts (12 tests) 17ms
+ ✓ src/gemini/quotaCoordinator.test.ts (4 tests) 8ms
+ ✓ src/__tests__/scoutTracker.test.ts (6 tests) 14ms
+ ✓ src/__tests__/callCounting.test.ts (5 tests) 8ms
+ ✓ src/__tests__/testerBashMatch.test.ts (5 tests) 16ms
+ ✓ src/__tests__/quotaCoordinator.test.ts (3 tests) 9ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/__tests__/dashboard.test.ts [ src/__tests__/dashboard.test.ts ]
+Error: Could not extract formatAgentEvent from source
+ ❯ src/__tests__/dashboard.test.ts:444:23
+    442|       /function formatAgentEvent\(ev\) \{[\s\S]*?^  \}/m,
+    443|     );
+    444|     if (!match) throw new Error("Could not extract formatAgentEvent fr…
+       |                       ^
+    445|     // formatAgentEvent calls the fmtErr client helper; extract it too…
+    446|     // evaluated function sees the real source implementation.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/26]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 25 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/__tests__/audit.test.ts > appendAuditEvent payload bind > wraps a primitive payload into its jsonb-safe stringified $9 bind
+Error: SOR_KEY_V1 is not set. Set it in .env or export it before using the current key.
+ ❯ getCurrentKey src/sor/keyRegistry.ts:33:11
+     31|   const key = getKey(keyId);
+     32|   if (key === undefined) {
+     33|     throw new Error(
+       |           ^
+     34|       `SOR_KEY_${keyId.toUpperCase().replace(/[^A-Z0-9]/g, "_")} is no…
+     35|         "Set it in .env or export it before using the current key."
+ ❯ appendAuditEvent src/db/audit.ts:73:15
+ ❯ src/__tests__/audit.test.ts:103:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/26]⎯
+
+ FAIL  src/__tests__/audit.test.ts > appendAuditEvent payload bind > passes object payloads through untouched (bind identity preserved)
+Error: SOR_KEY_V1 is not set. Set it in .env or export it before using the current key.
+ ❯ getCurrentKey src/sor/keyRegistry.ts:33:11
+     31|   const key = getKey(keyId);
+     32|   if (key === undefined) {
+     33|     throw new Error(
+       |           ^
+     34|       `SOR_KEY_${keyId.toUpperCase().replace(/[^A-Z0-9]/g, "_")} is no…
+     35|         "Set it in .env or export it before using the current key."
+ ❯ appendAuditEvent src/db/audit.ts:73:15
+ ❯ src/__tests__/audit.test.ts:115:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/26]⎯
+
+ FAIL  src/__tests__/audit.test.ts > appendAuditEvent payload bind > signs the raw event, not the coerced bind (hash-chain inputs unchanged)
+Error: SOR_KEY_V1 is not set. Set it in .env or export it before using the current key.
+ ❯ getCurrentKey src/sor/keyRegistry.ts:33:11
+     31|   const key = getKey(keyId);
+     32|   if (key === undefined) {
+     33|     throw new Error(
+       |           ^
+     34|       `SOR_KEY_${keyId.toUpperCase().replace(/[^A-Z0-9]/g, "_")} is no…
+     35|         "Set it in .env or export it before using the current key."
+ ❯ appendAuditEvent src/db/audit.ts:73:15
+ ❯ src/__tests__/audit.test.ts:126:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/26]⎯
+
+ FAIL  src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > completes with zero human waits: review auto-approved in SOR, PR created
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestrator.test.ts:269:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/26]⎯
+
+ FAIL  src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fires exactly one coder auto-fix round on first rejection, then approves
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestrator.test.ts:288:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/26]⎯
+
+ FAIL  src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > fails the run when the pr worker fails and no fallback recovers a PR URL
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestrator.test.ts:331:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/26]⎯
+
+ FAIL  src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > still completes when the manager fallback recovers a PR URL after a pr worker failure
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestrator.test.ts:381:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/26]⎯
+
+ FAIL  src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > injects repo CONTRIBUTING.md into coder and pr tasks when present
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestrator.test.ts:421:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/26]⎯
+
+ FAIL  src/__tests__/orchestrator.test.ts > orchestrator SPEC D11 auto-flow > falls back to conventional-commit guidance when CONTRIBUTING.md is absent
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestrator.test.ts:434:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/26]⎯
+
+ FAIL  src/__tests__/orchestratorQuota.test.ts > orchestrator quota event handling > announces model_switch on console, SESSION_LOG, SOR, live state and web feed
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestratorQuota.test.ts:286:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/26]⎯
+
+ FAIL  src/__tests__/orchestratorQuota.test.ts > orchestrator quota event handling > announces model_recovered with the switching-back message
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestratorQuota.test.ts:332:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/26]⎯
+
+ FAIL  src/__tests__/orchestratorQuota.test.ts > orchestrator quota event handling > pauses on all_models_exhausted instead of killing workers, and resume restarts the run
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestratorQuota.test.ts:414:23
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/26]⎯
+
+ FAIL  src/__tests__/orchestratorQuota.test.ts > orchestrator quota event handling > logs the fallback line with consecutive duplicates collapsed and skips single-model walks
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestratorQuota.test.ts:481:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/26]⎯
+
+ FAIL  src/__tests__/orchestratorQuota.test.ts > orchestrator quota event handling > unsubscribes when the run ends: post-run events reach nothing
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestratorQuota.test.ts:497:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/26]⎯
+
+ FAIL  src/__tests__/orchestratorQuota.test.ts > orchestrator quota event handling > skips the boot gates entirely for a dry-run even with broken quota env
+TypeError: Cannot read properties of undefined (reading 'split')
+ ❯ src/tui/dashboard.ts:58:27
+     56|   const rows = ROLES.map((r) => {
+     57|     const a = d.agents[r];
+     58|     const model = a.model.split("/").pop() ?? "";
+       |                           ^
+     59|     const sp = spinner(a.state);
+     60|     const bar = a.state === "done" ? renderBar(1) : a.state === "runni…
+ ❯ renderDashboard src/tui/dashboard.ts:56:22
+ ❯ render src/orchestrator.ts:152:45
+ ❯ pushState src/orchestrator.ts:169:5
+ ❯ Module.runOrchestrator src/orchestrator.ts:514:5
+ ❯ src/__tests__/orchestratorQuota.test.ts:517:23
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > verifies an empty chain as ok
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:167:24
+    165| 
+    166|     const result2 = await verifyChainFromAudit(pool);
+    167|     expect(result2.ok).toBe(true);
+       |                        ^
+    168|     expect(result2.firstBadSeq).toBeNull();
+    169|     expect(result2.total).toBe(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > verifies multiple valid events
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:249:23
+    247| 
+    248|     const result = await verifyChainFromAudit(pool);
+    249|     expect(result.ok).toBe(true);
+       |                       ^
+    250|     expect(result.firstBadSeq).toBeNull();
+    251|     expect(result.total).toBe(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > detects tampered prev_hash
+AssertionError: expected 1 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ src/sor/__tests__/verify.test.ts:348:32
+    346|     const result = await verifyChainFromAudit(pool);
+    347|     expect(result.ok).toBe(false);
+    348|     expect(result.firstBadSeq).toBe(2); // because event2's prev_hash …
+       |                                ^
+    349|     expect(result.total).toBe(2);
+    350|     expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > detects tampered hash (stored hash doesn't match recomputed)
+AssertionError: expected 1 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ src/sor/__tests__/verify.test.ts:445:32
+    443|     const result = await verifyChainFromAudit(pool);
+    444|     expect(result.ok).toBe(false);
+    445|     expect(result.firstBadSeq).toBe(2); // because event2's hash is wr…
+       |                                ^
+    446|     expect(result.total).toBe(2);
+    447|     expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > counts events by type correctly
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:561:23
+    559| 
+    560|     const result = await verifyChainFromAudit(pool);
+    561|     expect(result.ok).toBe(true);
+       |                       ^
+    562|     expect(result.total).toBe(5);
+    563|     expect(result.counts).toEqual({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > handles null run_id, backend, tool_name, tool_input, tool_output
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:619:23
+    617| 
+    618|     const result = await verifyChainFromAudit(pool);
+    619|     expect(result.ok).toBe(true);
+       |                       ^
+    620|     expect(result.total).toBe(1);
+    621|     expect(result.counts).toEqual({ wakeup: 1 });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > verifies chain with events that have empty payload
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:672:23
+    670| 
+    671|     const result = await verifyChainFromAudit(pool);
+    672|     expect(result.ok).toBe(true);
+       |                       ^
+    673|     expect(result.total).toBe(1);
+    674|     expect(result.counts).toEqual({ tool_call: 1 });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > verifies chain where a middle event is skipped (gap in seq) but hashes are correct
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:823:23
+    821|     // event1's prev_hash = GENESIS_HASH, event1's hash = hash1.
+    822|     // event2's prev_hash = hash1 (which is correct), event2's hash = …
+    823|     expect(result.ok).toBe(true);
+       |                       ^
+    824|     expect(result.firstBadSeq).toBeNull();
+    825|     expect(result.total).toBe(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > verifies chain where events are out of order in insertion but ordered by seq in query
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:919:23
+    917|     // However, the event2 (wakeup) is first, then event1 (tool_call).…
+    918|     // So it should pass.
+    919|     expect(result.ok).toBe(true);
+       |                       ^
+    920|     expect(result.firstBadSeq).toBeNull();
+    921|     expect(result.total).toBe(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/26]⎯
+
+ FAIL  src/sor/__tests__/verify.test.ts > verifyChain > verifies chain with many events (stress)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/sor/__tests__/verify.test.ts:981:23
+    979| 
+    980|     const result = await verifyChainFromAudit(pool);
+    981|     expect(result.ok).toBe(true);
+       |                       ^
+    982|     expect(result.firstBadSeq).toBeNull();
+    983|     expect(result.total).toBe(numEvents);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/26]⎯
+
+
+ Test Files  5 failed | 50 passed (55)
+      Tests  25 failed | 630 passed | 6 skipped (661)
+   Start at  08:33:12
+   Duration  23.00s (transform 2.23s, setup 0ms, collect 6.38s, tests 40.93s, environment 21ms, prepare 7.24s)
+

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.runs/
+*.log
+.env
+.env.*
+!.env.example
+PLAN.md
+directory.md
