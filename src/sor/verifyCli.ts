@@ -6,10 +6,13 @@ import { runSorVerify } from "./verify.ts";
 
 let code: number;
 try {
-  code = await runSorVerify(pool);
+	code = await runSorVerify(pool);
 } catch (err: unknown) {
-  console.error("[sor] verify failed:", err instanceof Error ? err.message : String(err));
-  code = 1;
+	console.error(
+		"[sor] verify failed:",
+		err instanceof Error ? err.message : String(err),
+	);
+	code = 1;
 }
 await pool.end();
 process.exit(code);

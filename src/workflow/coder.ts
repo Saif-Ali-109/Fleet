@@ -13,43 +13,43 @@ const exec = promisify(execFile);
 const ROLE: Role = "coder";
 
 const CODERS_STEPS = [
-  "parse-spec",
-  "edit-repo",
-  "run-tests",
-  "commit",
-  "verify-diff",
+	"parse-spec",
+	"edit-repo",
+	"run-tests",
+	"commit",
+	"verify-diff",
 ] as const;
 
 type CoderStep = (typeof CODERS_STEPS)[number];
 
 /** Inputs the Coder workflow needs from the orchestrator (Decision 5c). */
 export interface CoderOptions {
-  /** Base implementation task handed to the coder worker (issue + plan context). */
-  task: string;
-  /** Per-role model policy (from `policyFor("coder", backend)`). */
-  policy: RolePolicy;
-  /** The worktree the worker edits and where commit/verify run. */
-  worktreeDir: string;
-  /** Name of the fix branch to commit onto. */
-  branch: string;
-  /** GitHub issue number (context only; factual commit messages must not carry `Fix #N`). Optional. */
-  issueNumber?: number;
-  /** Factual commit message override; defaults to a generic `fix: orchestrated change on <branch>`. */
-  commitMessage?: string;
-  /** Test command the coder worker must run in the worktree (shell string). Detected from the repo; defaults to `git status --porcelain`. */
-  testCommand?: string;
-  /** Live streaming hooks (forwarded to runWorker). */
-  onText?: (chunk: string) => void;
-  onEvent?: (ev: Record<string, string | unknown>) => void;
+	/** Base implementation task handed to the coder worker (issue + plan context). */
+	task: string;
+	/** Per-role model policy (from `policyFor("coder", backend)`). */
+	policy: RolePolicy;
+	/** The worktree the worker edits and where commit/verify run. */
+	worktreeDir: string;
+	/** Name of the fix branch to commit onto. */
+	branch: string;
+	/** GitHub issue number (context only; factual commit messages must not carry `Fix #N`). Optional. */
+	issueNumber?: number;
+	/** Factual commit message override; defaults to a generic `fix: orchestrated change on <branch>`. */
+	commitMessage?: string;
+	/** Test command the coder worker must run in the worktree (shell string). Detected from the repo; defaults to `git status --porcelain`. */
+	testCommand?: string;
+	/** Live streaming hooks (forwarded to runWorker). */
+	onText?: (chunk: string) => void;
+	onEvent?: (ev: Record<string, string | unknown>) => void;
 }
 
 export interface CoderResult {
-  ok: boolean;
-  error?: string;
-  /** Per-spawn AgentResults in phase order (for action logging / cost attribution). */
-  results?: AgentResult[];
-  /** Aggregated AgentResult for the whole coder phase (role = "coder"). */
-  agentResult?: AgentResult;
+	ok: boolean;
+	error?: string;
+	/** Per-spawn AgentResults in phase order (for action logging / cost attribution). */
+	results?: AgentResult[];
+	/** Aggregated AgentResult for the whole coder phase (role = "coder"). */
+	agentResult?: AgentResult;
 }
 
 /**
@@ -60,10 +60,10 @@ export interface CoderResult {
  * one-spawn-per-step mapping.
  */
 const CODER_PHASES = [
-  { steps: ["parse-spec", "edit-repo"], kind: "parse-edit" as const },
-  { steps: ["run-tests"], kind: "run-tests" as const },
-  { steps: ["commit"], kind: "commit" as const },
-  { steps: ["verify-diff"], kind: "verify-diff" as const },
+	{ steps: ["parse-spec", "edit-repo"], kind: "parse-edit" as const },
+	{ steps: ["run-tests"], kind: "run-tests" as const },
+	{ steps: ["commit"], kind: "commit" as const },
+	{ steps: ["verify-diff"], kind: "verify-diff" as const },
 ];
 
 /** Run the coder phase as checkpointed phases. Steps already marked success for
@@ -72,63 +72,75 @@ const CODER_PHASES = [
  * re-run resumes.
  */
 export async function runCoder(
-  ctx: RunContext,
-  opts: CoderOptions,
-  runId: string,
-  iteration: number,
+	ctx: RunContext,
+	opts: CoderOptions,
+	runId: string,
+	iteration: number,
 ): Promise<CoderResult> {
-  const completed = await safeCompleted(runId, iteration);
-  const results: AgentResult[] = [];
-  for (const phase of CODER_PHASES) {
-    const pending = phase.steps.filter((s) => !completed.includes(s));
-    if (pending.length === 0) continue;
-    let ids: string[] = [];
-    try {
-      ids = await Promise.all(
-        pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as CoderStep)),
-      );
-      await runPhase(ctx, opts, phase.kind, results);
-      await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      await Promise.all(
-        ids.map((id, i) => checkpoint.markStepFailed(id, `${pending[i]}: ${message}`)),
-      );
-      return {
-        ok: false,
-        error: `${pending.join("+")}: ${message}`,
-        results,
-        agentResult: results.length > 0 ? aggregateAgentResults(results) : undefined,
-      };
-    }
-  }
-  return {
-    ok: true,
-    results,
-    agentResult: results.length > 0 ? aggregateAgentResults(results) : undefined,
-  };
+	const completed = await safeCompleted(runId, iteration);
+	const results: AgentResult[] = [];
+	for (const phase of CODER_PHASES) {
+		const pending = phase.steps.filter((s) => !completed.includes(s));
+		if (pending.length === 0) continue;
+		let ids: string[] = [];
+		try {
+			ids = await Promise.all(
+				pending.map((s) =>
+					checkpoint.startStep(runId, ROLE, iteration, s as CoderStep),
+				),
+			);
+			await runPhase(ctx, opts, phase.kind, results);
+			await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			await Promise.all(
+				ids.map((id, i) =>
+					checkpoint.markStepFailed(id, `${pending[i]}: ${message}`),
+				),
+			);
+			return {
+				ok: false,
+				error: `${pending.join("+")}: ${message}`,
+				results,
+				agentResult:
+					results.length > 0 ? aggregateAgentResults(results) : undefined,
+			};
+		}
+	}
+	return {
+		ok: true,
+		results,
+		agentResult:
+			results.length > 0 ? aggregateAgentResults(results) : undefined,
+	};
 }
 
 async function runPhase(
-  ctx: RunContext,
-  opts: CoderOptions,
-  kind: (typeof CODER_PHASES)[number]["kind"],
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: CoderOptions,
+	kind: (typeof CODER_PHASES)[number]["kind"],
+	results: AgentResult[],
 ): Promise<void> {
-  switch (kind) {
-    case "parse-edit":
-      await runParseEdit(ctx, opts, results);
-      return;
-    case "run-tests":
-      await runTests(ctx, opts, "run-tests", results);
-      return;
-    case "commit":
-      await commitChanges(ctx, opts, "commit");
-      return;
-    case "verify-diff":
-      await worker(ctx, opts, "verify-diff", "verify the diff matches the plan expectations", results);
-      return;
-  }
+	switch (kind) {
+		case "parse-edit":
+			await runParseEdit(ctx, opts, results);
+			return;
+		case "run-tests":
+			await runTests(ctx, opts, "run-tests", results);
+			return;
+		case "commit":
+			await commitChanges(ctx, opts, "commit");
+			return;
+		case "verify-diff":
+			await worker(
+				ctx,
+				opts,
+				"verify-diff",
+				"verify the diff matches the plan expectations",
+				results,
+			);
+			return;
+	}
 }
 
 /**
@@ -139,18 +151,18 @@ async function runPhase(
  * both steps failed.
  */
 async function runParseEdit(
-  ctx: RunContext,
-  opts: CoderOptions,
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: CoderOptions,
+	results: AgentResult[],
 ): Promise<void> {
-  const task =
-    `${opts.task}` +
-    `\n\nParse the fix spec and plan against the repository, then implement the plan in the worktree.`;
-  const res = await runWorker(ROLE, task, ctx, opts.policy, {
-    onText: opts.onText,
-    onEvent: opts.onEvent,
-  });
-  results.push(res);
+	const task =
+		`${opts.task}` +
+		`\n\nParse the fix spec and plan against the repository, then implement the plan in the worktree.`;
+	const res = await runWorker(ROLE, task, ctx, opts.policy, {
+		onText: opts.onText,
+		onEvent: opts.onEvent,
+	});
+	results.push(res);
 }
 
 /**
@@ -159,45 +171,45 @@ async function runParseEdit(
  * orchestrator owns all iteration policy via its own auto-fix cap.
  */
 async function worker(
-  ctx: RunContext,
-  opts: CoderOptions,
-  step: CoderStep,
-  instruction: string,
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: CoderOptions,
+	step: CoderStep,
+	instruction: string,
+	results: AgentResult[],
 ): Promise<AgentResult> {
-  const res = await runWorker(
-    ROLE,
-    `${opts.task}\n\nWorkflow step "${step}": ${instruction}`,
-    ctx,
-    opts.policy,
-    {
-      onText: opts.onText,
-      onEvent: opts.onEvent,
-    },
-  );
-  results.push(res);
-  return res;
+	const res = await runWorker(
+		ROLE,
+		`${opts.task}\n\nWorkflow step "${step}": ${instruction}`,
+		ctx,
+		opts.policy,
+		{
+			onText: opts.onText,
+			onEvent: opts.onEvent,
+		},
+	);
+	results.push(res);
+	return res;
 }
 
 /** Instruct the coder worker to run the repo's real test command and verify it passes (not a no‑op). */
 async function runTests(
-  ctx: RunContext,
-  opts: CoderOptions,
-  step: CoderStep,
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: CoderOptions,
+	step: CoderStep,
+	results: AgentResult[],
 ): Promise<void> {
-  const cmd = opts.testCommand ?? "git status --porcelain";
-  const res = await worker(
-    ctx,
-    opts,
-    step,
-    `run the test suite with \`${cmd}\` in the worktree (${opts.worktreeDir}); ` +
-      `fix any failing tests; \`${cmd}\` MUST exit 0 with all tests passing before this phase completes.`,
-    results,
-  );
-  if (!res.ok) {
-    throw new Error(res.error ?? "coder test-verification worker failed");
-  }
+	const cmd = opts.testCommand ?? "git status --porcelain";
+	const res = await worker(
+		ctx,
+		opts,
+		step,
+		`run the test suite with \`${cmd}\` in the worktree (${opts.worktreeDir}); ` +
+			`fix any failing tests; \`${cmd}\` MUST exit 0 with all tests passing before this phase completes.`,
+		results,
+	);
+	if (!res.ok) {
+		throw new Error(res.error ?? "coder test-verification worker failed");
+	}
 }
 
 /**
@@ -206,70 +218,80 @@ async function runTests(
  * (and usually doesn't).  Using glob magic ensures nested dirs are excluded.
  */
 const EXCLUDE_ARTIFACTS = [
-  ":(exclude,glob)**/AGENTS.md",
-  ":(exclude,glob)**/__pycache__/**",
-  ":(exclude,glob)**/__pycache__",
-  ":(exclude).pytest_cache",
-  ":(exclude).venv",
+	":(exclude,glob)**/AGENTS.md",
+	":(exclude,glob)**/__pycache__/**",
+	":(exclude,glob)**/__pycache__",
+	":(exclude).pytest_cache",
+	":(exclude).venv",
 ] as const;
 
 /**
  * Pull the most useful text out of an `execFile` rejection
  */
 export function execErrorText(e: unknown): string {
-  if (e instanceof Error) {
-    const err = e as Error & { stdout?: unknown; stderr?: unknown };
-    if (typeof err.stdout === "string" && err.stdout.trim()) return err.stdout.trim();
-    if (typeof err.stderr === "string" && err.stderr.trim()) return err.stderr.trim();
-    return err.message;
-  }
-  return String(e);
+	if (e instanceof Error) {
+		const err = e as Error & { stdout?: unknown; stderr?: unknown };
+		if (typeof err.stdout === "string" && err.stdout.trim())
+			return err.stdout.trim();
+		if (typeof err.stderr === "string" && err.stderr.trim())
+			return err.stderr.trim();
+		return err.message;
+	}
+	return String(e);
 }
 
 /** Execute the test suite in the worktree (git/exec operation). */
 async function commitChanges(
-  ctx: RunContext,
-  opts: CoderOptions,
-  _step: CoderStep,
+	ctx: RunContext,
+	opts: CoderOptions,
+	_step: CoderStep,
 ): Promise<void> {
-  if (ctx.dryRun) return;
-  const gitArgs = ["-C", opts.worktreeDir];
-  const { stdout } = await exec("git", [...gitArgs, "status", "--porcelain"], {
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  if (!stdout.trim()) {
-    return; // clean worktree — nothing to commit; don't fail the phase
-  }
-  await exec(
-    "git",
-    [...gitArgs, "add", "-A", "--", ".", ...EXCLUDE_ARTIFACTS],
-    { maxBuffer: 32 * 1024 * 1024,
-  });
-  // If the only changes were excluded artifacts, nothing is staged — skip.
-  const { stdout: staged } = await exec("git", [...gitArgs, "diff", "--cached", "--name-only"], {
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  if (!staged.trim()) {
-    return; // no staged content — only untracked artifacts present
-  }
-  const message = opts.commitMessage ?? `fix: orchestrated change on ${opts.branch}`;
-  try {
-    await exec("git", [...gitArgs, "commit", "-m", message], {
-      maxBuffer: 32 * 1024 * 1024,
-    });
-  } catch (e) {
-    throw new Error(`git commit failed: ${execErrorText(e)}`);
-  }
+	if (ctx.dryRun) return;
+	const gitArgs = ["-C", opts.worktreeDir];
+	const { stdout } = await exec("git", [...gitArgs, "status", "--porcelain"], {
+		maxBuffer: 32 * 1024 * 1024,
+	});
+	if (!stdout.trim()) {
+		return; // clean worktree — nothing to commit; don't fail the phase
+	}
+	await exec(
+		"git",
+		[...gitArgs, "add", "-A", "--", ".", ...EXCLUDE_ARTIFACTS],
+		{ maxBuffer: 32 * 1024 * 1024 },
+	);
+	// If the only changes were excluded artifacts, nothing is staged — skip.
+	const { stdout: staged } = await exec(
+		"git",
+		[...gitArgs, "diff", "--cached", "--name-only"],
+		{
+			maxBuffer: 32 * 1024 * 1024,
+		},
+	);
+	if (!staged.trim()) {
+		return; // no staged content — only untracked artifacts present
+	}
+	const message =
+		opts.commitMessage ?? `fix: orchestrated change on ${opts.branch}`;
+	try {
+		await exec("git", [...gitArgs, "commit", "-m", message], {
+			maxBuffer: 32 * 1024 * 1024,
+		});
+	} catch (e) {
+		throw new Error(`git commit failed: ${execErrorText(e)}`);
+	}
 }
 
 /** `getCompletedSteps` that is safe for dry-run/DB-unavailable contexts. */
-async function safeCompleted(runId: string, iteration: number): Promise<string[]> {
-  try {
-    return await checkpoint.getCompletedSteps(runId, ROLE, iteration);
-  } catch {
-    return [];
-  }
+async function safeCompleted(
+	runId: string,
+	iteration: number,
+): Promise<string[]> {
+	try {
+		return await checkpoint.getCompletedSteps(runId, ROLE, iteration);
+	} catch {
+		return [];
+	}
 }
 
-export { CODERS_STEPS, EXCLUDE_ARTIFACTS, commitChanges };
 export type { CoderStep };
+export { CODERS_STEPS, commitChanges, EXCLUDE_ARTIFACTS };

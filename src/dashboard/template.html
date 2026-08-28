@@ -44,6 +44,9 @@ header h1 { font-size: 16px; margin: 0; }
 main { display: grid; grid-template-columns: 340px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr); gap: 16px;
   padding: 16px 20px; flex: 1 1 auto; min-height: 0; }
+.panel { background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; display: flex; flex-direction: column;
+  min-height: 0; }
 .rail { min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   display: flex; flex-direction: column; gap: 12px; }
 .rail > .panel { flex: none; }
@@ -59,9 +62,6 @@ main { display: grid; grid-template-columns: 340px minmax(0, 1fr);
   .stream-scroll { flex: none; height: 52vh; }
   #lower { overflow-y: visible; flex: none; }
 }
-.panel { background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 12px; display: flex; flex-direction: column;
-  min-height: 0; }
 .panel h2 { margin: 0 0 10px; font-size: 12px; color: var(--muted);
   text-transform: uppercase; letter-spacing: .05em; }
 .card { background: var(--panel2); border: 1px solid var(--border);
@@ -167,37 +167,37 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
 </header>
 <div id="ghbanner" class="gh-banner" hidden>
   <span class="ghb-title">Not signed in to GitHub</span>
-  <button id="ghlogin">Log in</button>
-  <button id="ghrecheck">Recheck</button>
+  <button id="ghlogin" type="button">Log in</button>
+  <button id="ghrecheck" type="button">Recheck</button>
   <span class="meta" id="gherr" style="flex-basis:100%"></span>
   <div id="ghcode" hidden>
     <span>Enter this code at</span>
     <a id="ghcodeuri" href="https://github.com/login/device" target="_blank" rel="noopener">github.com/login/device</a>
     <code id="ghuserCode" style="font-size:18px;font-weight:700"></code>
-    <button id="ghcodecopy">Copy code</button>
+    <button id="ghcodecopy" type="button">Copy code</button>
     <span class="meta">…or run <code>gh auth login</code> in a terminal.</span>
   </div>
 </div>
 <div id="quotabanner" class="gh-banner" hidden>
   <span class="ghb-title" id="quotabanner-text"></span>
-  <button id="resumebtn" hidden>✓ Changed — Resume</button>
+  <button id="resumebtn" type="button" hidden>✓ Changed — Resume</button>
 </div>
 <div id="toasts"></div>
 <div id="startpanel" class="gh-banner" style="background:rgba(79,195,247,.08);border-bottom-color:var(--accent)">
   <span class="ghb-title" style="color:var(--accent)">Start a repo queue</span>
   <input id="repoinput" type="text" placeholder="owner/name or https://github.com/owner/name" style="flex:1;min-width:220px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font:inherit">
-  <button id="startbtn">Start</button>
+  <button id="startbtn" type="button">Start</button>
   <span id="notice" class="meta" style="flex-basis:100%"></span>
   <span id="scantimer" class="meta" style="flex-basis:100%;color:var(--accent)"></span>
 </div>
 <div id="providerbar" class="gh-banner" style="background:rgba(79,195,247,.08);border-bottom-color:var(--accent)">
   <span class="meta">Provider:
-    <button class="provider-btn" data-provider="gemini" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Gemini</button>
-    <button class="provider-btn" data-provider="openrouter" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenRouter</button>
-    <button class="provider-btn" data-provider="ollama" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Ollama</button>
+    <button class="provider-btn" data-provider="gemini" type="button" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Gemini</button>
+    <button class="provider-btn" data-provider="openrouter" type="button" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenRouter</button>
+    <button class="provider-btn" data-provider="ollama" type="button" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Ollama</button>
   </span>
   <span id="modelpickers" class="meta" style="flex:1;min-width:300px"></span>
-  <button id="stopbtn" disabled style="margin-left:auto;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Stop</button>
+  <button id="stopbtn" type="button" disabled style="margin-left:auto;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Stop</button>
   <span id="modelsmsg" class="meta" style="flex-basis:100%;font-size:11px;color:var(--muted)"></span>
 </div>
 <main>
@@ -233,10 +233,10 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
   <div id="tabs">
   <div class="panel">
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('transcript', this)">Live transcript</button>
-      <button class="tab-btn" onclick="switchTab('memory', this)">MEMORY.txt</button>
-      <button class="tab-btn" onclick="switchTab('sessionlog', this)">SESSION_LOG.txt</button>
-      <button class="tab-btn" onclick="switchTab('errorlog', this)">Error Log</button>
+      <button class="tab-btn active" type="button" onclick="switchTab('transcript', this)">Live transcript</button>
+      <button class="tab-btn" type="button" onclick="switchTab('memory', this)">MEMORY.txt</button>
+      <button class="tab-btn" type="button" onclick="switchTab('sessionlog', this)">SESSION_LOG.txt</button>
+      <button class="tab-btn" type="button" onclick="switchTab('errorlog', this)">Error Log</button>
     </div>
     <div id="transcript-tab" class="tab-content active">
       <div id="tab-transcript"></div>

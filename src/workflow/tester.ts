@@ -6,52 +6,47 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { aggregateAgentResults, runWorker } from "../agentRunner.ts";
 import { checkpoint } from "../db/checkpoint.ts";
-import { splitTestCommand } from "../fleet/testCmd.ts";
 import type { AgentResult, Role, RolePolicy, RunContext } from "../types.ts";
 
-const exec = promisify(execFile);
+const _exec = promisify(execFile);
 
 const ROLE: Role = "tester";
 
-const TESTER_STEPS = [
-  "setup",
-  "run",
-  "validate",
-] as const;
+const TESTER_STEPS = ["setup", "run", "validate"] as const;
 
 type TesterStep = (typeof TESTER_STEPS)[number];
 
 /** Inputs the Tester workflow needs from the orchestrator. */
 export interface TesterOptions {
-  /** Base validation task handed to the tester worker (issue + plan context). */
-  task: string;
-  /** Per-role model policy (from `policyFor("tester", backend)`). */
-  policy: RolePolicy;
-  /** The worktree where tests are run. */
-  worktreeDir: string;
-  /** Test command to validate the fix (shell string). */
-  testCommand: string;
-  /** Live streaming hooks (forwarded to runWorker). */
-  onText?: (chunk: string) => void;
-  onEvent?: (ev: Record<string, string | unknown>) => void;
+	/** Base validation task handed to the tester worker (issue + plan context). */
+	task: string;
+	/** Per-role model policy (from `policyFor("tester", backend)`). */
+	policy: RolePolicy;
+	/** The worktree where tests are run. */
+	worktreeDir: string;
+	/** Test command to validate the fix (shell string). */
+	testCommand: string;
+	/** Live streaming hooks (forwarded to runWorker). */
+	onText?: (chunk: string) => void;
+	onEvent?: (ev: Record<string, string | unknown>) => void;
 }
 
 export interface TesterResult {
-  ok: boolean;
-  error?: string;
-  /** Per-spawn AgentResults in phase order (for action logging / cost attribution). */
-  results?: AgentResult[];
-  /** Aggregated AgentResult for the whole tester phase (role = "tester"). */
-  agentResult?: AgentResult;
+	ok: boolean;
+	error?: string;
+	/** Per-spawn AgentResults in phase order (for action logging / cost attribution). */
+	results?: AgentResult[];
+	/** Aggregated AgentResult for the whole tester phase (role = "tester"). */
+	agentResult?: AgentResult;
 }
 
 /**
  * Tester phases. Each step gets its own worker spawn for clear checkpointing.
  */
 const TESTER_PHASES = [
-  { steps: ["setup"], kind: "setup" as const },
-  { steps: ["run"], kind: "run" as const },
-  { steps: ["validate"], kind: "validate" as const },
+	{ steps: ["setup"], kind: "setup" as const },
+	{ steps: ["run"], kind: "run" as const },
+	{ steps: ["validate"], kind: "validate" as const },
 ];
 
 /** Run the tester phase as checkpointed phases. Steps already marked success for
@@ -60,76 +55,82 @@ const TESTER_PHASES = [
  * re-run resumes.
  */
 export async function runTester(
-  ctx: RunContext,
-  opts: TesterOptions,
-  runId: string,
-  iteration: number,
+	ctx: RunContext,
+	opts: TesterOptions,
+	runId: string,
+	iteration: number,
 ): Promise<TesterResult> {
-  const completed = await safeCompleted(runId, iteration);
-  const results: AgentResult[] = [];
-  for (const phase of TESTER_PHASES) {
-    const pending = phase.steps.filter((s) => !completed.includes(s));
-    if (pending.length === 0) continue;
-    let ids: string[] = [];
-    try {
-      ids = await Promise.all(
-        pending.map((s) => checkpoint.startStep(runId, ROLE, iteration, s as TesterStep)),
-      );
-      await runPhase(ctx, opts, phase.kind, results);
-      await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      await Promise.all(
-        ids.map((id, i) => checkpoint.markStepFailed(id, `${pending[i]}: ${message}`)),
-      );
-      return {
-        ok: false,
-        error: `${pending.join("+")}: ${message}`,
-        results,
-        agentResult: results.length > 0 ? aggregateAgentResults(results) : undefined,
-      };
-    }
-  }
-  return {
-    ok: true,
-    results,
-    agentResult: results.length > 0 ? aggregateAgentResults(results) : undefined,
-  };
+	const completed = await safeCompleted(runId, iteration);
+	const results: AgentResult[] = [];
+	for (const phase of TESTER_PHASES) {
+		const pending = phase.steps.filter((s) => !completed.includes(s));
+		if (pending.length === 0) continue;
+		let ids: string[] = [];
+		try {
+			ids = await Promise.all(
+				pending.map((s) =>
+					checkpoint.startStep(runId, ROLE, iteration, s as TesterStep),
+				),
+			);
+			await runPhase(ctx, opts, phase.kind, results);
+			await Promise.all(ids.map((id) => checkpoint.markStepSuccess(id)));
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			await Promise.all(
+				ids.map((id, i) =>
+					checkpoint.markStepFailed(id, `${pending[i]}: ${message}`),
+				),
+			);
+			return {
+				ok: false,
+				error: `${pending.join("+")}: ${message}`,
+				results,
+				agentResult:
+					results.length > 0 ? aggregateAgentResults(results) : undefined,
+			};
+		}
+	}
+	return {
+		ok: true,
+		results,
+		agentResult:
+			results.length > 0 ? aggregateAgentResults(results) : undefined,
+	};
 }
 
 async function runPhase(
-  ctx: RunContext,
-  opts: TesterOptions,
-  kind: (typeof TESTER_PHASES)[number]["kind"],
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: TesterOptions,
+	kind: (typeof TESTER_PHASES)[number]["kind"],
+	results: AgentResult[],
 ): Promise<void> {
-  switch (kind) {
-    case "setup":
-      await runSetup(ctx, opts, results);
-      return;
-    case "run":
-      await runTests(ctx, opts, "run", results);
-      return;
-    case "validate":
-      await runValidation(ctx, opts, "validate", results);
-      return;
-  }
+	switch (kind) {
+		case "setup":
+			await runSetup(ctx, opts, results);
+			return;
+		case "run":
+			await runTests(ctx, opts, "run", results);
+			return;
+		case "validate":
+			await runValidation(ctx, opts, "validate", results);
+			return;
+	}
 }
 
 async function runSetup(
-  ctx: RunContext,
-  opts: TesterOptions,
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: TesterOptions,
+	results: AgentResult[],
 ): Promise<void> {
-  const task =
-    `${opts.task}` +
-    `\n\nSet up the test environment in the worktree at ${opts.worktreeDir}. ` +
-    `Ensure all dependencies are installed and the test command \`${opts.testCommand}\` can be executed.`;
-  const res = await runWorker(ROLE, task, ctx, opts.policy, {
-    onText: opts.onText,
-    onEvent: opts.onEvent,
-  });
-  results.push(res);
+	const task =
+		`${opts.task}` +
+		`\n\nSet up the test environment in the worktree at ${opts.worktreeDir}. ` +
+		`Ensure all dependencies are installed and the test command \`${opts.testCommand}\` can be executed.`;
+	const res = await runWorker(ROLE, task, ctx, opts.policy, {
+		onText: opts.onText,
+		onEvent: opts.onEvent,
+	});
+	results.push(res);
 }
 
 /**
@@ -138,110 +139,113 @@ async function runSetup(
  * orchestrator owns all iteration policy via its own auto-fix cap.
  */
 async function worker(
-  ctx: RunContext,
-  opts: TesterOptions,
-  step: TesterStep,
-  instruction: string,
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: TesterOptions,
+	step: TesterStep,
+	instruction: string,
+	results: AgentResult[],
 ): Promise<AgentResult> {
-  const res = await runWorker(
-    ROLE,
-    `${opts.task}\n\nWorkflow step "${step}": ${instruction}`,
-    ctx,
-    opts.policy,
-    {
-      onText: opts.onText,
-      onEvent: opts.onEvent,
-    },
-  );
-  results.push(res);
-  return res;
+	const res = await runWorker(
+		ROLE,
+		`${opts.task}\n\nWorkflow step "${step}": ${instruction}`,
+		ctx,
+		opts.policy,
+		{
+			onText: opts.onText,
+			onEvent: opts.onEvent,
+		},
+	);
+	results.push(res);
+	return res;
 }
 
 async function runTests(
-  ctx: RunContext,
-  opts: TesterOptions,
-  step: TesterStep,
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: TesterOptions,
+	step: TesterStep,
+	results: AgentResult[],
 ): Promise<void> {
-  const res = await worker(
-    ctx,
-    opts,
-    step,
-    `execute the test command: \`${opts.testCommand}\` in the worktree (${opts.worktreeDir})`,
-    results,
-  );
+	const res = await worker(
+		ctx,
+		opts,
+		step,
+		`execute the test command: \`${opts.testCommand}\` in the worktree (${opts.worktreeDir})`,
+		results,
+	);
 
-  // Check whether the test command actually passed. The tester's bash tool
-  // call captures the real exit code of the test command, so we gate on that
-  // instead of on the LLM's self-reported summary text — a failing test suite
-  // can no longer be reported as "passed" just because the worker wrote some
-  // descriptive text without an infra-level error.
-  //
-  // We match against the SPECIFIC bash call whose command is the configured
-  // test command, not just "whichever bash call ran last" — the tester's
-  // system prompt has it commit test-file changes after the suite passes, and
-  // it may run other bash calls (git status/log, staging, etc.) around that.
-  // If we blindly used the trace's last bash exit code, a `git commit` that
-  // fails for an unrelated reason (e.g. nothing to stage) would get reported
-  // as a test failure even though the suite itself passed — or, in the other
-  // direction, a stray successful bash call after a real test failure could
-  // mask it. Take the LAST call that matches the test command (in case of a
-  // retry) as authoritative.
-  const testCommandTrimmed = opts.testCommand.trim();
-  const matchingCalls = (res.bashCommands ?? []).filter(
-    (c) => c.command.trim() === testCommandTrimmed,
-  );
-  const matchedCall = matchingCalls[matchingCalls.length - 1];
+	// Check whether the test command actually passed. The tester's bash tool
+	// call captures the real exit code of the test command, so we gate on that
+	// instead of on the LLM's self-reported summary text — a failing test suite
+	// can no longer be reported as "passed" just because the worker wrote some
+	// descriptive text without an infra-level error.
+	//
+	// We match against the SPECIFIC bash call whose command is the configured
+	// test command, not just "whichever bash call ran last" — the tester's
+	// system prompt has it commit test-file changes after the suite passes, and
+	// it may run other bash calls (git status/log, staging, etc.) around that.
+	// If we blindly used the trace's last bash exit code, a `git commit` that
+	// fails for an unrelated reason (e.g. nothing to stage) would get reported
+	// as a test failure even though the suite itself passed — or, in the other
+	// direction, a stray successful bash call after a real test failure could
+	// mask it. Take the LAST call that matches the test command (in case of a
+	// retry) as authoritative.
+	const testCommandTrimmed = opts.testCommand.trim();
+	const matchingCalls = (res.bashCommands ?? []).filter(
+		(c) => c.command.trim() === testCommandTrimmed,
+	);
+	const matchedCall = matchingCalls[matchingCalls.length - 1];
 
-  // Fall back to "last bash call in the trace" only if we can't find a call
-  // that matches the test command verbatim (e.g. the worker ran it with a
-  // slightly different invocation), and fall back further to the old
-  // ok/text/sawError heuristic only if no bash exit code was captured at all
-  // (e.g. the worker used a non-bash tool path, or a dry-run/stub result) so
-  // we don't hard-fail in those edge cases.
-  const effectiveExitCode = matchedCall?.exitCode ?? res.lastBashExitCode;
-  const testPassed =
-    effectiveExitCode !== undefined
-      ? effectiveExitCode === 0
-      : res.ok && res.text.trim().length > 0 && !res.sawError;
+	// Fall back to "last bash call in the trace" only if we can't find a call
+	// that matches the test command verbatim (e.g. the worker ran it with a
+	// slightly different invocation), and fall back further to the old
+	// ok/text/sawError heuristic only if no bash exit code was captured at all
+	// (e.g. the worker used a non-bash tool path, or a dry-run/stub result) so
+	// we don't hard-fail in those edge cases.
+	const effectiveExitCode = matchedCall?.exitCode ?? res.lastBashExitCode;
+	const testPassed =
+		effectiveExitCode !== undefined
+			? effectiveExitCode === 0
+			: res.ok && res.text.trim().length > 0 && !res.sawError;
 
-  if (!testPassed) {
-    const detail =
-      effectiveExitCode !== undefined
-        ? `exit code ${effectiveExitCode}`
-        : res.sawError
-          ? "worker reported an error"
-          : "worker returned no output";
-    throw new Error(`test command ${opts.testCommand} failed (${detail})`);
-  }
+	if (!testPassed) {
+		const detail =
+			effectiveExitCode !== undefined
+				? `exit code ${effectiveExitCode}`
+				: res.sawError
+					? "worker reported an error"
+					: "worker returned no output";
+		throw new Error(`test command ${opts.testCommand} failed (${detail})`);
+	}
 }
 
 async function runValidation(
-  ctx: RunContext,
-  opts: TesterOptions,
-  step: TesterStep,
-  results: AgentResult[],
+	ctx: RunContext,
+	opts: TesterOptions,
+	step: TesterStep,
+	results: AgentResult[],
 ): Promise<void> {
-  await worker(
-    ctx,
-    opts,
-    step,
-    `validate that the test execution confirms the fix works correctly`,
-    results,
-  );
-  // Validation step mainly serves as a checkpoint - the actual validation
-  // happens in the runTests phase where we check expectations
+	await worker(
+		ctx,
+		opts,
+		step,
+		`validate that the test execution confirms the fix works correctly`,
+		results,
+	);
+	// Validation step mainly serves as a checkpoint - the actual validation
+	// happens in the runTests phase where we check expectations
 }
 
 /** `getCompletedSteps` that is safe for dry-run/DB-unavailable contexts. */
-async function safeCompleted(runId: string, iteration: number): Promise<string[]> {
-  try {
-    return await checkpoint.getCompletedSteps(runId, ROLE, iteration);
-  } catch {
-    return [];
-  }
+async function safeCompleted(
+	runId: string,
+	iteration: number,
+): Promise<string[]> {
+	try {
+		return await checkpoint.getCompletedSteps(runId, ROLE, iteration);
+	} catch {
+		return [];
+	}
 }
 
-export { TESTER_STEPS };
 export type { TesterStep };
+export { TESTER_STEPS };

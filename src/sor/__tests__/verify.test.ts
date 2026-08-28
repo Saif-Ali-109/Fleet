@@ -1,995 +1,1067 @@
-import { describe, expect, it, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import { pool } from "../../db/client.ts";
-import { GENESIS_HASH, signEvent } from "../signer.ts";
-import type { SorEvent } from "../events.ts";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+} from "vitest";
 // We need to import verifyChain from audit.ts, but verify.ts re-exports it? Let's check.
 // Actually, verify.ts only exports runSorVerify. We'll import verifyChain from audit.ts directly.
 import { verifyChain as verifyChainFromAudit } from "../../db/audit.ts";
+import { pool } from "../../db/client.ts";
+import type { SorEvent } from "../events.ts";
+import { GENESIS_HASH, signEvent } from "../signer.ts";
 
 console.log("Test file loaded");
 
-let isDbReady = false;
+let _isDbReady = false;
 beforeAll(async () => {
-  try {
-    const versionRes = await pool.query("SELECT version()");
-    console.log("Database version:", versionRes.rows[0].version);
-    const keyIdRes = await pool.query("SELECT key_id FROM audit_events LIMIT 1");
-    console.log("key_id column exists in audit_events:", !!keyIdRes.fields.find((f) => f.name === 'key_id'));
-    isDbReady = true;
-  } catch (e) {
-    console.error("Database check failed:", e);
-  }
+	try {
+		const versionRes = await pool.query("SELECT version()");
+		console.log("Database version:", versionRes.rows[0].version);
+		const keyIdRes = await pool.query(
+			"SELECT key_id FROM audit_events LIMIT 1",
+		);
+		console.log(
+			"key_id column exists in audit_events:",
+			!!keyIdRes.fields.find((f) => f.name === "key_id"),
+		);
+		_isDbReady = true;
+	} catch (e) {
+		console.error("Database check failed:", e);
+	}
 });
 
 // Helper to insert an event into the database
-async function insertEvent(event: SorEvent, prevHash: string): Promise<string> {
-  const key = process.env.SOR_SIGNING_KEY!;
-  const hash = signEvent(key, prevHash, event, "v1");
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(
-      `INSERT INTO audit_events
+async function _insertEvent(
+	event: SorEvent,
+	prevHash: string,
+): Promise<string> {
+	const key = process.env.SOR_SIGNING_KEY;
+	if (!key) throw new Error("SOR_SIGNING_KEY not set");
+	const hash = signEvent(key, prevHash, event, "v1");
+	const client = await pool.connect();
+	try {
+		await client.query("BEGIN");
+		await client.query(
+			`INSERT INTO audit_events
         (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [
-        event.run_id,
-        // We'll set seq later via a separate mechanism; we'll use a temporary seq and update later?
-        // Instead, we'll rely on the fact that we are inserting in order and we can get the next seq from sor_chain.
-        // But for simplicity, we'll manage seq ourselves in the test by querying the current max seq.
-        // We'll do a separate function to get the next seq.
-        // Let's change approach: we'll have a function that appends an event using the same logic as appendAuditEvent.
-        // However, we don't want to import appendAuditEvent because it might have side effects.
-        // We'll do a simple insert and then update the sor_chain separately.
-        // We'll do the insert in two steps: first insert with a dummy seq, then update seq and hash? Too messy.
-        // Let's instead use the existing appendAuditEvent function from audit.ts? We can import it.
-        // We'll import appendAuditEvent from audit.ts.
-        // We'll change the import.
-      ],
-    );
-    await client.query("COMMIT");
-    return hash;
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+			[
+				event.run_id,
+				// We'll set seq later via a separate mechanism; we'll use a temporary seq and update later?
+				// Instead, we'll rely on the fact that we are inserting in order and we can get the next seq from sor_chain.
+				// But for simplicity, we'll manage seq ourselves in the test by querying the current max seq.
+				// We'll do a separate function to get the next seq.
+				// Let's change approach: we'll have a function that appends an event using the same logic as appendAuditEvent.
+				// However, we don't want to import appendAuditEvent because it might have side effects.
+				// We'll do a simple insert and then update the sor_chain separately.
+				// We'll do the insert in two steps: first insert with a dummy seq, then update seq and hash? Too messy.
+				// Let's instead use the existing appendAuditEvent function from audit.ts? We can import it.
+				// We'll import appendAuditEvent from audit.ts.
+				// We'll change the import.
+			],
+		);
+		await client.query("COMMIT");
+		return hash;
+	} catch (err) {
+		await client.query("ROLLBACK");
+		throw err;
+	} finally {
+		client.release();
+	}
 }
 
 describe("verifyChain", () => {
-  const testSigningKey = "test-secret-key-for-sor-verify-tests";
+	const testSigningKey = "test-secret-key-for-sor-verify-tests";
 
-  beforeAll(() => {
-    process.env.SOR_SIGNING_KEY = testSigningKey;
-    process.env.SOR_KEY_V1 = testSigningKey;
-  });
+	beforeAll(() => {
+		process.env.SOR_SIGNING_KEY = testSigningKey;
+		process.env.SOR_KEY_V1 = testSigningKey;
+	});
 
-  afterAll(() => {
-    delete process.env.SOR_SIGNING_KEY;
-    delete process.env.SOR_KEY_V1;
-  });
+	afterAll(() => {
+		delete process.env.SOR_SIGNING_KEY;
+		delete process.env.SOR_KEY_V1;
+	});
 
-  beforeEach(async () => {
-    // Clear audit_events and reset sor_chain to genesis
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("TRUNCATE TABLE audit_events RESTART IDENTITY");
-      await client.query(
-        "UPDATE sor_chain SET seq = 0, hash = $1, updated_at = now() WHERE id = 1",
-        [GENESIS_HASH]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
-  });
+	beforeEach(async () => {
+		// Clear audit_events and reset sor_chain to genesis
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			await client.query("TRUNCATE TABLE audit_events RESTART IDENTITY");
+			await client.query(
+				"UPDATE sor_chain SET seq = 0, hash = $1, updated_at = now() WHERE id = 1",
+				[GENESIS_HASH],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
+	});
 
-  afterEach(async () => {
-    // Ensure we clean up after each test
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("TRUNCATE TABLE audit_events RESTART IDENTITY");
-      await client.query(
-        "UPDATE sor_chain SET seq = 0, hash = $1, updated_at = now() WHERE id = 1",
-        [GENESIS_HASH]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
-  });
+	afterEach(async () => {
+		// Ensure we clean up after each test
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			await client.query("TRUNCATE TABLE audit_events RESTART IDENTITY");
+			await client.query(
+				"UPDATE sor_chain SET seq = 0, hash = $1, updated_at = now() WHERE id = 1",
+				[GENESIS_HASH],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
+	});
 
-  it("verifies an empty chain as ok", async () => {
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(true);
-    expect(result.firstBadSeq).toBeNull();
-    expect(result.total).toBe(0);
-    expect(result.counts).toEqual({});
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // Get current chain state
-      const chainRes = await client.query<{ seq: string; hash: string; key_id: string }>( 
-        "SELECT seq, hash, key_id FROM sor_chain WHERE id = 1" 
-      );
-      const chain = chainRes.rows[0];
-      if (!chain) {
-        throw new Error("sor_chain (id=1) missing — call ensureChain() before inserting test events");
-      }
-      const prevHash = chain.hash;
-      const seq = Number(chain.seq) + 1;
-      const event: SorEvent = {
-        run_id: "run-1",
-        event_type: "tool_call",
-        actor: "coder",
-        backend: "opencode",
-        tool_name: "edit",
-        tool_input: { file: "a.ts" },
-        tool_output: { success: true },
-        payload: { phase: "implement" },
-        created_at: "2026-08-26T10:00:00.000Z",
-      };
-      const hash = signEvent(testSigningKey, prevHash, event, chain.key_id);
+	it("verifies an empty chain as ok", async () => {
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(true);
+		expect(result.firstBadSeq).toBeNull();
+		expect(result.total).toBe(0);
+		expect(result.counts).toEqual({});
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			// Get current chain state
+			const chainRes = await client.query<{
+				seq: string;
+				hash: string;
+				key_id: string;
+			}>("SELECT seq, hash, key_id FROM sor_chain WHERE id = 1");
+			const chain = chainRes.rows[0];
+			if (!chain) {
+				throw new Error(
+					"sor_chain (id=1) missing — call ensureChain() before inserting test events",
+				);
+			}
+			const prevHash = chain.hash;
+			const seq = Number(chain.seq) + 1;
+			const event: SorEvent = {
+				run_id: "run-1",
+				event_type: "tool_call",
+				actor: "coder",
+				backend: "opencode",
+				tool_name: "edit",
+				tool_input: { file: "a.ts" },
+				tool_output: { success: true },
+				payload: { phase: "implement" },
+				created_at: "2026-08-26T10:00:00.000Z",
+			};
+			const hash = signEvent(testSigningKey, prevHash, event, chain.key_id);
 
-      await client.query(
-        `INSERT INTO audit_events
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, key_id, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [
-          event.run_id,
-          seq,
-          event.event_type,
-          event.actor,
-          event.backend,
-          event.tool_name,
-          event.tool_input,
-          event.tool_output,
-          event.payload,
-          prevHash,
-          hash,
-          chain.key_id,
-          event.created_at,
-        ]
-      );
+				[
+					event.run_id,
+					seq,
+					event.event_type,
+					event.actor,
+					event.backend,
+					event.tool_name,
+					event.tool_input,
+					event.tool_output,
+					event.payload,
+					prevHash,
+					hash,
+					chain.key_id,
+					event.created_at,
+				],
+			);
 
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, key_id = $3, updated_at = now() WHERE id = 1",
-        [seq, hash, chain.key_id]
-      );
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, key_id = $3, updated_at = now() WHERE id = 1",
+				[seq, hash, chain.key_id],
+			);
 
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result2 = await verifyChainFromAudit(pool);
-    expect(result2.ok).toBe(true);
-    expect(result2.firstBadSeq).toBeNull();
-    expect(result2.total).toBe(1);
-    expect(result2.counts).toEqual({ tool_call: 1 });
-  });
+		const result2 = await verifyChainFromAudit(pool);
+		expect(result2.ok).toBe(true);
+		expect(result2.firstBadSeq).toBeNull();
+		expect(result2.total).toBe(1);
+		expect(result2.counts).toEqual({ tool_call: 1 });
+	});
 
-  it("verifies multiple valid events", async () => {
-    const events: SorEvent[] = [
-      {
-        run_id: "run-1",
-        event_type: "wakeup",
-        actor: "system",
-        backend: null,
-        tool_name: null,
-        tool_input: null,
-        tool_output: null,
-        payload: { kind: "session.idle" },
-        created_at: "2026-08-26T10:00:00.000Z",
-      },
-      {
-        run_id: "run-1",
-        event_type: "tool_call",
-        actor: "coder",
-        backend: "gemini",
-        tool_name: "read",
-        tool_input: { filePath: "b.ts" },
-        tool_output: { content: "console.log('hello');" },
-        payload: { phase: "analyze" },
-        created_at: "2026-08-26T10:01:00.000Z",
-      },
-      {
-        run_id: "run-1",
-        event_type: "phase",
-        actor: "manager",
-        backend: null,
-        tool_name: null,
-        tool_input: null,
-        tool_output: null,
-        payload: { phase: "plan" },
-        created_at: "2026-08-26T10:02:00.000Z",
-      },
-    ];
+	it("verifies multiple valid events", async () => {
+		const events: SorEvent[] = [
+			{
+				run_id: "run-1",
+				event_type: "wakeup",
+				actor: "system",
+				backend: null,
+				tool_name: null,
+				tool_input: null,
+				tool_output: null,
+				payload: { kind: "session.idle" },
+				created_at: "2026-08-26T10:00:00.000Z",
+			},
+			{
+				run_id: "run-1",
+				event_type: "tool_call",
+				actor: "coder",
+				backend: "gemini",
+				tool_name: "read",
+				tool_input: { filePath: "b.ts" },
+				tool_output: { content: "console.log('hello');" },
+				payload: { phase: "analyze" },
+				created_at: "2026-08-26T10:01:00.000Z",
+			},
+			{
+				run_id: "run-1",
+				event_type: "phase",
+				actor: "manager",
+				backend: null,
+				tool_name: null,
+				tool_input: null,
+				tool_output: null,
+				payload: { phase: "plan" },
+				created_at: "2026-08-26T10:02:00.000Z",
+			},
+		];
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      let prevHash = GENESIS_HASH;
-      let seq = 0;
-      for (const event of events) {
-        seq++;
-        const hash = signEvent(testSigningKey, prevHash, event, "v1");
-        await client.query(
-          `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			let prevHash = GENESIS_HASH;
+			let seq = 0;
+			for (const event of events) {
+				seq++;
+				const hash = signEvent(testSigningKey, prevHash, event, "v1");
+				await client.query(
+					`INSERT INTO audit_events
             (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [
-            event.run_id,
-            seq,
-            event.event_type,
-            event.actor,
-            event.backend,
-            event.tool_name,
-            event.tool_input,
-            event.tool_output,
-            event.payload,
-            prevHash,
-            hash,
-            event.created_at,
-          ]
-        );
-        prevHash = hash;
-      }
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, prevHash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+					[
+						event.run_id,
+						seq,
+						event.event_type,
+						event.actor,
+						event.backend,
+						event.tool_name,
+						event.tool_input,
+						event.tool_output,
+						event.payload,
+						prevHash,
+						hash,
+						event.created_at,
+					],
+				);
+				prevHash = hash;
+			}
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, prevHash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(true);
-    expect(result.firstBadSeq).toBeNull();
-    expect(result.total).toBe(3);
-    expect(result.counts).toEqual({ wakeup: 1, tool_call: 1, phase: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(true);
+		expect(result.firstBadSeq).toBeNull();
+		expect(result.total).toBe(3);
+		expect(result.counts).toEqual({ wakeup: 1, tool_call: 1, phase: 1 });
+	});
 
-  it("detects tampered prev_hash", async () => {
-    const event1: SorEvent = {
-      run_id: "run-1",
-      event_type: "tool_call",
-      actor: "coder",
-      backend: "opencode",
-      tool_name: "edit",
-      tool_input: { file: "a.ts" },
-      tool_output: { success: true },
-      payload: { phase: "implement" },
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
-    const event2: SorEvent = {
-      run_id: "run-1",
-      event_type: "wakeup",
-      actor: "system",
-      backend: null,
-      tool_name: null,
-      tool_input: null,
-      tool_output: null,
-      payload: { kind: "session.idle" },
-      created_at: "2026-08-26T10:01:00.000Z",
-    };
+	it("detects tampered prev_hash", async () => {
+		const event1: SorEvent = {
+			run_id: "run-1",
+			event_type: "tool_call",
+			actor: "coder",
+			backend: "opencode",
+			tool_name: "edit",
+			tool_input: { file: "a.ts" },
+			tool_output: { success: true },
+			payload: { phase: "implement" },
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
+		const event2: SorEvent = {
+			run_id: "run-1",
+			event_type: "wakeup",
+			actor: "system",
+			backend: null,
+			tool_name: null,
+			tool_input: null,
+			tool_output: null,
+			payload: { kind: "session.idle" },
+			created_at: "2026-08-26T10:01:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // Insert event1 correctly
-      let prevHash = GENESIS_HASH;
-      let seq = 1;
-      const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			// Insert event1 correctly
+			let prevHash = GENESIS_HASH;
+			let seq = 1;
+			const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event1.run_id,
-          seq,
-          event1.event_type,
-          event1.actor,
-          event1.backend,
-          event1.tool_name,
-          event1.tool_input,
-          event1.tool_output,
-          event1.payload,
-          prevHash,
-          hash1,
-          event1.created_at,
-        ]
-      );
-      prevHash = hash1;
+				[
+					event1.run_id,
+					seq,
+					event1.event_type,
+					event1.actor,
+					event1.backend,
+					event1.tool_name,
+					event1.tool_input,
+					event1.tool_output,
+					event1.payload,
+					prevHash,
+					hash1,
+					event1.created_at,
+				],
+			);
+			prevHash = hash1;
 
-      // Insert event2 with a tampered prev_hash (not equal to hash1)
-      seq++;
-      const tamperedPrevHash = "tampered";
-      const hash2 = signEvent(testSigningKey, tamperedPrevHash, event2, "v1"); // This signs with tamperedPrevHash, but we store the hash signed with tamperedPrevHash
-      // However, we want to store a prev_hash that is tampered, but the hash should be correct for the event given the tampered prev_hash.
-      // Actually, we want to simulate that the stored prev_hash is wrong, but the hash is correct for the event and the stored prev_hash.
-      // So we set prev_hash to tamperedPrevHash, and compute hash using that tamperedPrevHash.
-      // Then when verifying, we compute hash using the expected prev_hash (which is hash1) and compare to stored hash.
-      // They won't match because the stored hash was computed with tamperedPrevHash.
-      await client.query(
-        `INSERT INTO audit_events
+			// Insert event2 with a tampered prev_hash (not equal to hash1)
+			seq++;
+			const tamperedPrevHash = "tampered";
+			const hash2 = signEvent(testSigningKey, tamperedPrevHash, event2, "v1"); // This signs with tamperedPrevHash, but we store the hash signed with tamperedPrevHash
+			// However, we want to store a prev_hash that is tampered, but the hash should be correct for the event given the tampered prev_hash.
+			// Actually, we want to simulate that the stored prev_hash is wrong, but the hash is correct for the event and the stored prev_hash.
+			// So we set prev_hash to tamperedPrevHash, and compute hash using that tamperedPrevHash.
+			// Then when verifying, we compute hash using the expected prev_hash (which is hash1) and compare to stored hash.
+			// They won't match because the stored hash was computed with tamperedPrevHash.
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event2.run_id,
-          seq,
-          event2.event_type,
-          event2.actor,
-          event2.backend,
-          event2.tool_name,
-          event2.tool_input,
-          event2.tool_output,
-          event2.payload,
-          tamperedPrevHash, // this is the tampered prev_hash
-          hash2,
-          event2.created_at,
-        ]
-      );
-      prevHash = hash2; // update prevHash to the hash of event2 (which is based on tamperedPrevHash)
+				[
+					event2.run_id,
+					seq,
+					event2.event_type,
+					event2.actor,
+					event2.backend,
+					event2.tool_name,
+					event2.tool_input,
+					event2.tool_output,
+					event2.payload,
+					tamperedPrevHash, // this is the tampered prev_hash
+					hash2,
+					event2.created_at,
+				],
+			);
+			prevHash = hash2; // update prevHash to the hash of event2 (which is based on tamperedPrevHash)
 
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, prevHash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, prevHash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(false);
-    expect(result.firstBadSeq).toBe(2); // because event2's prev_hash is wrong
-    expect(result.total).toBe(2);
-    expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(false);
+		expect(result.firstBadSeq).toBe(2); // because event2's prev_hash is wrong
+		expect(result.total).toBe(2);
+		expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
+	});
 
-  it("detects tampered hash (stored hash doesn't match recomputed)", async () => {
-    const event1: SorEvent = {
-      run_id: "run-1",
-      event_type: "tool_call",
-      actor: "coder",
-      backend: "opencode",
-      tool_name: "edit",
-      tool_input: { file: "a.ts" },
-      tool_output: { success: true },
-      payload: { phase: "implement" },
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
-    const event2: SorEvent = {
-      run_id: "run-1",
-      event_type: "wakeup",
-      actor: "system",
-      backend: null,
-      tool_name: null,
-      tool_input: null,
-      tool_output: null,
-      payload: { kind: "session.idle" },
-      created_at: "2026-08-26T10:01:00.000Z",
-    };
+	it("detects tampered hash (stored hash doesn't match recomputed)", async () => {
+		const event1: SorEvent = {
+			run_id: "run-1",
+			event_type: "tool_call",
+			actor: "coder",
+			backend: "opencode",
+			tool_name: "edit",
+			tool_input: { file: "a.ts" },
+			tool_output: { success: true },
+			payload: { phase: "implement" },
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
+		const event2: SorEvent = {
+			run_id: "run-1",
+			event_type: "wakeup",
+			actor: "system",
+			backend: null,
+			tool_name: null,
+			tool_input: null,
+			tool_output: null,
+			payload: { kind: "session.idle" },
+			created_at: "2026-08-26T10:01:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // Insert event1 correctly
-      let prevHash = GENESIS_HASH;
-      let seq = 1;
-      const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			// Insert event1 correctly
+			let prevHash = GENESIS_HASH;
+			let seq = 1;
+			const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event1.run_id,
-          seq,
-          event1.event_type,
-          event1.actor,
-          event1.backend,
-          event1.tool_name,
-          event1.tool_input,
-          event1.tool_output,
-          event1.payload,
-          prevHash,
-          hash1,
-          event1.created_at,
-        ]
-      );
-      prevHash = hash1;
+				[
+					event1.run_id,
+					seq,
+					event1.event_type,
+					event1.actor,
+					event1.backend,
+					event1.tool_name,
+					event1.tool_input,
+					event1.tool_output,
+					event1.payload,
+					prevHash,
+					hash1,
+					event1.created_at,
+				],
+			);
+			prevHash = hash1;
 
-      // Insert event2 with correct prev_hash but tampered hash
-      seq++;
-      const correctHash = signEvent(testSigningKey, prevHash, event2, "v1");
-      const tamperedHash = "tamperedhash";
-      await client.query(
-        `INSERT INTO audit_events
+			// Insert event2 with correct prev_hash but tampered hash
+			seq++;
+			const correctHash = signEvent(testSigningKey, prevHash, event2, "v1");
+			const tamperedHash = "tamperedhash";
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event2.run_id,
-          seq,
-          event2.event_type,
-          event2.actor,
-          event2.backend,
-          event2.tool_name,
-          event2.tool_input,
-          event2.tool_output,
-          event2.payload,
-          prevHash,
-          tamperedHash, // tampered hash
-          event2.created_at,
-        ]
-      );
-      prevHash = correctHash; // for chain update, we use the correct hash so that the chain continues correctly
-      // Actually, we want to update the sor_chain with the hash we stored (tamperedHash) or the correct hash?
-      // The sor_chain should reflect the stored hash, which is tampered.
-      // So we update sor_chain with the tamperedHash.
-      prevHash = tamperedHash;
+				[
+					event2.run_id,
+					seq,
+					event2.event_type,
+					event2.actor,
+					event2.backend,
+					event2.tool_name,
+					event2.tool_input,
+					event2.tool_output,
+					event2.payload,
+					prevHash,
+					tamperedHash, // tampered hash
+					event2.created_at,
+				],
+			);
+			prevHash = correctHash; // for chain update, we use the correct hash so that the chain continues correctly
+			// Actually, we want to update the sor_chain with the hash we stored (tamperedHash) or the correct hash?
+			// The sor_chain should reflect the stored hash, which is tampered.
+			// So we update sor_chain with the tamperedHash.
+			prevHash = tamperedHash;
 
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, prevHash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, prevHash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(false);
-    expect(result.firstBadSeq).toBe(2); // because event2's hash is wrong
-    expect(result.total).toBe(2);
-    expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(false);
+		expect(result.firstBadSeq).toBe(2); // because event2's hash is wrong
+		expect(result.total).toBe(2);
+		expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
+	});
 
-  it("detects wrong signing key", async () => {
-    const event: SorEvent = {
-      run_id: "run-1",
-      event_type: "tool_call",
-      actor: "coder",
-      backend: "opencode",
-      tool_name: "edit",
-      tool_input: { file: "a.ts" },
-      tool_output: { success: true },
-      payload: { phase: "implement" },
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
+	it("detects wrong signing key", async () => {
+		const event: SorEvent = {
+			run_id: "run-1",
+			event_type: "tool_call",
+			actor: "coder",
+			backend: "opencode",
+			tool_name: "edit",
+			tool_input: { file: "a.ts" },
+			tool_output: { success: true },
+			payload: { phase: "implement" },
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // Insert event with the test signing key
-      let prevHash = GENESIS_HASH;
-      let seq = 1;
-      const hash = signEvent(testSigningKey, prevHash, event, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			// Insert event with the test signing key
+			const prevHash = GENESIS_HASH;
+			const seq = 1;
+			const hash = signEvent(testSigningKey, prevHash, event, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event.run_id,
-          seq,
-          event.event_type,
-          event.actor,
-          event.backend,
-          event.tool_name,
-          event.tool_input,
-          event.tool_output,
-          event.payload,
-          prevHash,
-          hash,
-          event.created_at,
-        ]
-      );
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, hash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    };
+				[
+					event.run_id,
+					seq,
+					event.event_type,
+					event.actor,
+					event.backend,
+					event.tool_name,
+					event.tool_input,
+					event.tool_output,
+					event.payload,
+					prevHash,
+					hash,
+					event.created_at,
+				],
+			);
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, hash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    // Now change the signing key for verification
-    const originalKey = process.env.SOR_KEY_V1;
-    process.env.SOR_KEY_V1 = "wrong-key";
+		// Now change the signing key for verification
+		const originalKey = process.env.SOR_KEY_V1;
+		process.env.SOR_KEY_V1 = "wrong-key";
 
-    try {
-      const result = await verifyChainFromAudit(pool);
-      expect(result.ok).toBe(false);
-      expect(result.firstBadSeq).toBe(1);
-      expect(result.total).toBe(1);
-      expect(result.counts).toEqual({ tool_call: 1 });
-    } finally {
-      process.env.SOR_KEY_V1 = originalKey;
-    }
-  });
+		try {
+			const result = await verifyChainFromAudit(pool);
+			expect(result.ok).toBe(false);
+			expect(result.firstBadSeq).toBe(1);
+			expect(result.total).toBe(1);
+			expect(result.counts).toEqual({ tool_call: 1 });
+		} finally {
+			process.env.SOR_KEY_V1 = originalKey;
+		}
+	});
 
-  it("counts events by type correctly", async () => {
-    const events: SorEvent[] = [
-      { run_id: "run-1", event_type: "tool_call", actor: "coder", backend: "opencode", tool_name: "edit", tool_input: {}, tool_output: {}, payload: {}, created_at: "2026-08-26T10:00:00.000Z" },
-      { run_id: "run-1", event_type: "tool_call", actor: "coder", backend: "opencode", tool_name: "edit", tool_input: {}, tool_output: {}, payload: {}, created_at: "2026-08-26T10:00:01.000Z" },
-      { run_id: "run-1", event_type: "wakeup", actor: "system", backend: null, tool_name: null, tool_input: null, tool_output: null, payload: {}, created_at: "2026-08-26T10:00:02.000Z" },
-      { run_id: "run-1", event_type: "phase", actor: "manager", backend: null, tool_name: null, tool_input: null, tool_output: null, payload: {}, created_at: "2026-08-26T10:00:03.000Z" },
-      { run_id: "run-1", event_type: "registry_sync", actor: "system", backend: null, tool_name: null, tool_input: null, tool_output: null, payload: {}, created_at: "2026-08-26T10:00:04.000Z" },
-    ];
+	it("counts events by type correctly", async () => {
+		const events: SorEvent[] = [
+			{
+				run_id: "run-1",
+				event_type: "tool_call",
+				actor: "coder",
+				backend: "opencode",
+				tool_name: "edit",
+				tool_input: {},
+				tool_output: {},
+				payload: {},
+				created_at: "2026-08-26T10:00:00.000Z",
+			},
+			{
+				run_id: "run-1",
+				event_type: "tool_call",
+				actor: "coder",
+				backend: "opencode",
+				tool_name: "edit",
+				tool_input: {},
+				tool_output: {},
+				payload: {},
+				created_at: "2026-08-26T10:00:01.000Z",
+			},
+			{
+				run_id: "run-1",
+				event_type: "wakeup",
+				actor: "system",
+				backend: null,
+				tool_name: null,
+				tool_input: null,
+				tool_output: null,
+				payload: {},
+				created_at: "2026-08-26T10:00:02.000Z",
+			},
+			{
+				run_id: "run-1",
+				event_type: "phase",
+				actor: "manager",
+				backend: null,
+				tool_name: null,
+				tool_input: null,
+				tool_output: null,
+				payload: {},
+				created_at: "2026-08-26T10:00:03.000Z",
+			},
+			{
+				run_id: "run-1",
+				event_type: "registry_sync",
+				actor: "system",
+				backend: null,
+				tool_name: null,
+				tool_input: null,
+				tool_output: null,
+				payload: {},
+				created_at: "2026-08-26T10:00:04.000Z",
+			},
+		];
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      let prevHash = GENESIS_HASH;
-      let seq = 0;
-      for (const event of events) {
-        seq++;
-        const hash = signEvent(testSigningKey, prevHash, event, "v1");
-        await client.query(
-          `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			let prevHash = GENESIS_HASH;
+			let seq = 0;
+			for (const event of events) {
+				seq++;
+				const hash = signEvent(testSigningKey, prevHash, event, "v1");
+				await client.query(
+					`INSERT INTO audit_events
             (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [
-            event.run_id,
-            seq,
-            event.event_type,
-            event.actor,
-            event.backend,
-            event.tool_name,
-            event.tool_input,
-            event.tool_output,
-            event.payload,
-            prevHash,
-            hash,
-            event.created_at,
-          ]
-        );
-        prevHash = hash;
-      }
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, prevHash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+					[
+						event.run_id,
+						seq,
+						event.event_type,
+						event.actor,
+						event.backend,
+						event.tool_name,
+						event.tool_input,
+						event.tool_output,
+						event.payload,
+						prevHash,
+						hash,
+						event.created_at,
+					],
+				);
+				prevHash = hash;
+			}
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, prevHash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(true);
-    expect(result.total).toBe(5);
-    expect(result.counts).toEqual({
-      tool_call: 2,
-      wakeup: 1,
-      phase: 1,
-      registry_sync: 1,
-    });
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(true);
+		expect(result.total).toBe(5);
+		expect(result.counts).toEqual({
+			tool_call: 2,
+			wakeup: 1,
+			phase: 1,
+			registry_sync: 1,
+		});
+	});
 
-  it("handles null run_id, backend, tool_name, tool_input, tool_output", async () => {
-    const event: SorEvent = {
-      run_id: null,
-      event_type: "wakeup",
-      actor: "system",
-      backend: null,
-      tool_name: null,
-      tool_input: null,
-      tool_output: null,
-      payload: { kind: "test" },
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
+	it("handles null run_id, backend, tool_name, tool_input, tool_output", async () => {
+		const event: SorEvent = {
+			run_id: null,
+			event_type: "wakeup",
+			actor: "system",
+			backend: null,
+			tool_name: null,
+			tool_input: null,
+			tool_output: null,
+			payload: { kind: "test" },
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      let prevHash = GENESIS_HASH;
-      let seq = 1;
-      const hash = signEvent(testSigningKey, prevHash, event, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			const prevHash = GENESIS_HASH;
+			const seq = 1;
+			const hash = signEvent(testSigningKey, prevHash, event, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event.run_id,
-          seq,
-          event.event_type,
-          event.actor,
-          event.backend,
-          event.tool_name,
-          event.tool_input,
-          event.tool_output,
-          event.payload,
-          prevHash,
-          hash,
-          event.created_at,
-        ]
-      );
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, hash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+				[
+					event.run_id,
+					seq,
+					event.event_type,
+					event.actor,
+					event.backend,
+					event.tool_name,
+					event.tool_input,
+					event.tool_output,
+					event.payload,
+					prevHash,
+					hash,
+					event.created_at,
+				],
+			);
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, hash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(true);
-    expect(result.total).toBe(1);
-    expect(result.counts).toEqual({ wakeup: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(true);
+		expect(result.total).toBe(1);
+		expect(result.counts).toEqual({ wakeup: 1 });
+	});
 
-  it("verifies chain with events that have empty payload", async () => {
-    const event: SorEvent = {
-      run_id: "run-1",
-      event_type: "tool_call",
-      actor: "coder",
-      backend: "opencode",
-      tool_name: "edit",
-      tool_input: {},
-      tool_output: {},
-      payload: {},
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
+	it("verifies chain with events that have empty payload", async () => {
+		const event: SorEvent = {
+			run_id: "run-1",
+			event_type: "tool_call",
+			actor: "coder",
+			backend: "opencode",
+			tool_name: "edit",
+			tool_input: {},
+			tool_output: {},
+			payload: {},
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      let prevHash = GENESIS_HASH;
-      let seq = 1;
-      const hash = signEvent(testSigningKey, prevHash, event, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			const prevHash = GENESIS_HASH;
+			const seq = 1;
+			const hash = signEvent(testSigningKey, prevHash, event, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event.run_id,
-          seq,
-          event.event_type,
-          event.actor,
-          event.backend,
-          event.tool_name,
-          event.tool_input,
-          event.tool_output,
-          event.payload,
-          prevHash,
-          hash,
-          event.created_at,
-        ]
-      );
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, hash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+				[
+					event.run_id,
+					seq,
+					event.event_type,
+					event.actor,
+					event.backend,
+					event.tool_name,
+					event.tool_input,
+					event.tool_output,
+					event.payload,
+					prevHash,
+					hash,
+					event.created_at,
+				],
+			);
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, hash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(true);
-    expect(result.total).toBe(1);
-    expect(result.counts).toEqual({ tool_call: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(true);
+		expect(result.total).toBe(1);
+		expect(result.counts).toEqual({ tool_call: 1 });
+	});
 
-  // We'll add more test cases to reach 13+
-  it("verifies chain where first event has wrong prev_hash (not GENESIS_HASH)", async () => {
-    const event: SorEvent = {
-      run_id: "run-1",
-      event_type: "tool_call",
-      actor: "coder",
-      backend: "opencode",
-      tool_name: "edit",
-      tool_input: { file: "a.ts" },
-      tool_output: { success: true },
-      payload: { phase: "implement" },
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
+	// We'll add more test cases to reach 13+
+	it("verifies chain where first event has wrong prev_hash (not GENESIS_HASH)", async () => {
+		const event: SorEvent = {
+			run_id: "run-1",
+			event_type: "tool_call",
+			actor: "coder",
+			backend: "opencode",
+			tool_name: "edit",
+			tool_input: { file: "a.ts" },
+			tool_output: { success: true },
+			payload: { phase: "implement" },
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // Insert event with a prev_hash that is not GENESIS_HASH
-      let seq = 1;
-      const wrongPrevHash = "not-the-genesis-hash";
-      const hash = signEvent(testSigningKey, wrongPrevHash, event, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			// Insert event with a prev_hash that is not GENESIS_HASH
+			const seq = 1;
+			const wrongPrevHash = "not-the-genesis-hash";
+			const hash = signEvent(testSigningKey, wrongPrevHash, event, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event.run_id,
-          seq,
-          event.event_type,
-          event.actor,
-          event.backend,
-          event.tool_name,
-          event.tool_input,
-          event.tool_output,
-          event.payload,
-          wrongPrevHash,
-          hash,
-          event.created_at,
-        ]
-      );
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, hash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+				[
+					event.run_id,
+					seq,
+					event.event_type,
+					event.actor,
+					event.backend,
+					event.tool_name,
+					event.tool_input,
+					event.tool_output,
+					event.payload,
+					wrongPrevHash,
+					hash,
+					event.created_at,
+				],
+			);
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, hash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(false);
-    expect(result.firstBadSeq).toBe(1);
-    expect(result.total).toBe(1);
-    expect(result.counts).toEqual({ tool_call: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(false);
+		expect(result.firstBadSeq).toBe(1);
+		expect(result.total).toBe(1);
+		expect(result.counts).toEqual({ tool_call: 1 });
+	});
 
-  it("verifies chain where a middle event is skipped (gap in seq) but hashes are correct", async () => {
-    // We'll insert events with seq 1 and 3 (skipping 2). The verification should still pass if the hashes are correct.
-    const event1: SorEvent = {
-      run_id: "run-1",
-      event_type: "tool_call",
-      actor: "coder",
-      backend: "opencode",
-      tool_name: "edit",
-      tool_input: { file: "a.ts" },
-      tool_output: { success: true },
-      payload: { phase: "implement" },
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
-    const event2: SorEvent = {
-      run_id: "run-1",
-      event_type: "wakeup",
-      actor: "system",
-      backend: null,
-      tool_name: null,
-      tool_input: null,
-      tool_output: null,
-      payload: { kind: "session.idle" },
-      created_at: "2026-08-26T10:01:00.000Z",
-    };
+	it("verifies chain where a middle event is skipped (gap in seq) but hashes are correct", async () => {
+		// We'll insert events with seq 1 and 3 (skipping 2). The verification should still pass if the hashes are correct.
+		const event1: SorEvent = {
+			run_id: "run-1",
+			event_type: "tool_call",
+			actor: "coder",
+			backend: "opencode",
+			tool_name: "edit",
+			tool_input: { file: "a.ts" },
+			tool_output: { success: true },
+			payload: { phase: "implement" },
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
+		const event2: SorEvent = {
+			run_id: "run-1",
+			event_type: "wakeup",
+			actor: "system",
+			backend: null,
+			tool_name: null,
+			tool_input: null,
+			tool_output: null,
+			payload: { kind: "session.idle" },
+			created_at: "2026-08-26T10:01:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // Insert event1 as seq=1
-      let prevHash = GENESIS_HASH;
-      let seq = 1;
-      const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			// Insert event1 as seq=1
+			let prevHash = GENESIS_HASH;
+			let seq = 1;
+			const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event1.run_id,
-          seq,
-          event1.event_type,
-          event1.actor,
-          event1.backend,
-          event1.tool_name,
-          event1.tool_input,
-          event1.tool_output,
-          event1.payload,
-          prevHash,
-          hash1,
-          event1.created_at,
-        ]
-      );
-      prevHash = hash1;
+				[
+					event1.run_id,
+					seq,
+					event1.event_type,
+					event1.actor,
+					event1.backend,
+					event1.tool_name,
+					event1.tool_input,
+					event1.tool_output,
+					event1.payload,
+					prevHash,
+					hash1,
+					event1.created_at,
+				],
+			);
+			prevHash = hash1;
 
-      // Skip seq=2, insert event2 as seq=3
-      seq = 3;
-      const hash2 = signEvent(testSigningKey, prevHash, event2, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+			// Skip seq=2, insert event2 as seq=3
+			seq = 3;
+			const hash2 = signEvent(testSigningKey, prevHash, event2, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event2.run_id,
-          seq,
-          event2.event_type,
-          event2.actor,
-          event2.backend,
-          event2.tool_name,
-          event2.tool_input,
-          event2.tool_output,
-          event2.payload,
-          prevHash,
-          hash2,
-          event2.created_at,
-        ]
-      );
-      prevHash = hash2;
+				[
+					event2.run_id,
+					seq,
+					event2.event_type,
+					event2.actor,
+					event2.backend,
+					event2.tool_name,
+					event2.tool_input,
+					event2.tool_output,
+					event2.payload,
+					prevHash,
+					hash2,
+					event2.created_at,
+				],
+			);
+			prevHash = hash2;
 
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, prevHash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, prevHash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    // The verification should pass because the hash chain is correct:
-    // event1's prev_hash = GENESIS_HASH, event1's hash = hash1.
-    // event2's prev_hash = hash1 (which is correct), event2's hash = hash2.
-    expect(result.ok).toBe(true);
-    expect(result.firstBadSeq).toBeNull();
-    expect(result.total).toBe(2);
-    expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		// The verification should pass because the hash chain is correct:
+		// event1's prev_hash = GENESIS_HASH, event1's hash = hash1.
+		// event2's prev_hash = hash1 (which is correct), event2's hash = hash2.
+		expect(result.ok).toBe(true);
+		expect(result.firstBadSeq).toBeNull();
+		expect(result.total).toBe(2);
+		expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
+	});
 
-  it("verifies chain where events are out of order in insertion but ordered by seq in query", async () => {
-    // Insert event2 first, then event1. The query orders by seq, so they will be read in the correct order.
-    const event1: SorEvent = {
-      run_id: "run-1",
-      event_type: "tool_call",
-      actor: "coder",
-      backend: "opencode",
-      tool_name: "edit",
-      tool_input: { file: "a.ts" },
-      tool_output: { success: true },
-      payload: { phase: "implement" },
-      created_at: "2026-08-26T10:00:00.000Z",
-    };
-    const event2: SorEvent = {
-      run_id: "run-1",
-      event_type: "wakeup",
-      actor: "system",
-      backend: null,
-      tool_name: null,
-      tool_input: null,
-      tool_output: null,
-      payload: { kind: "session.idle" },
-      created_at: "2026-08-26T10:01:00.000Z",
-    };
+	it("verifies chain where events are out of order in insertion but ordered by seq in query", async () => {
+		// Insert event2 first, then event1. The query orders by seq, so they will be read in the correct order.
+		const event1: SorEvent = {
+			run_id: "run-1",
+			event_type: "tool_call",
+			actor: "coder",
+			backend: "opencode",
+			tool_name: "edit",
+			tool_input: { file: "a.ts" },
+			tool_output: { success: true },
+			payload: { phase: "implement" },
+			created_at: "2026-08-26T10:00:00.000Z",
+		};
+		const event2: SorEvent = {
+			run_id: "run-1",
+			event_type: "wakeup",
+			actor: "system",
+			backend: null,
+			tool_name: null,
+			tool_input: null,
+			tool_output: null,
+			payload: { kind: "session.idle" },
+			created_at: "2026-08-26T10:01:00.000Z",
+		};
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // Insert event2 as seq=1
-      let prevHash = GENESIS_HASH;
-      let seq = 1;
-      const hash2 = signEvent(testSigningKey, prevHash, event2, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			// Insert event2 as seq=1
+			let prevHash = GENESIS_HASH;
+			let seq = 1;
+			const hash2 = signEvent(testSigningKey, prevHash, event2, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event2.run_id,
-          seq,
-          event2.event_type,
-          event2.actor,
-          event2.backend,
-          event2.tool_name,
-          event2.tool_input,
-          event2.tool_output,
-          event2.payload,
-          prevHash,
-          hash2,
-          event2.created_at,
-        ]
-      );
-      prevHash = hash2;
+				[
+					event2.run_id,
+					seq,
+					event2.event_type,
+					event2.actor,
+					event2.backend,
+					event2.tool_name,
+					event2.tool_input,
+					event2.tool_output,
+					event2.payload,
+					prevHash,
+					hash2,
+					event2.created_at,
+				],
+			);
+			prevHash = hash2;
 
-      // Insert event1 as seq=2
-      seq = 2;
-      const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
-      await client.query(
-        `INSERT INTO audit_events
+			// Insert event1 as seq=2
+			seq = 2;
+			const hash1 = signEvent(testSigningKey, prevHash, event1, "v1");
+			await client.query(
+				`INSERT INTO audit_events
           (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          event1.run_id,
-          seq,
-          event1.event_type,
-          event1.actor,
-          event1.backend,
-          event1.tool_name,
-          event1.tool_input,
-          event1.tool_output,
-          event1.payload,
-          prevHash,
-          hash1,
-          event1.created_at,
-        ]
-      );
-      prevHash = hash1;
+				[
+					event1.run_id,
+					seq,
+					event1.event_type,
+					event1.actor,
+					event1.backend,
+					event1.tool_name,
+					event1.tool_input,
+					event1.tool_output,
+					event1.payload,
+					prevHash,
+					hash1,
+					event1.created_at,
+				],
+			);
+			prevHash = hash1;
 
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, prevHash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, prevHash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    // The verification will fail because the prev_hash of event1 (seq=2) is hash2, but the hash of event2 (seq=1) is hash2, so that matches.
-    // However, the event2 (wakeup) is first, then event1 (tool_call). The hash chain is correct.
-    // So it should pass.
-    expect(result.ok).toBe(true);
-    expect(result.firstBadSeq).toBeNull();
-    expect(result.total).toBe(2);
-    expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
-  });
+		const result = await verifyChainFromAudit(pool);
+		// The verification will fail because the prev_hash of event1 (seq=2) is hash2, but the hash of event2 (seq=1) is hash2, so that matches.
+		// However, the event2 (wakeup) is first, then event1 (tool_call). The hash chain is correct.
+		// So it should pass.
+		expect(result.ok).toBe(true);
+		expect(result.firstBadSeq).toBeNull();
+		expect(result.total).toBe(2);
+		expect(result.counts).toEqual({ tool_call: 1, wakeup: 1 });
+	});
 
-  it("verifies chain with many events (stress)", async () => {
-    const numEvents = 100;
-    const events: SorEvent[] = [];
-    for (let i = 0; i < numEvents; i++) {
-      events.push({
-        run_id: `run-${i}`,
-        event_type: i % 3 === 0 ? "tool_call" : i % 3 === 1 ? "wakeup" : "phase",
-        actor: "coder",
-        backend: i % 3 === 0 ? "opencode" : null,
-        tool_name: i % 3 === 0 ? "edit" : null,
-        tool_input: i % 3 === 0 ? { file: `${i}.ts` } : null,
-        tool_output: i % 3 === 0 ? { success: true } : null,
-        payload: { index: i },
-        created_at: new Date(Date.now() + i * 1000).toISOString(),
-      });
-    }
+	it("verifies chain with many events (stress)", async () => {
+		const numEvents = 100;
+		const events: SorEvent[] = [];
+		for (let i = 0; i < numEvents; i++) {
+			events.push({
+				run_id: `run-${i}`,
+				event_type:
+					i % 3 === 0 ? "tool_call" : i % 3 === 1 ? "wakeup" : "phase",
+				actor: "coder",
+				backend: i % 3 === 0 ? "opencode" : null,
+				tool_name: i % 3 === 0 ? "edit" : null,
+				tool_input: i % 3 === 0 ? { file: `${i}.ts` } : null,
+				tool_output: i % 3 === 0 ? { success: true } : null,
+				payload: { index: i },
+				created_at: new Date(Date.now() + i * 1000).toISOString(),
+			});
+		}
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      let prevHash = GENESIS_HASH;
-      let seq = 0;
-      for (const event of events) {
-        seq++;
-        const hash = signEvent(testSigningKey, prevHash, event, "v1");
-        await client.query(
-          `INSERT INTO audit_events
+		const client = await pool.connect();
+		try {
+			await client.query("BEGIN");
+			let prevHash = GENESIS_HASH;
+			let seq = 0;
+			for (const event of events) {
+				seq++;
+				const hash = signEvent(testSigningKey, prevHash, event, "v1");
+				await client.query(
+					`INSERT INTO audit_events
             (run_id, seq, event_type, actor, backend, tool_name, tool_input, tool_output, payload, prev_hash, hash, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [
-            event.run_id,
-            seq,
-            event.event_type,
-            event.actor,
-            event.backend,
-            event.tool_name,
-            event.tool_input,
-            event.tool_output,
-            event.payload,
-            prevHash,
-            hash,
-            event.created_at,
-          ]
-        );
-        prevHash = hash;
-      }
-      await client.query(
-        "UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
-        [seq, prevHash]
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+					[
+						event.run_id,
+						seq,
+						event.event_type,
+						event.actor,
+						event.backend,
+						event.tool_name,
+						event.tool_input,
+						event.tool_output,
+						event.payload,
+						prevHash,
+						hash,
+						event.created_at,
+					],
+				);
+				prevHash = hash;
+			}
+			await client.query(
+				"UPDATE sor_chain SET seq = $1, hash = $2, updated_at = now() WHERE id = 1",
+				[seq, prevHash],
+			);
+			await client.query("COMMIT");
+		} finally {
+			client.release();
+		}
 
-    const result = await verifyChainFromAudit(pool);
-    expect(result.ok).toBe(true);
-    expect(result.firstBadSeq).toBeNull();
-    expect(result.total).toBe(numEvents);
-    // Counts
-    const expectedCounts = { tool_call: 0, wakeup: 0, phase: 0 };
-    for (let i = 0; i < numEvents; i++) {
-      const type = i % 3 === 0 ? "tool_call" : i % 3 === 1 ? "wakeup" : "phase";
-      expectedCounts[type as keyof typeof expectedCounts] =
-        (expectedCounts[type as keyof typeof expectedCounts] ?? 0) + 1;
-    }
-    expect(result.counts).toEqual(expectedCounts);
-  });
+		const result = await verifyChainFromAudit(pool);
+		expect(result.ok).toBe(true);
+		expect(result.firstBadSeq).toBeNull();
+		expect(result.total).toBe(numEvents);
+		// Counts
+		const expectedCounts = { tool_call: 0, wakeup: 0, phase: 0 };
+		for (let i = 0; i < numEvents; i++) {
+			const type = i % 3 === 0 ? "tool_call" : i % 3 === 1 ? "wakeup" : "phase";
+			expectedCounts[type as keyof typeof expectedCounts] =
+				(expectedCounts[type as keyof typeof expectedCounts] ?? 0) + 1;
+		}
+		expect(result.counts).toEqual(expectedCounts);
+	});
 });

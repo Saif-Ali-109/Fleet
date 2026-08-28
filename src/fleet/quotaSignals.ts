@@ -16,22 +16,29 @@ export const ALL_RPD_EXHAUSTED = "ALL_GEMINI_MODELS_RPD_EXHAUSTED";
 export type RateLimitBlock = "rpm" | "tpm";
 
 export interface RateLimitSwitchSignal {
-  block: RateLimitBlock;
-  waitMs: number;
+	block: RateLimitBlock;
+	waitMs: number;
 }
 
-export function rateLimitSwitchError(block: RateLimitBlock, waitMs: number): Error {
-  return new Error(`${RATE_LIMIT_SWITCH_PREFIX}${block}:${Math.max(0, Math.floor(waitMs))}`);
+export function rateLimitSwitchError(
+	block: RateLimitBlock,
+	waitMs: number,
+): Error {
+	return new Error(
+		`${RATE_LIMIT_SWITCH_PREFIX}${block}:${Math.max(0, Math.floor(waitMs))}`,
+	);
 }
 
-export function parseRateLimitSwitch(errorMsg: string | undefined): RateLimitSwitchSignal | undefined {
-  if (!errorMsg?.startsWith(RATE_LIMIT_SWITCH_PREFIX)) return undefined;
-  const rest = errorMsg.slice(RATE_LIMIT_SWITCH_PREFIX.length);
-  const sep = rest.lastIndexOf(":");
-  if (sep <= 0) return undefined;
-  const block = rest.slice(0, sep);
-  if (block !== "rpm" && block !== "tpm") return undefined;
-  const waitMs = Number(rest.slice(sep + 1));
-  if (!Number.isFinite(waitMs) || waitMs < 0) return undefined;
-  return { block, waitMs };
+export function parseRateLimitSwitch(
+	errorMsg: string | undefined,
+): RateLimitSwitchSignal | undefined {
+	if (!errorMsg?.startsWith(RATE_LIMIT_SWITCH_PREFIX)) return undefined;
+	const rest = errorMsg.slice(RATE_LIMIT_SWITCH_PREFIX.length);
+	const sep = rest.lastIndexOf(":");
+	if (sep <= 0) return undefined;
+	const block = rest.slice(0, sep);
+	if (block !== "rpm" && block !== "tpm") return undefined;
+	const waitMs = Number(rest.slice(sep + 1));
+	if (!Number.isFinite(waitMs) || waitMs < 0) return undefined;
+	return { block, waitMs };
 }

@@ -1,90 +1,136 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { db, pool } from "../db/client.ts";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { checkpoint } from "../db/checkpoint.ts";
+import { db, pool } from "../db/client.ts";
 
 const ROLE = "coder";
 const ITERATION = 1;
 let runId: string;
 
 beforeAll(async () => {
-  runId = await db.createRun({
-    repo: "test/checkpoint",
-    issue_number: 1,
-    backend: "opencode",
-  });
+	runId = await db.createRun({
+		repo: "test/checkpoint",
+		issue_number: 1,
+		backend: "opencode",
+	});
 });
 
 afterEach(async () => {
-  await pool.query(
-    "DELETE FROM agent_steps WHERE run_id IN (SELECT run_id FROM run_outcomes WHERE repo = $1)",
-    ["test/checkpoint"]
-  );
+	await pool.query(
+		"DELETE FROM agent_steps WHERE run_id IN (SELECT run_id FROM run_outcomes WHERE repo = $1)",
+		["test/checkpoint"],
+	);
 });
 
 describe("checkpoint", () => {
-  it("startStep returns a valid UUID and creates a running row", async () => {
-    const stepId = await checkpoint.startStep(runId, ROLE, ITERATION, "parse-spec");
-    expect(stepId).toMatch(/^[0-9a-f-]{36}$/);
-    const result = await pool.query<{ status: string }>(
-      "SELECT status FROM agent_steps WHERE step_id = $1",
-      [stepId]
-    );
-    expect(result.rows[0]?.status).toBe("running");
-  });
+	it("startStep returns a valid UUID and creates a running row", async () => {
+		const stepId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"parse-spec",
+		);
+		expect(stepId).toMatch(/^[0-9a-f-]{36}$/);
+		const result = await pool.query<{ status: string }>(
+			"SELECT status FROM agent_steps WHERE step_id = $1",
+			[stepId],
+		);
+		expect(result.rows[0]?.status).toBe("running");
+	});
 
-  it("markStepSuccess sets the status to success", async () => {
-    const stepId = await checkpoint.startStep(runId, ROLE, ITERATION, "edit-repo");
-    await checkpoint.markStepSuccess(stepId);
-    const result = await pool.query<{ status: string }>(
-      "SELECT status FROM agent_steps WHERE step_id = $1",
-      [stepId]
-    );
-    expect(result.rows[0]?.status).toBe("success");
-  });
+	it("markStepSuccess sets the status to success", async () => {
+		const stepId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"edit-repo",
+		);
+		await checkpoint.markStepSuccess(stepId);
+		const result = await pool.query<{ status: string }>(
+			"SELECT status FROM agent_steps WHERE step_id = $1",
+			[stepId],
+		);
+		expect(result.rows[0]?.status).toBe("success");
+	});
 
-  it("getCompletedSteps returns the success step names", async () => {
-    await checkpoint.startStep(runId, ROLE, ITERATION, "run-tests");
-    const successId = await checkpoint.startStep(runId, ROLE, ITERATION, "commit");
-    await checkpoint.markStepSuccess(successId);
-    const completed = await checkpoint.getCompletedSteps(runId, ROLE, ITERATION);
-    expect(completed).toContain("commit");
-    expect(completed).not.toContain("run-tests");
-  });
+	it("getCompletedSteps returns the success step names", async () => {
+		await checkpoint.startStep(runId, ROLE, ITERATION, "run-tests");
+		const successId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"commit",
+		);
+		await checkpoint.markStepSuccess(successId);
+		const completed = await checkpoint.getCompletedSteps(
+			runId,
+			ROLE,
+			ITERATION,
+		);
+		expect(completed).toContain("commit");
+		expect(completed).not.toContain("run-tests");
+	});
 
-  it("startStep succeeds twice for a duplicate (run, role, iteration, step_name)", async () => {
-    const firstId = await checkpoint.startStep(runId, ROLE, ITERATION, "commit");
-    expect(firstId).toMatch(/^[0-9a-f-]{36}$/);
-    const secondId = await checkpoint.startStep(runId, ROLE, ITERATION, "commit");
-    expect(secondId).toBe(firstId);
-    const result = await pool.query<{ status: string }>(
-      "SELECT status FROM agent_steps WHERE step_id = $1",
-      [secondId]
-    );
-    expect(result.rows[0]?.status).toBe("running");
-  });
+	it("startStep succeeds twice for a duplicate (run, role, iteration, step_name)", async () => {
+		const firstId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"commit",
+		);
+		expect(firstId).toMatch(/^[0-9a-f-]{36}$/);
+		const secondId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"commit",
+		);
+		expect(secondId).toBe(firstId);
+		const result = await pool.query<{ status: string }>(
+			"SELECT status FROM agent_steps WHERE step_id = $1",
+			[secondId],
+		);
+		expect(result.rows[0]?.status).toBe("running");
+	});
 
-  it("startStep resumes a failed step back to running", async () => {
-    const firstId = await checkpoint.startStep(runId, ROLE, ITERATION, "run-tests");
-    await checkpoint.markStepFailed(firstId, "boom");
-    const resumedId = await checkpoint.startStep(runId, ROLE, ITERATION, "run-tests");
-    expect(resumedId).toBe(firstId);
-    const result = await pool.query<{ status: string; error_message: string | null }>(
-      "SELECT status, error_message FROM agent_steps WHERE step_id = $1",
-      [resumedId]
-    );
-    expect(result.rows[0]?.status).toBe("running");
-    expect(result.rows[0]?.error_message).toBeNull();
-  });
+	it("startStep resumes a failed step back to running", async () => {
+		const firstId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"run-tests",
+		);
+		await checkpoint.markStepFailed(firstId, "boom");
+		const resumedId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"run-tests",
+		);
+		expect(resumedId).toBe(firstId);
+		const result = await pool.query<{
+			status: string;
+			error_message: string | null;
+		}>("SELECT status, error_message FROM agent_steps WHERE step_id = $1", [
+			resumedId,
+		]);
+		expect(result.rows[0]?.status).toBe("running");
+		expect(result.rows[0]?.error_message).toBeNull();
+	});
 
-  it("getLastFailedStep returns the most recent failed step name", async () => {
-    const failedId = await checkpoint.startStep(runId, ROLE, ITERATION, "verify-diff");
-    await checkpoint.markStepFailed(failedId, "boom");
-    const failed = await checkpoint.getLastFailedStep(runId, ROLE);
-    expect(failed).toBe("verify-diff");
-  });
+	it("getLastFailedStep returns the most recent failed step name", async () => {
+		const failedId = await checkpoint.startStep(
+			runId,
+			ROLE,
+			ITERATION,
+			"verify-diff",
+		);
+		await checkpoint.markStepFailed(failedId, "boom");
+		const failed = await checkpoint.getLastFailedStep(runId, ROLE);
+		expect(failed).toBe("verify-diff");
+	});
 
-  it("getLastFailedStep returns null when nothing has failed", async () => {
-    const failed = await checkpoint.getLastFailedStep(runId, ROLE);
-    expect(failed).toBeNull();
-  });
+	it("getLastFailedStep returns null when nothing has failed", async () => {
+		const failed = await checkpoint.getLastFailedStep(runId, ROLE);
+		expect(failed).toBeNull();
+	});
 });

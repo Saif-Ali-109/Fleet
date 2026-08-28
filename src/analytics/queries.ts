@@ -4,43 +4,43 @@
 import { pool } from "../db/client.ts";
 
 export interface RoleRow {
-  role: string;
-  model: string;
-  count: number;
-  total_cost_usd: number;
-  avg_cost_per_run: number;
-  success_rate: number;
+	role: string;
+	model: string;
+	count: number;
+	total_cost_usd: number;
+	avg_cost_per_run: number;
+	success_rate: number;
 }
 
 export interface BackendRow {
-  backend: string;
-  count: number;
-  total_cost_usd: number;
-  success_rate: number;
+	backend: string;
+	count: number;
+	total_cost_usd: number;
+	success_rate: number;
 }
 
 export interface IterationRow {
-  iteration: number;
-  count: number;
-  total_cost_usd: number;
-  success_rate: number;
+	iteration: number;
+	count: number;
+	total_cost_usd: number;
+	success_rate: number;
 }
 
 export interface FailingRoleRow {
-  role: string;
-  model: string;
-  failure_count: number;
-  failure_rate: number;
+	role: string;
+	model: string;
+	failure_count: number;
+	failure_rate: number;
 }
 
 /** Cost and success by agent role + model. */
 export async function costPerRole(
-  from: string,
-  to: string,
-  repo?: string
+	from: string,
+	to: string,
+	repo?: string,
 ): Promise<RoleRow[]> {
-  const result = await pool.query<RoleRow>(
-    `SELECT
+	const result = await pool.query<RoleRow>(
+		`SELECT
       a.role,
       a.model,
       COUNT(*)::int AS count,
@@ -53,19 +53,19 @@ export async function costPerRole(
       AND ($3::text IS NULL OR r.repo = $3)
     GROUP BY a.role, a.model
     ORDER BY a.role, a.model`,
-    [from, to, repo ?? null]
-  );
-  return result.rows;
+		[from, to, repo ?? null],
+	);
+	return result.rows;
 }
 
 /** Cost and success by backend (via run_outcomes join). */
 export async function costPerBackend(
-  from: string,
-  to: string,
-  repo?: string
+	from: string,
+	to: string,
+	repo?: string,
 ): Promise<BackendRow[]> {
-  const result = await pool.query<BackendRow>(
-    `SELECT
+	const result = await pool.query<BackendRow>(
+		`SELECT
       r.backend,
       COUNT(a.action_id)::int AS count,
       SUM(a.cost_usd)::float AS total_cost_usd,
@@ -76,19 +76,19 @@ export async function costPerBackend(
       AND ($3::text IS NULL OR r.repo = $3)
     GROUP BY r.backend
     ORDER BY r.backend`,
-    [from, to, repo ?? null]
-  );
-  return result.rows;
+		[from, to, repo ?? null],
+	);
+	return result.rows;
 }
 
 /** Cost and success by iteration count of the run. */
 export async function costPerIteration(
-  from: string,
-  to: string,
-  repo?: string
+	from: string,
+	to: string,
+	repo?: string,
 ): Promise<IterationRow[]> {
-  const result = await pool.query<IterationRow>(
-    `SELECT
+	const result = await pool.query<IterationRow>(
+		`SELECT
       iterations_used AS iteration,
       COUNT(*)::int AS count,
       SUM(total_cost_usd)::float AS total_cost_usd,
@@ -98,20 +98,20 @@ export async function costPerIteration(
       AND ($3::text IS NULL OR repo = $3)
     GROUP BY iterations_used
     ORDER BY iterations_used`,
-    [from, to, repo ?? null]
-  );
-  return result.rows;
+		[from, to, repo ?? null],
+	);
+	return result.rows;
 }
 
 /** Top failing roles by failure count within the window. */
 export async function topFailingRoles(
-  from: string,
-  to: string,
-  repo?: string,
-  limit: number = 10
+	from: string,
+	to: string,
+	repo?: string,
+	limit: number = 10,
 ): Promise<FailingRoleRow[]> {
-  const result = await pool.query<FailingRoleRow>(
-    `SELECT
+	const result = await pool.query<FailingRoleRow>(
+		`SELECT
       a.role,
       a.model,
       COUNT(*)::int AS failure_count,
@@ -127,7 +127,7 @@ export async function topFailingRoles(
     GROUP BY a.role, a.model
     ORDER BY failure_count DESC
     LIMIT $4`,
-    [from, to, repo ?? null, limit]
-  );
-  return result.rows;
+		[from, to, repo ?? null, limit],
+	);
+	return result.rows;
 }

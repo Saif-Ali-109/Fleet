@@ -1,41 +1,41 @@
 {
-  "name": "fleet",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "description": "TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue to a real PR. No human gates; analyzer→planner→coder→tester→reviewer→(≤1 auto-fix)→pr. PostgreSQL-backed SOR audit chain. Hand-rolled web dashboard + ANSI TUI.",
-  "engines": {
-    "node": ">=22"
-  },
-  "scripts": {
-    "start": "tsx --env-file-if-exists=.env src/index.ts",
-    "dry": "tsx --env-file-if-exists=.env src/index.ts --dry-run",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest",
-    "lint": "biome check",
-    "format": "biome format --write",
-    "migrate:up": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
-    "migrate:down": "tsx --env-file-if-exists=.env src/db/migrate.ts down",
-    "generate-memory": "tsx --env-file-if-exists=.env src/db/queries/summaryReport.ts",
-    "analytics": "tsx --env-file-if-exists=.env src/analytics/report.ts",
-    "sor:verify": "tsx --env-file-if-exists=.env src/sor/verifyCli.ts",
-    "sor:repair": "tsx --env-file-if-exists=.env src/sor/repairChain.ts"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.5.10",
-    "@types/node": "^22.10.0",
-    "gray-matter": "^4.0.3",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "vitest": "^3.0.0"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@types/pg": "^8.21.0",
-    "openai": "^7.5.0",
-    "pg": "^8.23.0"
-  }
+	"name": "fleet",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue to a real PR. No human gates; analyzer→planner→coder→tester→reviewer→(≤1 auto-fix)→pr. PostgreSQL-backed SOR audit chain. Hand-rolled web dashboard + ANSI TUI.",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"start": "tsx --env-file-if-exists=.env src/index.ts",
+		"dry": "tsx --env-file-if-exists=.env src/index.ts --dry-run",
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"test": "vitest run",
+		"test:coverage": "vitest run --coverage",
+		"test:watch": "vitest",
+		"lint": "biome check",
+		"format": "biome format --write",
+		"migrate:up": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
+		"migrate:down": "tsx --env-file-if-exists=.env src/db/migrate.ts down",
+		"generate-memory": "tsx --env-file-if-exists=.env src/db/queries/summaryReport.ts",
+		"analytics": "tsx --env-file-if-exists=.env src/analytics/report.ts",
+		"sor:verify": "tsx --env-file-if-exists=.env src/sor/verifyCli.ts",
+		"sor:repair": "tsx --env-file-if-exists=.env src/sor/repairChain.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.10",
+		"@types/node": "^22.10.0",
+		"gray-matter": "^4.0.3",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.2",
+		"vitest": "^3.0.0"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.30.0",
+		"@types/pg": "^8.21.0",
+		"openai": "^7.5.0",
+		"pg": "^8.23.0"
+	}
 }
