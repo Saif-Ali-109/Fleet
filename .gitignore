@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .runs/
+coverage/
 *.log
 .env
 .env.*
