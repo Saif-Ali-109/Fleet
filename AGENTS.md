@@ -6,7 +6,9 @@ No YAML frontmatter on this file by rule — every other `*.md` must have one.
 
 ## What this repo is
 
-TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue → a real PR using 6 role agents (analyzer, planner, coder, tester, reviewer, pr). Workers run as child processes; the Manager itself never calls models. PostgreSQL-backed tamper-evident SOR audit chain. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
+TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue → a real PR using 6 role agents (analyzer, planner, coder, tester, reviewer, pr). Workers run as child processes; the Manager itself never calls models. PostgreSQL-backed tamper-evident SOR audit chain with append-only enforcement via database trigger. Hand-rolled node:http web dashboard + ANSI TUI. Node ≥22, tsx, vitest.
+
+Gemini quota/rate-limit system: per-model RPM/TPM/RPD limits via `GEMINI_QUOTA_LIMITS`; per-role model chains are USER-CONFIG ONLY (all six `<ROLE>_MODEL_GEMINI` required + shared `GEMINI_RATE_LIMIT_MODELS` fallback pool). On any block, workers fail fast with sentinels (`src/fleet/quotaSignals.ts`) and the manager walks the chain with auto fail-back (`src/agentRunner.ts`); notifications fan out through `src/fleet/quotaEvents.ts` to console/TUI/SSE/SOR/SESSION_LOG.
 
 Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/fleet/`, `FLEET_PROVIDERS`, `FleetAgentDef`) refers to the worker-fleet concept and predates the branding — treat them as distinct.
 
@@ -26,6 +28,7 @@ Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/
 - `npm test` / `npm run typecheck`
 - `npm run migrate:up` / `migrate:down` — Postgres schema (DATABASE_URL required)
 - `npm run sor:verify` — replay SOR hash chain; must stay green at all times
+- `npm run sor:repair` — re-sign all audit rows under current `SOR_SIGNING_KEY` (key-loss recovery only)
 - `analytics`, `generate-memory` — reporting utilities
 
 ## Code style
@@ -59,3 +62,4 @@ Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/
 - Hand-edit generated or historical artifacts (anything under `.runs/`).
 - Weaken tool gating (per-role toolsets) or bash worktree cwd-locking.
 - Reorder/delete SOR chain logic; assume `--dry-run` spawns real workers.
+- Restore implicit tier-default Gemini fallbacks or sleep-and-retry inside the worker reserve path (`src/fleet/loop.ts`) — quota blocks must switch models via the sentinel protocol.

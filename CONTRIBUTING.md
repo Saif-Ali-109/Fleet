@@ -2,7 +2,7 @@
 title: Contributing — Global Rules
 status: active
 date: 2026-08-22
-audience: ain + AI agents (solo project)
+audience: ain + AI agents 
 ---
 
 # CONTRIBUTING.md

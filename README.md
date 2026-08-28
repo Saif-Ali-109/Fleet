@@ -49,6 +49,8 @@ npm start -- --repo owner/repo --issue 123
 |----------|-------------|
 | `FLEET_PROVIDERS` | Fallback order, e.g. `gemini,openrouter,ollama` |
 | `GEMINI_API_KEY` | Primary provider key (required) |
+| `GEMINI_QUOTA_LIMITS` | Optional JSON overrides keyed by exact Gemini model id (`rpm`, `tpm`, `rpd`) |
+| `GEMINI_RATE_LIMIT_WAIT_MS` | Maximum rolling-limit wait ceiling (default `120000`) |
 | `OPENROUTER_API_KEY` | Optional fallback |
 | `OLLAMA_BASE_URL` | Optional local Ollama, default `http://localhost:11434/v1` |
 | `<ROLE>_MODEL_<PROVIDER>` | Per-role model overrides, e.g. `ANALYZER_MODEL_GEMINI=gemini-2.5-pro` |
@@ -58,6 +60,20 @@ npm start -- --repo owner/repo --issue 123
 | `WORKER_TIMEOUT_GRACE_MS` | Grace before SIGKILL (default 1000) |
 
 Model resolution order: dashboard override > env > tier defaults (strong for analyzer/planner/reviewer, cheap for coder/tester/pr).
+
+Gemini generation calls are fail-closed behind a manager-owned per-model
+reservation immediately before every initial, streaming, retry, and tool
+continuation request. Traces and dashboard SSE include redacted request
+identities and reservation/provider outcomes. Dashboard `/api/models` traffic
+is explicitly classified as metadata and never consumes generation RPM.
+
+Gemini quota validation is exact-model based and runs before run/worktree/audit
+setup. Built-in defaults cover `gemini-3-flash-preview`,
+`gemini-3.5-flash`, `gemini-2.5-flash-lite`, `gemini-3.5-flash-lite`, and
+`gemini-3.1-flash-lite`, plus the existing 2.5 defaults. Use
+`GEMINI_QUOTA_LIMITS='{"model-id":{"rpm":5,"tpm":250000,"rpd":20}}'` for
+account-specific or future IDs. Unknown, malformed, or non-positive limits fail
+closed; explicitly selected non-Gemini providers skip Gemini validation.
 
 ## Commands
 

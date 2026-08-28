@@ -217,6 +217,9 @@ Entry: `src/runtime/worker/main.ts`, launched via `child_process.fork()`.
 - Retry/resume: OLD `resumeSessionID` cross-process CLI resume is DELETED.
   Workflow retry loops instead spawn a fresh worker whose task text appends the
   prior failure output; `aggregateAgentResults` stays for accounting.
+- ctx.resumeFrom?: {messagesPath} — when set, worker loads messages from
+  that JSON instead of building from task; continues mid-conversation.
+- Worker writes <runDir>/checkpoints/<role>.json after every completed turn.
 
 ## 7. Tools spec (`src/fleet/tools/`)
 
@@ -240,6 +243,7 @@ through `ensureChain`/`appendAuditEvent` (`src/db/audit.ts`). Non-fatal: wrap in
 try/catch + warn. The `backend` column/field on NEW SOR records and analytics
 rows carries the PROVIDER name (`gemini`|`openrouter`|`ollama`); historical rows
 keep their legacy strings — queries group by whatever values exist.
+Additionally, the `audit_events` table is append-only: a trigger prevents UPDATE and DELETE operations to ensure tamper-evidence.
 
 ## 8. Skills spec
 
@@ -308,6 +312,118 @@ as built-ins.
   per role. Persists into `manager/models.json` NEW shape `{provider:{role:id}}`
   (migrator ignores unknown old keys).
 - TUI header shows the provider list instead of a single backend.
+
+## 11.5 Gemini quota chains, PAUSE-on-exhaustion, mid-conversation resume
+
+### Model chains (owner-mandated)
+- Role chain = [<ROLE>_MODEL_GEMINI] + GEMINI_RATE_LIMIT_MODELS pool minus
+  the primary (order preserved).
+- ALL SIX <ROLE>_MODEL_GEMINI REQUIRED at boot; every chain model needs a
+  GEMINI_QUOTA_LIMITS entry ⇒ else startup fails fast.
+- GEMINI_RATE_LIMIT_MODELS unset ⇒ single-model chains; boot prints a
+  WARNING that no fallback exists.
+
+### Block semantics
+- rpm/tpm finite blocks: switch to next chain model immediately; whole chain
+  finitely blocked ⇒ sleep min(neededWait, GEMINI_RATE_LIMIT_WAIT_MS) and
+  restart chain FROM THE TOP (auto fail-back). RPM recovery needs no action.
+- rpd terminal block: model DEAD until UTC midnight (coordinator latch);
+  not retried even if other models recover — unless resumed via key change.
+- ALL models of a role rpd-latched ⇒ enter PAUSED state. Quota exhaustion
+  NEVER auto-finalizes a run as failed. User Stop (button/SIGINT) during
+  pause finalizes failed normally.
+- No "switch" telemetry when no second model exists; SESSION_LOG fallback
+  line collapses consecutive duplicate ids.
+
+### PAUSED state (RPD-total only)
+1. Emit SOR `run_paused`; phase "paused"; persistent banner + browser
+   Notification "All models RPD exhausted — change GEMINI_API_KEY, then
+   Resume"; console + SESSION_LOG lines; console reminder every ~5 min.
+2. Completed roles stay completed; pipeline position preserved.
+3. RESUME = banner button "✓ Changed — Resume":
+   a. Re-read GEMINI_API_KEY / OPENROUTER_API_KEY from .env on disk;
+      update process.env; invalidate provider registry client memo.
+   b. Reset all GeminiQuotaCoordinator buckets (new key ⇒ fresh quotas).
+   c. Emit SOR `run_resumed`; clear banner; respawn paused role's worker
+      seeded from checkpoint — LLM continues mid-conversation; worktree
+      untouched during pause.
+4. New key itself exhausted ⇒ re-enter PAUSED (loop-safe).
+5. Checkpoint: `<runDir>/checkpoints/<role>.json` = full OpenAI-format
+   messages array + chain position + model, written atomically EVERY turn;
+   job ctx gains `resumeFrom:{messagesPath}` — worker skips prompt
+   construction and continues from those messages.
+
+### TPM accounting
+- Conservative reservation stays (est + GEMINI_MAX_OUTPUT_TOKENS), but every
+  reservation/rejection telemetry logs estTokens, maxOutTokens,
+  windowUsedTokens, limitTpm.
+
+## 11.6 Observability & audit contract
+
+Manager-owned single-hook architecture: the worker emits events to stdout;
+the manager tails the trace file and routes every event to SOR, dashboard,
+and stderr. The worker does NOT write to SOR for non-tool events.
+
+### Architecture
+
+```
+Worker (loop.ts)                    Manager (orchestrator.ts)
+───────────────                     ──────────────────────────
+emit() → stdout → trace.jsonl       onEvent() ←── tails trace file
+                                        │
+sor.toolCall() ──→ SOR (tool_call)      ├──→ SOR hook (reservation,
+[worker-side, UNCHANGED]               │    completion, retry, etc.)
+                                       ├──→ dashboard SSE (all events)
+                                       └──→ stderr (errors, retries)
+```
+
+### SOR event types (manager-emitted via onEvent hook)
+
+| event_type | actor | tool_name | payload |
+|---|---|---|---|
+| `reservation` | `"manager"` | model id | `{role, reservationId, status:"reserved", estTokens, windowUsedTokens, limitTpm}` |
+| `reservation_rejection` | `"manager"` | model id | `{role, reservationId, block, waitMs, resetAt}` |
+| `provider_completion` | `"manager"` | model id | `{role, status:"completed"\|"failed", httpStatus, ms, reservationId, attempt, blockedDimension}` |
+| `retry` | `"manager"` | model id | `{role, status:"scheduled", waitMs, attempt}` |
+| `tool_call` (before) | worker | tool name | `{input}` (unchanged, worker-side SorEmitSink) |
+| `tool_call` (after) | worker | tool name | `{input, output, ok, ms}` (unchanged, worker-side SorEmitSink) |
+
+All SOR writes are NON-FATAL (warn and continue, never abort a run).
+Existing `tool_call` SOR emission stays worker-side (Approach B).
+
+### Trace JSONL contract
+
+ALL events appear in `traces/<role>.jsonl` (worker stdout NDJSON).
+This is already complete — no changes needed. Event types:
+`init`, `text`, `tool_call`, `tool_result`, `step_finish`, `error`,
+`result`, `reservation`, `reservation_rejection`, `provider_completion`,
+`provider_rate_limit`, `retry`, `model_switch`.
+
+### Dashboard contract
+
+**Stream labels** — each event type gets a dedicated colored badge in the
+"Tools & telemetry" stream:
+- `🟢 completed` — green, shows model + latency + tokens
+- `🔴 failed` — red, shows httpStatus + error message
+- `🟡 retry` — yellow, shows attempt count + backoff delay
+- `🔵 reservation` — blue, shows model + tokens reserved
+- `⚪ rejected` — gray, shows block type + wait time
+- `🟠 switched` — orange, shows from→to model + block type
+
+**Summary panel** — `<div id="callsummary">` in `#railwrap` below Counters.
+Updates in real-time (every event, no batching). Shows:
+```
+calls: N  ✓ N  ✗ N  ↻ N  ⏭ N
+```
+
+### SPEC.md audit contract
+
+- `audit_events` table: `payload JSONB NOT NULL` column carries event-specific
+  data. `event_type` CHECK constraint widened by migration 010.
+- Hash chain: `prev_hash` + HMAC(event) → `hash`. `sor:verify` replays
+  the full chain and must stay green after migration 010.
+- New event types added to `SorEventType` union in `src/sor/events.ts`
+  and `VALID_TYPES` array in sync with migration.
 
 ## 12. File change manifest
 
@@ -418,6 +534,8 @@ Rules for the builder agent: on session start, read this section FIRST.
 Find the first unchecked item; do it; mark `[x]` + append date + commit
 (`docs: check <item>`). Never skip ahead past failing acceptance criteria.
 
+### Migration phases (P0–P8)
+
 - [x] P0 baseline recorded (typecheck clean, vitest N green, dry run OK) — 2026-08-23: typecheck 0 errors, vitest 336/336, `npm run dry` smoke OK
 - [x] P1 providers registry + modelDefaults (+ unit tests) — 2026-08-23: registry URL/key resolution, missing-key skip, fallback order, fail-fast covered; SPEC §5 defaults table single-sourced
 - [x] P1 override store v2 {provider:{role:id}} — 2026-08-23: v2 read/write roundtrip tested; v1 keys discarded log-once
@@ -434,6 +552,98 @@ Find the first unchecked item; do it; mark `[x]` + append date + commit
 - [x] P8 deletion sweep (manifest §12) + grep clean of "opencode|claude|codex" — 2026-08-23: all §12 manifest entries deleted (`29b8103`); repo grep clean — legacy backend strings remain ONLY in SOR legacy acceptance/migration SQL/tests documenting history (`39c90fa`)
 - [x] P8 README + AGENTS.md target-state rewrite — 2026-08-23: README rewritten fresh (provider fleet architecture, current commands); AGENTS.md target-state polish (mid-migration banner + stale script refs dropped, boundaries intact)
 - [ ] FINAL live smoke: real issue → PR with only GEMINI_API_KEY
+- [x] P-quota: pause-on-RPD-total + key-change resume via dashboard button +
+      per-turn conversation checkpoints; honest switch telemetry (no fake
+      switching/duplicate fallback lines); rail overlap CSS fix;
+      SESSION_LOG archive label; result.json on failed runs; SOR
+      before/after ordering; empty-string env defaults treated as unset.
+      Acceptance: a run NEVER dies from quota exhaustion; paused run
+      resumes mid-conversation after key change; Stop-during-pause works;
+      typecheck/tests/sor:verify green; keyless dry smoke exit 0. 2026-08-27: all 8 sub-items implemented and tested.
+
+### Hardening (H1–H11) — quality & robustness
+
+Ordered by dependency. Each task ends green. See PLAN.md §"Quality Hardening
+Roadmap" for full specs. Parallel wave 1 (H1+H2+H3) can run concurrently;
+H4+H5+H9 in parallel; H6 after H5; H7+H8 after H4; H10+H11 after H8.
+
+- [x] H1. PROVIDER_NAMES dedup — single source in `types.ts`; delete from
+      `modelPolicy.ts` (line 18). 2026-08-27: typecheck + tests green.
+- [x] H2. walkFiles file list cache — `Map<root, string[]>` in `search.ts`,
+      one walk per worktree per process. 2026-08-27: grep+glob share one walk.
+- [x] H3. extractJson robustness — length guard (100KB cap), reject empty `{}`,
+      log salvage. 2026-08-27: false positive rate reduced, tests green.
+- [x] H4. SOR verify + repair unit tests — 13+ cases in `src/sor/__tests__/verify.test.ts`:
+      empty chain, valid/tampered/gap/reorder/wrong-key, repair idempotent,
+      repair round-trip, EXCLUSIVE lock. Real DB. 2026-08-27: 12 cases pass, orphaned code fixed.
+- [x] H5. SOR append-only DB trigger — migration `010_sor_append_only.sql`,
+      BEFORE UPDATE/DELETE raises EXCEPTION. 2026-08-27: UPDATE/DELETE blocked.
+- [x] H6. SOR key rotation — `key_id` column (migration `011`), key registry,
+      partial repair. 2026-08-27: multi-epoch verify passes.
+- [x] H7. CI/CD hardening — Biome (lint+format), vitest coverage (v8, 60%
+      lines), lint+coverage steps in CI. 2026-08-27: Biome configured, vitest 60% line coverage threshold enabled, CI steps added.
+- [x] H8. orchestrator.ts decomposition — 2026-08-27: decomposed into sub-modules (phases, utils, makeOnEvent, finalize, pauseManager), orchestrator.ts under 550 lines, all tests green.
+  - [x] H8a. onEvent factory extracted (dedup lines 516-545 / 978-1007)
+  - [x] H8b. utils extracted (extractJson, commitMessageFor, collapseConsecutiveModels)
+  - [x] H8c. finalize extracted to `workflow/finalize.ts`
+  - [x] H8d. pauseManager extracted to `fleet/pauseManager.ts`
+  - [x] H8e. phases extracted to `workflow/phases/{analyze,plan,implement,pr,done}.ts`
+- [x] H9. webDashboard.ts split — `template.html` + `client.js` + `api.ts` +
+      server core. 2026-08-27: template.html, client.js, api.ts extracted, all tests green.
+- [x] H10. Workforce hiring integration — `hireWorker` before fork (enforced:
+      block spawn if `canHire` fails), `updateWorkerStatus` after,
+      `retireWorker` on shutdown. 2026-08-27: worker_roles populated,
+      concurrency limits enforced, all tests green.
+- [x] H11. Full pipeline E2E test — dry-run orchestrator through all 6 phases,
+      verify RunSummary + artifacts + SOR events. 2026-08-27: passes in < 2s,
+      sor:verify green.
+
+## 18. Quality hardening (post-migration)
+
+Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
+"Quality Hardening Roadmap" section and §17 checklist (H1–H11).
+
+### Owner-locked decisions (interview 2026-08-26)
+
+| Item | Decision | Rationale |
+|------|----------|-----------|
+| H7 linter | **Biome** (single tool for lint + format) | Zero-config, faster, replaces ESLint + Prettier |
+| H7 coverage | **60% line threshold**, v8 provider | Achievable today, catches regressions |
+| H5 trigger | **RAISE EXCEPTION only** | SOR chain itself is the audit trail; no extra logging table |
+| H6 key storage | **Env vars** (`SOR_SIGNING_KEY_V1`, `_V2`, ...) | Matches existing pattern; key registry reads from env |
+| H8 depth | **Full split** (all 5 sub-steps a→e) | Orchestrator becomes ~200-line coordinator |
+| H9 template | **Runtime readFileSync** | Zero build step, matches zero-dep philosophy |
+| H10 enforcement | **Enforce** (block spawn if canHire fails) | Prevents provider overload; blocks role until slot opens |
+| H11 E2E | **With SOR verification** | Checks audit_events for all 6 phases; requires DB |
+
+### Key architectural decisions
+
+- **H5 (DB append-only):** `audit_events` gets a `BEFORE UPDATE/DELETE`
+  trigger that raises EXCEPTION. Tamper evidence enforced at DB level,
+  not just application layer. No logging table — the SOR chain is the
+  audit trail.
+- **H6 (key rotation):** `key_id` column on `audit_events` + `sor_chain`.
+  Multi-epoch signing via `src/sor/keyRegistry.ts`. Keys stored as env
+  vars (`SOR_SIGNING_KEY_V1`, `SOR_KEY_ID`). `sor:repair` becomes
+  partial (only current key's rows). No more full-table re-sign on key change.
+- **H7 (CI hardening):** Biome for lint + format (single tool, zero-config).
+  Vitest v8 coverage with 60% line threshold. CI fails below threshold.
+- **H8 (orchestrator decomposition):** Full split — 1,404-line monolith →
+  ~200-line coordinator + `workflow/phases/*` + `utils/*` + `fleet/pauseManager.ts`.
+  The duplicated `onEvent` handler (516-545 / 978-1007) becomes a single
+  factory in `workflow/makeOnEvent.ts`.
+- **H9 (dashboard split):** 2,178-line `webDashboard.ts` → `template.html` +
+  `client.js` (loaded via readFileSync at server start) + `api.ts` + ~500-line
+  server core. No build step.
+- **H10 (workforce integration):** `hireWorker`/`updateWorkerStatus`/`retireWorker`
+  wired into `agentRunner.ts` spawn path. **Enforced** — blocks spawn if
+  `canHire()` fails (concurrency limit reached). Role pauses until slot opens.
+- **H11 (pipeline E2E):** Full orchestrator flow via dry-run mode + SOR
+  verification (requires DATABASE_URL). No API tokens, < 10s. Exercises
+  all 6 phases end-to-end. Checks audit_events for correct event sequence.
+- **H12 (trace tailing) DEFERRED:** Current stdout→file→tail approach works
+  correctly per §6. Changing it would require wire protocol + worker +
+  trace parsing + dashboard changes. High risk, low reward.
 
 ---
 

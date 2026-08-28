@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet · Live Dashboard</title>
+<style>
+:root {
+  --bg: #0d1117; --panel: #161b22; --panel2: #1c2129; --border: #2d333b;
+  --text: #e6edf3; --muted: #8b949e; --accent: #4fc3f7; --green: #3fb950;
+  --red: #f85149;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.5 "SF Mono", Menlo, Consolas, monospace;
+  display: flex; flex-direction: column; overflow: hidden; }
+header { padding: 14px 20px; border-bottom: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline;
+  flex: none; }
+header h1 { font-size: 16px; margin: 0; }
+.conn { font-size: 12px; padding: 2px 10px; border-radius: 10px; }
+.conn.live { color: var(--green); background: rgba(63,185,80,.12); }
+.conn.dead { color: var(--red); background: rgba(248,81,73,.12); }
+.meta { color: var(--muted); font-size: 12px; }
+.gh { font-size: 12px; padding: 2px 10px; border-radius: 10px; color: var(--muted);
+  border: 1px solid var(--border); }
+.gh.ok { color: var(--green); background: rgba(63,185,80,.12);
+  border-color: rgba(63,185,80,.35); }
+.gh.missing { color: var(--red); background: rgba(248,81,73,.12);
+  border-color: rgba(248,81,73,.35); }
+.gh-banner:not([hidden]) { padding: 10px 20px; background: rgba(248,81,73,.12);
+   border-bottom: 1px solid var(--red); display: flex; flex-wrap: wrap;
+   align-items: center; gap: 8px 14px; font-size: 13px; flex: none; }
+.gh-banner .ghb-title { color: var(--red); font-weight: 600; }
+.gh-banner code { background: var(--panel2); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 4px; color: var(--text); }
+.gh-banner button { background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 3px 10px;
+  font: inherit; font-size: 12px; cursor: pointer; }
+.gh-banner button:hover { border-color: var(--accent); }
+.gh-banner a { color: var(--accent); }
+main { display: grid; grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr); gap: 16px;
+  padding: 16px 20px; flex: 1 1 auto; min-height: 0; }
+.panel { background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; display: flex; flex-direction: column;
+  min-height: 0; }
+.rail { min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 12px; }
+.rail > .panel { flex: none; }
+#providerbar { flex: none; }
+#startpanel { flex: none; }
+#lower { flex: 0 0 auto; height: clamp(240px, 38vh, 46vh);
+  display: flex; flex-direction: column; min-height: 0; }
+@media (max-width: 900px) {
+  body { overflow: auto; height: auto; }
+  main { grid-template-columns: 1fr; grid-template-rows: none; flex: none; height: auto; }
+  .rail { overflow: visible; }
+  .streams { flex-direction: column; }
+  .stream-scroll { flex: none; height: 52vh; }
+  #lower { overflow-y: visible; flex: none; }
+}
+.panel h2 { margin: 0 0 10px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; }
+.card { background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+.card .row { display: flex; align-items: center; gap: 8px; }
+.badge { width: 18px; height: 18px; text-align: center; font-size: 13px;
+  flex: none; }
+.badge.pending { color: var(--muted); }
+.badge.done { color: var(--green); }
+.badge.failed { color: var(--red); }
+.badge.running { color: var(--accent); }
+.spinner { width: 12px; height: 12px; border: 2px solid #333;
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: rot .8s linear infinite; flex: none; }
+@keyframes rot { to { transform: rotate(360deg); } }
+.role { font-weight: 600; width: 80px; flex: none; }
+.model { color: var(--muted); font-size: 12px; flex: 1; text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-line { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.totals-strip { background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;
+  font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.callstats { font-size: 12px; font-family: monospace; }
+.callstats table { width: 100%; border-collapse: collapse; }
+.callstats td, .callstats th { padding: 4px 8px; text-align: right; }
+.callstats td:first-child, .callstats th:first-child { text-align: left; }
+.callstats tr.footer td { border-top: 1px solid var(--border); font-weight: bold; color: var(--accent); }
+.callstats tr.footer span.totals-meta { display: block; margin-top: 4px; font-weight: normal; color: var(--muted); }
+.eventsummary { font-size: 12px; font-family: monospace; }
+.eventsummary table { width: 100%; border-collapse: collapse; }
+.eventsummary td, .eventsummary th { padding: 4px 8px; text-align: right; }
+.eventsummary td:first-child, .eventsummary th:first-child { text-align: left; }
+.err { color: var(--red); font-size: 12px; margin-top: 4px;
+  white-space: pre-wrap; word-break: break-word; }
+.empty { color: var(--muted); padding: 20px; text-align: center; font-size: 13px; }
+.streams { flex: 1; display: flex; gap: 14px; min-height: 0; }
+.stream { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0;
+  min-height: 0; }
+.stream-head { flex: none; display: flex; align-items: center; gap: 6px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); padding: 0 2px 6px; }
+.stream-head .dot { width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); flex: none; }
+.stream-head .diamond { color: var(--accent); }
+.stream-scroll { flex: 1; min-height: 0; overflow-y: auto; font-size: 12px;
+  overscroll-behavior: contain; }
+#log .line { display: flex; gap: 8px; padding: 1px 0; white-space: pre-wrap;
+  word-break: break-word; border-bottom: 1px solid rgba(255,255,255,.03); }
+.line .lrole { width: 72px; flex: none; font-weight: 600; }
+.l-analyzer { color: #79c0ff; }
+.l-planner { color: #d2a8ff; }
+.l-coder { color: #7ee787; }
+.l-tester { color: #ffa657; }
+.l-reviewer { color: #ffd2a0; }
+.l-pr { color: #ff7b72; }
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 0; }
+.tab-btn { background: var(--panel); color: var(--muted); border: 0;
+   border-bottom: 2px solid transparent; padding: 8px 16px; font-size: 12px;
+   cursor: pointer; flex: 1; text-align: center; }
+.tab-btn:hover { background: var(--panel2); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-content { display: none; flex: 1; min-height: 0; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain; font-size: 12px; }
+.tab-content.active { display: flex; }
+#tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#tabs > .panel { flex: 1; min-height: 0; }
+#memory-content, #sessionlog-content { white-space: pre-wrap; word-break: break-word; padding: 12px; }
+.activity-item { border-bottom: 1px solid rgba(255,255,255,.03); padding: 4px 0; font-size: 12px; }
+.activity-item .a-type { color: var(--muted); font-weight: 600; }
+.activity-item .a-text { margin: 2px 0; }
+.activity-item .a-tool { color: var(--accent); }
+.activity-item .a-result { color: #7ee787; }
+.activity-item code { background: var(--panel2); border: 1px solid var(--border);
+   padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+.tokens { font-size: 11px; color: var(--muted); }
+footer { padding: 8px 20px; color: var(--muted); font-size: 11px;
+  border-top: 1px solid var(--border); flex: none; }
+#quotabanner:not([hidden]) { padding: 10px 20px; background: rgba(248,81,73,.12);
+  border-bottom: 1px solid var(--red); font-size: 13px; flex: none; }
+#quotabanner .ghb-title { color: var(--red); font-weight: 600; }
+#toasts { position: fixed; bottom: 16px; right: 16px; display: flex;
+  flex-direction: column; gap: 8px; z-index: 50; }
+.toast { background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 6px; padding: 8px 12px; font-size: 12px; max-width: 440px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4); white-space: pre-wrap;
+  word-break: break-word; }
+.follow-pill { position: sticky; bottom: 10px; margin-left: auto;
+  margin-right: 10px; width: max-content; display: block; z-index: 6;
+  background: var(--accent); color: #0d1117; border: 0; border-radius: 999px;
+  padding: 2px 10px; font: inherit; font-size: 11px; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45); }
+.edge-glow { box-shadow: inset 0 0 0 1px rgba(79,195,247,.55),
+  inset 0 -22px 26px -20px rgba(79,195,247,.55); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fleet</h1>
+  <span id="conn" class="conn">connecting…</span>
+  <span class="meta" id="meta"></span>
+  <span id="gh" class="gh">gh …</span>
+</header>
+<div id="ghbanner" class="gh-banner" hidden>
+  <span class="ghb-title">Not signed in to GitHub</span>
+  <button id="ghlogin" type="button">Log in</button>
+  <button id="ghrecheck" type="button">Recheck</button>
+  <span class="meta" id="gherr" style="flex-basis:100%"></span>
+  <div id="ghcode" hidden>
+    <span>Enter this code at</span>
+    <a id="ghcodeuri" href="https://github.com/login/device" target="_blank" rel="noopener">github.com/login/device</a>
+    <code id="ghuserCode" style="font-size:18px;font-weight:700"></code>
+    <button id="ghcodecopy" type="button">Copy code</button>
+    <span class="meta">…or run <code>gh auth login</code> in a terminal.</span>
+  </div>
+</div>
+<div id="quotabanner" class="gh-banner" hidden>
+  <span class="ghb-title" id="quotabanner-text"></span>
+  <button id="resumebtn" type="button" hidden>✓ Changed — Resume</button>
+</div>
+<div id="toasts"></div>
+<div id="startpanel" class="gh-banner" style="background:rgba(79,195,247,.08);border-bottom-color:var(--accent)">
+  <span class="ghb-title" style="color:var(--accent)">Start a repo queue</span>
+  <input id="repoinput" type="text" placeholder="owner/name or https://github.com/owner/name" style="flex:1;min-width:220px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font:inherit">
+  <button id="startbtn" type="button">Start</button>
+  <span id="notice" class="meta" style="flex-basis:100%"></span>
+  <span id="scantimer" class="meta" style="flex-basis:100%;color:var(--accent)"></span>
+</div>
+<div id="providerbar" class="gh-banner" style="background:rgba(79,195,247,.08);border-bottom-color:var(--accent)">
+  <span class="meta">Provider:
+    <button class="provider-btn" data-provider="gemini" type="button" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Gemini</button>
+    <button class="provider-btn" data-provider="openrouter" type="button" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">OpenRouter</button>
+    <button class="provider-btn" data-provider="ollama" type="button" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Ollama</button>
+  </span>
+  <span id="modelpickers" class="meta" style="flex:1;min-width:300px"></span>
+  <button id="stopbtn" type="button" disabled style="margin-left:auto;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer">Stop</button>
+  <span id="modelsmsg" class="meta" style="flex-basis:100%;font-size:11px;color:var(--muted)"></span>
+</div>
+<main>
+  <aside class="rail" id="railwrap">
+    <div class="panel">
+      <h2>Agents</h2>
+      <div id="agents"></div>
+    </div>
+    <div class="panel">
+      <h2>Call Counters</h2>
+      <div id="callstats" class="callstats"><div class="empty">no calls yet…</div></div>
+    </div>
+    <div class="panel">
+      <h2>Event Summary</h2>
+      <div id="eventsummary" class="eventsummary"><div class="empty">no events yet…</div></div>
+    </div>
+  </aside>
+  <div class="panel">
+    <h2>Live transcript</h2>
+    <div class="streams">
+      <section class="stream" id="agentstream-wrap">
+        <div class="stream-head"><span class="dot"></span> Agent stream</div>
+        <div id="log" class="stream-scroll"><div class="empty">waiting for agent output…</div></div>
+      </section>
+      <section class="stream" id="toolsstream-wrap">
+        <div class="stream-head alt"><span class="diamond">◆</span> Tools &amp; telemetry</div>
+        <div id="toolsstream" class="stream-scroll"><div class="empty">waiting for tool activity…</div></div>
+      </section>
+    </div>
+  </div>
+</main>
+<div id="lower">
+  <div id="tabs">
+  <div class="panel">
+    <div class="tabs">
+      <button class="tab-btn active" type="button" onclick="switchTab('transcript', this)">Live transcript</button>
+      <button class="tab-btn" type="button" onclick="switchTab('memory', this)">MEMORY.txt</button>
+      <button class="tab-btn" type="button" onclick="switchTab('sessionlog', this)">SESSION_LOG.txt</button>
+      <button class="tab-btn" type="button" onclick="switchTab('errorlog', this)">Error Log</button>
+    </div>
+    <div id="transcript-tab" class="tab-content active">
+      <div id="tab-transcript"></div>
+    </div>
+    <div id="memory-tab" class="tab-content">
+      <div id="memory-content" class="empty">Click refresh or wait for a run to populate…</div>
+    </div>
+    <div id="sessionlog-tab" class="tab-content">
+      <div id="sessionlog-content" class="empty">No session started yet.</div>
+    </div>
+    <div id="errorlog-tab" class="tab-content">
+      <div id="errorlog-empty" class="empty" style="padding: 20px; text-align: center;">No model limit errors.</div>
+      <div id="errorlog-content" style="overflow-y: auto; height: 100%; padding: 12px;"></div>
+    </div>
+  </div>
+</div>
+</div>
+<footer>EventSource live feed · falls back to 2s polling if the stream drops</footer>
+<!-- INJECT_CLIENT_JS -->
+</body>
+</html>

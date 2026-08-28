@@ -1,184 +1,114 @@
-import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import { runWorker } from "./agentRunner.ts";
-import type { WorktreeHandle } from "./git/worktree.ts";
 import {
-  cleanupWorktree,
-  diffAgainstBase,
-  setupWorktree,
-} from "./git/worktree.ts";
-import {
-  buildSkeletonMap,
-  readSelectedFileSymbols,
-} from "./git/snapshotReader.ts";
-import {
-  addIssueLabel,
-  commentOnIssue,
-  createPr,
-  ensureLabels,
-  ISSUE_LABEL_DONE,
-  ISSUE_LABEL_IN_PROGRESS,
-  removeIssueLabel,
-  splitRepoSlug,
-} from "./github/gh.ts";
-import { db, pool } from "./db/client.ts";
+	requestQuotaResume,
+	resetGeminiQuotaCoordinator,
+	runWorker,
+} from "./agentRunner.ts";
 import { appendAuditEvent, ensureChain } from "./db/audit.ts";
-import type { SorEvent } from "./sor/events.ts";
-import { getLastFailedStep } from "./db/checkpoint.ts";
+import { db, pool } from "./db/client.ts";
+import { upsertAgentCallStats } from "./db/queries/callStats.ts";
 import {
-  EXCLUDE_ARTIFACTS,
-  execErrorText,
-  runCoder,
-} from "./workflow/coder.ts";
-import { runTester } from "./workflow/tester.ts";
-import { ScoutTracker } from "./workflow/scoutTracker.ts";
-import { detectTestCommand } from "./fleet/testCmd.ts";
-import { generateMemory } from "./db/queries/summaryReport.ts";
-import { logBlock, logLine, resetSessionLog } from "./memory/sessionLog.ts";
-import { policyFor } from "./models/modelPolicy.ts";
-import { planRoute } from "./router.ts";
+	PauseManager,
+	reloadApiKeyEnv,
+	resumeFromPause,
+	setActiveResumeHandler,
+} from "./fleet/pauseManager.ts";
+import { onQuotaEvent, type QuotaEvent } from "./fleet/quotaEvents.ts";
+import {
+	assertGeminiModelChainConfiguration,
+	assertGeminiQuotaConfiguration,
+	geminiQuotaConfig,
+	geminiRateLimitWaitMs,
+} from "./gemini/quotaConfig.ts";
+import { buildSkeletonMap } from "./git/snapshotReader.ts";
+import type { WorktreeHandle } from "./git/worktree.ts";
+import { setupWorktree } from "./git/worktree.ts";
+import { logLine, resetSessionLog } from "./memory/sessionLog.ts";
+import { invalidateProviderClients } from "./providers/registry.ts";
+import type { SorEvent } from "./sor/events.ts";
 import type { DashboardState } from "./tui/dashboard.ts";
 import { newDashboardState, renderDashboard } from "./tui/dashboard.ts";
 import type {
-  AgentResult,
-  FixSpec,
-  Issue,
-  Plan,
-  Role,
-  RolePolicy,
-  RunContext,
+	AgentResult,
+	ProviderName,
+	Role,
+	RolePolicy,
+	RunContext,
 } from "./types.ts";
-import type { ProviderName } from "./types.ts";
+import { commitMessageFor } from "./utils/commitMessage.ts";
+import { collapseConsecutiveModels } from "./utils/models.ts";
+import { finalizeRun } from "./workflow/finalize.ts";
+import { makeOnEvent } from "./workflow/makeOnEvent.ts";
+import { runAnalyzePhase } from "./workflow/phases/analyze.ts";
+import { runDonePhase } from "./workflow/phases/done.ts";
+import { runImplementPhase } from "./workflow/phases/implement.ts";
+import { runPlanPhase } from "./workflow/phases/plan.ts";
+import { runPrPhase } from "./workflow/phases/pr.ts";
+import { ScoutTracker } from "./workflow/scoutTracker.ts";
+
+export { collapseConsecutiveModels, commitMessageFor };
 
 export type RunStatus = "completed" | "aborted" | "failed";
 
 const CONTRIBUTING_MAX_CHARS = 4000;
 
 /** Commit-convention guidance for coder/pr prompts: the repo's CONTRIBUTING.md when present, else a default. */
-export async function readContributionGuidance(worktreeDir: string): Promise<string> {
-  try {
-    const raw = await readFile(join(worktreeDir, "CONTRIBUTING.md"), "utf8");
-    return [
-      "## Contribution conventions",
-      "The target repository defines contribution conventions. Follow them exactly for commit messages, PR title, and PR description:",
-      "",
-      raw.slice(0, CONTRIBUTING_MAX_CHARS),
-    ].join("\n");
-  } catch {
-    return '## Commit conventions\nUse conventional commit style (e.g. "fix: ...") for all commit messages.';
-  }
+export async function readContributionGuidance(
+	worktreeDir: string,
+): Promise<string> {
+	try {
+		const raw = await readFile(join(worktreeDir, "CONTRIBUTING.md"), "utf8");
+		return [
+			"## Contribution conventions",
+			"The target repository defines contribution conventions. Follow them exactly for commit messages, PR title, and PR description:",
+			"",
+			raw.slice(0, CONTRIBUTING_MAX_CHARS),
+		].join("\n");
+	} catch {
+		return '## Commit conventions\nUse conventional commit style (e.g. "fix: ...") for all commit messages.';
+	}
 }
 
 /** Live web-mirror hooks; the web dashboard pushes these on every TUI render/text chunk. */
 export interface WebFeed {
-  pushState(d: DashboardState): void;
-  pushOutput(role: Role, text: string): void;
-  pushAgentEvent?(role: Role, event: Record<string, unknown>): void;
-  pushFinal?(phase: DashboardState["phase"], prUrl?: string): void;
+	pushState(d: DashboardState): void;
+	pushOutput(role: Role, text: string): void;
+	pushAgentEvent?(role: Role, event: Record<string, unknown>): void;
+	pushNotice?(msg: string): void;
+	pushFinal?(phase: DashboardState["phase"], prUrl?: string): void;
+	pushQuotaEvent?(event: QuotaEvent): void;
+	/** Toggle the persistent quota-pause banner (SPEC §11.5 PAUSED state). */
+	pushPause?(paused: boolean, message?: string): void;
 }
 
 export interface RunSummary {
-  runId: string;
-  repo: string;
-  issue: number;
-  status: RunStatus;
-  prUrl?: string;
-  failure?: string;
-  backend: ProviderName;
-  agents: Record<Role, AgentResult>;
-  totalCostUsd: number;
-  iterationsUsed: number;
-  startedAt: number;
-  endedAt: number;
+	runId: string;
+	repo: string;
+	issue: number;
+	status: RunStatus;
+	prUrl?: string;
+	failure?: string;
+	backend: ProviderName;
+	agents: Record<Role, AgentResult>;
+	totalCostUsd: number;
+	calls: { tools: number; models: number; skills: number };
+	iterationsUsed: number;
+	startedAt: number;
+	endedAt: number;
 }
 
-const ROLES: Role[] = ["analyzer", "planner", "coder", "tester", "reviewer", "pr"];
+const ROLES: Role[] = [
+	"analyzer",
+	"planner",
+	"coder",
+	"tester",
+	"reviewer",
+	"pr",
+];
 type Phase = DashboardState["phase"];
 
-/** Cap on the diff sent to the reviewer task (tunable). The final review uses a stat summary instead. */
-const MAX_REVIEW_DIFF_CHARS = Number(process.env.MAX_REVIEW_DIFF_CHARS ?? 25_000);
-
-/**
- * SPEC D11: reviewer findings get at most ONE coder auto-fix round; a second
- * rejection is a hard run failure. There are no human approval gates.
- */
-const AUTO_FIX_MAX_ROUNDS = 1;
-
-/** Strip optional ```json fences and parse the first balanced {...} object in `text`. */
-export function extractJson<T>(text: string): T | null {
-  const cleaned = text.replace(/```(?:json)?/gi, "");
-  const start = cleaned.indexOf("{");
-  if (start === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < cleaned.length; i++) {
-    const ch = cleaned[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        try {
-          return JSON.parse(cleaned.slice(start, i + 1)) as T;
-        } catch {
-          return null;
-        }
-      }
-    }
-  }
-  // Some providers cap output tokens, so responses can be truncated mid-JSON.
-  // Salvage the unclosed object by appending closing quote/brace/array tails until it parses.
-  const base = cleaned.slice(start);
-  const maxK = Math.min(depth, 25);
-  for (let k = 1; k <= maxK; k++) {
-    const closes = "}".repeat(k);
-    for (const tail of ['"' + closes, closes, "]" + closes, '"' + "]" + closes]) {
-      try {
-        return JSON.parse(base + tail) as T;
-      } catch {
-        // try the next candidate tail
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Build a factual git commit message from the approved plan's approach line,
- * e.g. `plan.approach` "Validate the range before emitting an event" →
- * `fix: validate the range before emitting an event`.
- *
- * Rule: commit messages are factual and NEVER reference the issue number —
- * `Closes #N` belongs only in the PR body (merge-time close). Throws when the
- * plan has no approach text, so the caller surfaces a clear phase failure.
- */
-export function commitMessageFor(plan: Plan, issue: Issue): string {
-  const text = (plan.approach ?? "").trim();
-  if (!text) {
-    throw new Error(`cannot build a factual commit message for issue #${issue.number}: plan.approach is empty`);
-  }
-  const firstLine = text.split("\n")[0] as string;
-  // Drop a leading imperative ("Fix", "Fixes", …) so the message reads
-  // "fix: validate …" instead of "fix: Fix validate …".
-  const stripped = firstLine.replace(/^\s*(?:fix(?:es)?)\s*[:.-]?\s+/i, "");
-  let body = (stripped.charAt(0).toLowerCase() + stripped.slice(1)).trim();
-  body = body.replace(/[.\s]+$/, "");
-  const MAX_SUBJECT = 72;
-  const prefix = "fix: ";
-  if (prefix.length + body.length > MAX_SUBJECT) {
-    body = body.slice(0, MAX_SUBJECT - prefix.length - 1) + "…";
-  }
-  return `${prefix}${body}`;
-}
+export { reloadApiKeyEnv, resumeFromPause };
 
 /**
  * Non-fatal append of one signed audit event to the System of Record.
@@ -191,834 +121,505 @@ export function commitMessageFor(plan: Plan, issue: Issue): string {
  * spawn/tool events are dry-run-agnostic by nature.
  */
 async function sorEmit(
-  ctx: RunContext | { runId: string; dryRun?: boolean },
-  event: Partial<SorEvent>,
+	ctx: RunContext | { runId: string; dryRun?: boolean },
+	event: Partial<SorEvent>,
 ): Promise<void> {
-  const backend = "provider" in ctx ? ctx.provider : undefined;
-  const sorEvent: SorEvent = {
-    run_id: ctx.runId,
-    event_type: event.event_type ?? "phase",
-    actor: event.actor ?? "manager",
-    backend: event.backend ?? backend ?? null,
-    tool_name: event.tool_name ?? null,
-    tool_input: event.tool_input ?? null,
-    tool_output: event.tool_output ?? null,
-    payload: event.payload ?? {},
-    created_at: new Date().toISOString(),
-  };
-  try {
-    await appendAuditEvent(pool, sorEvent);
-  } catch (e) {
-    console.warn(`[sor] appendAuditEvent failed (non-fatal): ${String(e)}`);
-  }
+	const backend = "provider" in ctx ? ctx.provider : undefined;
+	const sorEvent: SorEvent = {
+		run_id: ctx.runId,
+		event_type: event.event_type ?? "phase",
+		actor: event.actor ?? "manager",
+		backend: event.backend ?? backend ?? null,
+		tool_name: event.tool_name ?? null,
+		tool_input: event.tool_input ?? null,
+		tool_output: event.tool_output ?? null,
+		payload: event.payload ?? {},
+		created_at: new Date().toISOString(),
+	};
+	try {
+		await appendAuditEvent(pool, sorEvent);
+	} catch (e) {
+		console.warn(`[sor] appendAuditEvent failed (non-fatal): ${String(e)}`);
+	}
 }
 
 // The Manager (not an LLM): issue intake → 6 workers (no human gates) → PR.
 export async function runOrchestrator(
-  ctx: RunContext,
-  opts: { web?: WebFeed },
+	ctx: RunContext,
+	opts: { web?: WebFeed },
 ): Promise<RunSummary> {
-  const startedAt = Date.now();
-  const web = opts.web;
-  const dash = newDashboardState(ctx.runId, ctx.issue.repo, ctx.issue.number, ctx.provider ?? "gemini");
-  const agents = {} as Record<Role, AgentResult>;
-  const scoutTracker = new ScoutTracker();
-  let runId: string | undefined;
-  let prUrl: string | undefined;
-  let iterationsUsed = 0;
-  // Set once the worktree is up (or the dry-run stub replaces it); every
-  // finalize() branch tears it down so we never leak linked worktrees.
-  let wt: WorktreeHandle | undefined;
+	const startedAt = Date.now();
+	const web = opts.web;
+	const dash = newDashboardState(
+		ctx.runId,
+		ctx.issue.repo,
+		ctx.issue.number,
+		ctx.provider ?? "gemini",
+	);
+	const agents = {} as Record<Role, AgentResult>;
+	const scoutTracker = new ScoutTracker();
+	let runId: string | undefined;
+	let prUrl: string | undefined;
+	let iterationsUsed = 0;
+	// Set once the worktree is up (or the dry-run stub replaces it); every
+	// finalize() branch tears it down so we never leak linked worktrees.
+	let wt: WorktreeHandle | undefined;
 
-  const render = () => process.stdout.write(renderDashboard(dash) + "\n");
-  const pushState = () => {
-    render();
-    web?.pushState(dash);
-  };
-  const setPhase = (phase: Phase | "failed") => {
-    (dash as { phase: string }).phase = phase;
-  };
-  const totalCostUsd = (): number => {
-    let sum = 0;
-    for (const role of ROLES) {
-      const a = agents[role];
-      if (a) sum += a.costUsd ?? 0;
-    }
-    return sum;
-  };
-  const makeSummary = (status: RunStatus, failure?: string): RunSummary => ({
-    runId: ctx.runId,
-    repo: ctx.issue.repo,
-    issue: ctx.issue.number,
-    status,
-    prUrl,
-    failure,
-    backend: ctx.provider ?? "gemini",
-    agents,
-    totalCostUsd: totalCostUsd(),
-    iterationsUsed,
-    startedAt,
-    endedAt: Date.now(),
-  });
-  const finalize = async (
-    status: string,
-    gateStatus: Record<string, unknown>,
-    reason?: string,
-  ): Promise<void> => {
-    await sorEmit(ctx, {
-      event_type: "finalize",
-      actor: "manager",
-      payload: {
-        status,
-        pr_url: prUrl ?? null,
-        total_cost: totalCostUsd(),
-        failure: reason ?? null,
-      },
-    });
-    if (runId) {
-      await db.finalizeRun({
-        run_id: runId,
-        pr_url: prUrl ?? null,
-        total_cost: totalCostUsd(),
-        gate_status: JSON.stringify(gateStatus),
-        status,
-      });
-    }
-    // Issue lifecycle (0.1): labels + comment. All non-fatal, best-effort, and
-    // skipped entirely on dry-run — a gh failure here must never change the
-    // run's outcome. Completed = remove in-progress, mark done (PR created);
-    // failed/aborted = remove in-progress, comment the reason.
-    if (!ctx.dryRun) {
-      const { owner, repo } = splitRepoSlug(ctx.issue.repo);
-      try {
-        await ensureLabels(owner, repo, [ISSUE_LABEL_IN_PROGRESS, ISSUE_LABEL_DONE]);
-        await removeIssueLabel(owner, repo, ctx.issue.number, ISSUE_LABEL_IN_PROGRESS);
-        if (status === "completed") {
-          await addIssueLabel(owner, repo, ctx.issue.number, ISSUE_LABEL_DONE);
-          const lines = [
-            `Managed run \`${ctx.runId}\` completed.`,
-            prUrl ? `- PR: ${prUrl}` : "- PR: (none)",
-            `- Total cost: $${totalCostUsd().toFixed(4)}`,
-            `- Backend: ${ctx.provider ?? "gemini"}`,
-          ].join("\n");
-          await commentOnIssue(owner, repo, ctx.issue.number, lines);
-        } else {
-          const suffix = reason ? `: ${reason}` : "";
-          await commentOnIssue(
-            owner,
-            repo,
-            ctx.issue.number,
-            `Managed run \`${ctx.runId}\` ${status}${suffix}.`,
-          );
-        }
-      } catch (e) {
-        console.warn(`[lifecycle] finalize (${status}) failed (non-fatal): ${String(e)}`);
-      }
-    }
-    // Worktree hygiene: every terminal path (completed/failed/aborted) tears
-    // down the linked worktree. Best-effort — a cleanup failure must never
-    // change the run's outcome (AGENTS.md: all cleanup is non-fatal). Dry-run
-    // creates a plain directory stub, not a real git worktree, so skip it.
-    if (wt && !ctx.dryRun) {
-      try {
-        await cleanupWorktree(wt);
-      } catch (e) {
-        console.warn(`[worktree] cleanup failed (non-fatal): ${String(e)}`);
-      }
-    }
-  };
+	const render = () => process.stdout.write(`${renderDashboard(dash)}\n`);
+	const pushState = () => {
+		let tools = 0;
+		let models = 0;
+		let skills = 0;
+		let costUsd = 0;
+		let tokens = 0;
+		for (const role of ROLES) {
+			const a = dash.agents[role];
+			if (!a) continue;
+			tools += a.calls?.tools ?? 0;
+			models += a.calls?.models ?? 0;
+			skills += a.calls?.skills ?? 0;
+			costUsd += a.costUsd ?? 0;
+			tokens += a.tokens?.total ?? 0;
+		}
+		dash.totals = { tools, models, skills, costUsd, tokens };
+		render();
+		web?.pushState(dash);
+	};
+	// Throttled variant for hot event paths: rapid tool/telemetry events must
+	// not spam SSE broadcasts or TUI renders; the next full push happens at
+	// agent completion regardless.
+	let lastPushAt = 0;
+	const pushStateThrottled = () => {
+		const now = Date.now();
+		if (now - lastPushAt < 500) return;
+		lastPushAt = now;
+		pushState();
+	};
+	const setPhase = (phase: Phase | "failed") => {
+		(dash as { phase: string }).phase = phase;
+	};
+	const pm = new PauseManager(setPhase, pushState);
+	const totalCostUsd = (): number => {
+		let sum = 0;
+		for (const role of ROLES) {
+			const a = agents[role];
+			if (a) sum += a.costUsd ?? 0;
+		}
+		return sum;
+	};
+	const totalCalls = (): { tools: number; models: number; skills: number } => {
+		return Object.values(agents).reduce(
+			(acc, a) => ({
+				tools: acc.tools + (a.calls?.tools ?? 0),
+				models: acc.models + (a.calls?.models ?? 0),
+				skills: acc.skills + (a.calls?.skills ?? 0),
+			}),
+			{ tools: 0, models: 0, skills: 0 },
+		);
+	};
+	const makeSummary = (status: RunStatus, failure?: string): RunSummary => {
+		return {
+			runId: ctx.runId,
+			repo: ctx.issue.repo,
+			issue: ctx.issue.number,
+			status,
+			prUrl,
+			failure,
+			backend: ctx.provider ?? "gemini",
+			agents,
+			totalCostUsd: totalCostUsd(),
+			calls: totalCalls(),
+			iterationsUsed,
+			startedAt,
+			endedAt: Date.now(),
+		};
+	};
+	/** Persist result.json for terminal runs; failures get the same blob as the success path (incl. attempts + failure). */
+	const writeResultFile = async (summary: RunSummary): Promise<void> => {
+		try {
+			await mkdir(ctx.runDir, { recursive: true });
+			await writeFile(
+				join(ctx.runDir, "result.json"),
+				`${JSON.stringify(summary, null, 2)}\n`,
+			);
+		} catch (e) {
+			console.warn(
+				`[result] result.json write skipped (non-fatal): ${String(e)}`,
+			);
+		}
+	};
+	// Boot gate (fail fast on real runs; dry-run stays keyless/green): the
+	// per-role Gemini model chain must be fully configured before any spawn.
+	if (!ctx.dryRun && (ctx.provider ?? "gemini") === "gemini") {
+		try {
+			geminiRateLimitWaitMs();
+			assertGeminiQuotaConfiguration(ROLES, geminiQuotaConfig());
+			assertGeminiModelChainConfiguration(ROLES, geminiQuotaConfig());
+		} catch (e) {
+			const failure = e instanceof Error ? e.message : String(e);
+			setPhase("failed");
+			return makeSummary("failed", failure);
+		}
+	}
+	const finalize = async (
+		status: string,
+		gateStatus: Record<string, unknown>,
+		reason?: string,
+	): Promise<void> => {
+		await finalizeRun({
+			status,
+			gateStatus,
+			failureReason: reason ?? null,
+			prUrl: prUrl ?? null,
+			totalCostUsd: () => totalCostUsd(),
+			runId: runId ?? null,
+			ctx,
+			teardownPause: () => pm.teardownPause(web),
+			sorEmit,
+			writeResultFile: async (s, r) => {
+				const outerWrite = writeResultFile;
+				await outerWrite(makeSummary(s as RunStatus, r ?? undefined));
+			},
+			wt,
+		});
+	};
 
-  const runAgent = async (
-    role: Role,
-    phase: Phase,
-    task: string,
-    policy: RolePolicy,
-  ): Promise<AgentResult> => {
-    setPhase(phase);
-    dash.agents[role] = { role, state: "running", model: policy.model };
-    pushState();
-    const onText = (t: string) => web?.pushOutput(role, t);
-    const onEvent = (ev: Record<string, unknown>) => {
-      if (scoutTracker.observe(role, ev)) {
-        void logLine(ctx.rootDir, `[scout] invoked by ${role} (call ${scoutTracker.total}, ${scoutTracker.countFor(role)}/${role})`);
-      }
-      web?.pushAgentEvent?.(role, ev);
-    };
-    const res = await runWorker(role, task, ctx, policy, { onText, onEvent });
-    agents[role] = res;
-    dash.agents[role] = {
-      role,
-      state: res.ok ? "done" : "failed",
-      model: res.model,
-      sessionID: res.sessionID ?? undefined,
-      tokens: res.tokens,
-      costUsd: res.costUsd,
-      startedAt: res.startedAt,
-      endedAt: res.endedAt,
-      error: res.error,
-    };
-    pushState();
-    if (runId) {
-      await db.logAgentAction({
-        run_id: runId,
-        role,
-        model: res.model,
-        ok: res.ok,
-        text: res.text,
-        tokens: res.tokens,
-        cost_usd: res.costUsd ?? 0,
-        trace_path: res.tracePath,
-        started_at: new Date(res.startedAt),
-        ended_at: new Date(res.endedAt),
-        attempts: res.attempts ?? [],
-      });
-    }
-    if (res.attempts && res.attempts.length > 1) {
-      await logLine(
-        ctx.rootDir,
-        `[${role}] fell back across ${res.attempts.length} models: ${res.attempts.map((a) => a.model).join(" -> ")}`,
-      );
-    }
-    await logLine(ctx.rootDir, `${role} ${res.ok ? "done" : "failed"}${res.error ? `: ${res.error}` : ""}`);
-    return res;
-  };
+	const runAgent = async (
+		role: Role,
+		phase: Phase,
+		task: string,
+		policy: RolePolicy,
+	): Promise<AgentResult> => {
+		setPhase(phase);
+		dash.agents[role] = { role, state: "running", model: policy.model };
+		pushState();
+		const onText = (t: string) => web?.pushOutput(role, t);
+		const onEvent = makeOnEvent({
+			role,
+			ctx,
+			sorEmitFn: sorEmit,
+			scoutTracker,
+			pushStateThrottled,
+			pushAgentEvent: (r, ev) => web?.pushAgentEvent?.(r, ev),
+			pushNotice: web?.pushNotice?.bind(web),
+			policyModel: policy.model,
+			dash,
+			emitSor: true,
+		});
+		const res = await runWorker(role, task, ctx, policy, { onText, onEvent });
+		agents[role] = res;
+		dash.agents[role] = {
+			role,
+			state: res.ok ? "done" : "failed",
+			model: res.model,
+			sessionID: res.sessionID ?? undefined,
+			tokens: res.tokens,
+			costUsd: res.costUsd,
+			calls: res.calls,
+			startedAt: res.startedAt,
+			endedAt: res.endedAt,
+			error: res.error,
+		};
+		pushState();
+		if (runId) {
+			await db.logAgentAction({
+				run_id: runId,
+				role,
+				model: res.model,
+				ok: res.ok,
+				text: res.text,
+				tokens: res.tokens,
+				cost_usd: res.costUsd ?? 0,
+				trace_path: res.tracePath,
+				started_at: new Date(res.startedAt),
+				ended_at: new Date(res.endedAt),
+				attempts: res.attempts ?? [],
+			});
+			try {
+				await upsertAgentCallStats(pool, runId, {
+					role,
+					model: res.model,
+					provider: null,
+					sessionId: res.sessionID ?? null,
+					toolCalls: res.calls?.tools ?? 0,
+					modelCalls: res.calls?.models ?? 0,
+					skillLoads: res.calls?.skills ?? 0,
+					toolBreakdown: res.calls?.breakdown ?? {},
+				});
+			} catch {
+				/* non-fatal */
+			}
+		}
+		if (res.attempts) {
+			const collapsed = collapseConsecutiveModels(
+				res.attempts.map((a) => a.model),
+			);
+			if (collapsed.length > 1) {
+				await logLine(
+					ctx.rootDir,
+					`[${role}] fell back across ${collapsed.length} models: ${collapsed.join(" -> ")}`,
+				);
+			}
+		}
+		await logLine(
+			ctx.rootDir,
+			`${role} ${res.ok ? "done" : "failed"}${res.error ? `: ${res.error}` : ""}`,
+		);
+		return res;
+	};
 
-  try {
-    try {
-      await ensureChain(pool);
-    } catch (e) {
-      console.warn(`[sor] ensureChain failed (non-fatal): ${String(e)}`);
-    }
-    await resetSessionLog(ctx.rootDir, ctx.runDir, ctx.runId, {
-      repo: ctx.issue.repo,
-      issue: ctx.issue.number,
-      title: ctx.issue.title,
-    });
-    await logLine(ctx.rootDir, "run started");
-    if (!ctx.dryRun) {
-      runId = await db.createRun({
-        repo: ctx.issue.repo,
-        issue_number: ctx.issue.number,
-        backend: ctx.provider ?? "gemini",
-      });
-      await db.updateRunStatus({ run_id: runId, phase: "start", status: "running", iteration: 0 });
-    }
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "start", status: "running", iteration: 0 },
-    });
+	// User-facing quota notifications ("everywhere"): console + SESSION_LOG +
+	// non-fatal SOR + TUI/web live state. all-models-RPD-dead NEVER kills the
+	// run: it flips the run into phase "paused" (persistent banner + browser
+	// Notification + console reminder every ~5 min) until a key-change Resume.
+	// Unsubscribed in the outer finally so no listener leaks across runs.
+	const unsubscribeQuota = onQuotaEvent((ev: QuotaEvent): void => {
+		if (ev.type === "model_switch") {
+			const wait =
+				ev.waitMs > 0 ? ` (wait ~${Math.round(ev.waitMs / 1000)}s)` : "";
+			const msg = `[quota] ${ev.role}: ${ev.fromModel} rate limited (${ev.block}) → switching to ${ev.toModel}${wait}`;
+			console.warn(msg);
+			void logLine(ctx.rootDir, msg);
+			dash.quotaNotice = `${ev.role}: ${ev.fromModel} rate limited (${ev.block}) → ${ev.toModel}`;
+			pushStateThrottled();
+			web?.pushQuotaEvent?.(ev);
+			void sorEmit(ctx, {
+				event_type: "model_switch",
+				actor: ev.role,
+				backend: "gemini",
+				payload: {
+					role: ev.role,
+					provider: ev.provider,
+					from_model: ev.fromModel,
+					to_model: ev.toModel,
+					block: ev.block,
+					wait_ms: ev.waitMs,
+				},
+			});
+			return;
+		}
+		if (ev.type === "model_recovered") {
+			const msg = `[quota] ${ev.role}: ${ev.model} available again → switching back`;
+			console.log(msg);
+			void logLine(ctx.rootDir, msg);
+			dash.quotaNotice = `${ev.role}: ${ev.model} available again → switching back`;
+			pushStateThrottled();
+			web?.pushQuotaEvent?.(ev);
+			void sorEmit(ctx, {
+				event_type: "model_recovered",
+				actor: ev.role,
+				backend: "gemini",
+				payload: { role: ev.role, provider: ev.provider, model: ev.model },
+			});
+			return;
+		}
+		if (!pm.enterPause(ev.role, dash.phase)) return;
+		const msg = `[quota] all Gemini models RPD exhausted for ${ev.role} — run paused; change your API key, then Resume`;
+		console.error(msg);
+		void logLine(ctx.rootDir, msg);
+		void logLine(
+			ctx.rootDir,
+			`[quota] run paused — completed roles stay completed, pipeline position preserved`,
+		);
+		dash.quotaNotice = `all Gemini models RPD exhausted for ${ev.role} — change your API key, then Resume`;
+		setPhase("paused");
+		pushState();
+		web?.pushQuotaEvent?.(ev);
+		web?.pushPause?.(true, pm.getBannerText());
+		web?.pushNotice?.(pm.getBannerText());
+		void sorEmit(ctx, {
+			event_type: "all_models_exhausted",
+			actor: "manager",
+			backend: "gemini",
+			payload: { role: ev.role, provider: ev.provider, models: ev.models },
+		});
+		void sorEmit(ctx, {
+			event_type: "run_paused",
+			actor: "manager",
+			backend: "gemini",
+			payload: { role: ev.role, provider: ev.provider, models: ev.models },
+		});
+		pm.startReminder();
+	});
 
-    if (ctx.dryRun) {
-      await mkdir(ctx.runDir, { recursive: true });
-      await mkdir(ctx.worktreeDir, { recursive: true });
-      wt = {
-        repoDir: join(ctx.runDir, "repo"),
-        worktreeDir: ctx.worktreeDir,
-        branch: ctx.branch,
-        baseBranch: "main",
-      };
-    } else {
-      wt = await setupWorktree(ctx.repoUrl, ctx.runDir, ctx.branch, ctx.cloneDir);
-      await logLine(ctx.rootDir, "worktree ready at " + wt.worktreeDir + " base " + wt.baseBranch);
-    }
+	// Registered for the lifetime of the run so index.ts can route a dashboard
+	// resume click here via resumeFromPause() (SPEC §11.5 resume steps a-c).
+	setActiveResumeHandler((): boolean => {
+		if (!pm.isPaused()) return false;
+		const role = pm.getPausedRole();
+		if (!role) return false;
+		const keysReloaded = reloadApiKeyEnv(ctx.rootDir);
+		if (keysReloaded.length > 0) {
+			void logLine(
+				ctx.rootDir,
+				`[quota] resume: reloaded ${keysReloaded.join(", ")} from .env`,
+			);
+		}
+		invalidateProviderClients();
+		try {
+			resetGeminiQuotaCoordinator();
+		} catch (e) {
+			console.warn(
+				`[quota] coordinator reset failed (non-fatal): ${String(e)}`,
+			);
+		}
+		pm.exitPause(web);
+		const delivered = requestQuotaResume();
+		void logLine(
+			ctx.rootDir,
+			`[quota] run resumed${delivered ? "" : " (no parked worker walk)"} — restarting ${role} from its checkpoint`,
+		);
+		void sorEmit(ctx, {
+			event_type: "run_resumed",
+			actor: "manager",
+			backend: "gemini",
+			payload: { role, provider: "gemini", keys_reloaded: keysReloaded },
+		});
+		return delivered;
+	});
 
-    const skeleton = await buildSkeletonMap(ctx.worktreeDir);
+	try {
+		try {
+			await ensureChain(pool);
+		} catch (e) {
+			console.warn(`[sor] ensureChain failed (non-fatal): ${String(e)}`);
+		}
+		await resetSessionLog(ctx.rootDir, ctx.runDir, ctx.runId, {
+			repo: ctx.issue.repo,
+			issue: ctx.issue.number,
+			title: ctx.issue.title,
+		});
+		await logLine(ctx.rootDir, "run started");
+		if (!ctx.dryRun) {
+			runId = await db.createRun({
+				repo: ctx.issue.repo,
+				issue_number: ctx.issue.number,
+				backend: ctx.provider ?? "gemini",
+			});
+			await db.updateRunStatus({
+				run_id: runId,
+				phase: "start",
+				status: "running",
+				iteration: 0,
+			});
+		}
+		await sorEmit(ctx, {
+			event_type: "phase",
+			actor: "manager",
+			payload: { phase: "start", status: "running", iteration: 0 },
+		});
 
-    const analyzerTask = [
-      `Issue #${ctx.issue.number}: ${ctx.issue.title}`,
-      "",
-      ctx.issue.body,
-      "",
-      "## Skeleton",
-      "File paths and symbol headers are provided separately (JIT).",
-      "Do not use read/grep/glob tools; rely on the provided structure.",
-      "If you need a specific file's full content, it will be provided JIT (just-in-time) after planning.",
-      "",
-      `Return ONLY one JSON object with exactly this shape and nothing else:`,
-      `{"summary": "...", "rootCause": "...", "suspectFiles": ["..."], "affectedSymbols": ["..."], "reproduction": "...", "testStrategy": "...", "risks": ["..."], "confidence": "low" | "medium" | "high"}`,
-    ].join("\n");
-    const a = await runAgent("analyzer", "analyze", analyzerTask, policyFor("analyzer", ctx.provider ?? "gemini"));
-    if (!a.ok) {
-      setPhase("failed");
-      pushState();
-      await finalize("failed", {}, a.error ?? "analyzer failed");
-      return makeSummary("failed", a.error ?? "analyzer failed");
-    }
-    if (runId) {
-      await db.updateRunStatus({ run_id: runId, phase: "analyze", status: "completed", iteration: 0 });
-    }
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "analyze", status: "completed", iteration: 0 },
-    });
+		if (ctx.dryRun) {
+			await mkdir(ctx.runDir, { recursive: true });
+			await mkdir(ctx.worktreeDir, { recursive: true });
+			wt = {
+				repoDir: join(ctx.runDir, "repo"),
+				worktreeDir: ctx.worktreeDir,
+				branch: ctx.branch,
+				baseBranch: "main",
+			};
+		} else {
+			wt = await setupWorktree(
+				ctx.repoUrl,
+				ctx.runDir,
+				ctx.branch,
+				ctx.cloneDir,
+			);
+			await logLine(
+				ctx.rootDir,
+				`worktree ready at ${wt.worktreeDir} base ${wt.baseBranch}`,
+			);
+		}
 
-    let fixSpec: FixSpec | null = null;
-    if (ctx.dryRun) {
-      fixSpec = {
-        summary: "[dry-run] analyzer findings",
-        rootCause: "[dry-run]",
-        suspectFiles: [],
-        affectedSymbols: [],
-        reproduction: "[dry-run]",
-        testStrategy: "[dry-run]",
-        risks: [],
-        confidence: "low",
-      };
-    } else {
-      fixSpec = extractJson<FixSpec>(a.text);
-    }
-    if (!fixSpec) {
-      setPhase("failed");
-      pushState();
-      await finalize("failed", {}, "analyzer did not return a valid FixSpec JSON");
-      return makeSummary("failed", "analyzer did not return a valid FixSpec JSON");
-    }
-await writeFile(join(ctx.runDir, "fix-spec.json"), JSON.stringify(fixSpec, null, 2) + "\n");
+		const skeleton = await buildSkeletonMap(ctx.worktreeDir);
 
-    const plannerTask = [
-      `Issue #${ctx.issue.number}: ${ctx.issue.title}`,
-      "",
-      ctx.issue.body,
-      "",
-      "## Analyzer findings",
-      "",
-      JSON.stringify(fixSpec, null, 2),
-      "",
-      ...(skeleton.files.length > 0
-        ? [
-            "## Skeleton",
-            ...(function () {
-              const lines: string[] = [];
-              for (const f of skeleton.files.slice(0, 20)) {
-                lines.push(`Path: ${f.path}`);
-                for (const s of f.symbols.slice(0, 3)) {
-                  lines.push(`  ${s.kind}:${s.name}@L${s.line}`);
-                }
-              }
-              return lines;
-            })(),
-            "",
-          ]
-        : []),
-      `Design a concrete implementation plan for the fix.`,
-      `Return ONLY one JSON object with exactly this shape and nothing else:`,
-      `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
-      `{"approach": "...", "steps": ["..."], "filesToChange": ["..."], "testsToAddOrUpdate": ["..."], "acceptanceCriteria": ["..."], "outOfScope": ["..."], "filesNeeded": "string[]"}`,
-    ].join("\n");
-    const p = await runAgent("planner", "plan", plannerTask, policyFor("planner", ctx.provider ?? "gemini"));
-    if (!p.ok) {
-      setPhase("failed");
-      pushState();
-      await finalize("failed", {}, p.error ?? "planner failed");
-      return makeSummary("failed", p.error ?? "planner failed");
-    }
-    // C3: Parse the planner's JSON response for filesNeeded.
-    let filesNeeded: string[] = [];
-    try {
-      const parsed = JSON.parse(p.text);
-      filesNeeded = parsed.filesNeeded ?? parsed.files_needed ?? [];
-      if (!Array.isArray(filesNeeded)) filesNeeded = [];
-    } catch {
-      filesNeeded = [];
-    }
-    if (runId) {
-      await db.updateRunStatus({ run_id: runId, phase: "plan", status: "completed", iteration: 0 });
-    }
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "plan", status: "completed", iteration: 0 },
-    });
+		const analyzeResult = await runAnalyzePhase({
+			ctx,
+			runAgent,
+			setPhase,
+			pushState,
+			finalize,
+			makeSummary,
+			runId,
+			sorEmit,
+		});
+		if (!analyzeResult.ok) return analyzeResult.summary;
+		const { fixSpec } = analyzeResult;
 
-    let plan: Plan;
-    if (ctx.dryRun) {
-      plan = {
-        approach: "[dry-run] approach",
-        steps: ["[dry-run] implement the fix"],
-        filesToChange: [],
-        testsToAddOrUpdate: [],
-        acceptanceCriteria: ["[dry-run] tests pass"],
-        outOfScope: [],
-      };
-    } else {
-      const parsed = extractJson<Plan>(p.text);
-      if (!parsed) {
-        setPhase("failed");
-        pushState();
-        await finalize("failed", {}, "planner did not return a valid Plan JSON");
-        return makeSummary("failed", "planner did not return a valid Plan JSON");
-      }
-      plan = parsed;
-    }
+		const planResult = await runPlanPhase({
+			ctx,
+			fixSpec,
+			runAgent,
+			setPhase,
+			pushState,
+			finalize,
+			makeSummary,
+			runId,
+			sorEmit,
+			skeleton,
+		});
+		if (!planResult.ok) return planResult.summary;
+		const { plan, commitMessage, planMd, route } = planResult;
 
-    // Factual commit message from the approved plan's approach; used for both the
-    // coder's own commit and the orchestrator's residual commit. Never `Fix #N`.
-    const commitMessage = commitMessageFor(plan, ctx.issue);
+		const implResult = await runImplementPhase({
+			ctx,
+			plan,
+			planMd,
+			commitMessage,
+			route,
+			wt,
+			runId,
+			dash,
+			agents,
+			scoutTracker,
+			web,
+			setPhase,
+			pushState,
+			pushStateThrottled,
+			finalize,
+			makeSummary,
+			sorEmit,
+		});
+		if (!implResult.ok) return implResult.summary;
+		iterationsUsed = implResult.iterationsUsed;
 
-    const planMd = [
-      `# Plan — ${ctx.issue.repo}#${ctx.issue.number}`,
-      "",
-      "## Approach",
-      "",
-      plan.approach,
-      "",
-      "## Steps",
-      ...plan.steps.map((s, i) => `${i + 1}. ${s}`),
-      "",
-      "## Files to change",
-      ...plan.filesToChange.map((f) => `- ${f}`),
-      "",
-      "## Tests to add/update",
-      ...plan.testsToAddOrUpdate.map((t) => `- ${t}`),
-      "",
-      "## Acceptance criteria",
-      ...plan.acceptanceCriteria.map((c) => `- ${c}`),
-      "",
-      "## Out of scope",
-      ...plan.outOfScope.map((o) => `- ${o}`),
-    ].join("\n");
-    await writeFile(join(ctx.runDir, "plan.md"), planMd + "\n");
+		const prResult = await runPrPhase({
+			ctx,
+			wt,
+			runAgent,
+			setPhase,
+			pushState,
+			finalize,
+			makeSummary,
+			agents,
+		});
+		if (!prResult.ok) return prResult.summary;
+		prUrl = prResult.prUrl;
 
-    const route = planRoute(ctx.issue);
-    const loopStep = route.find((s) => s.kind === "loop");
-    const implRoles: Role[] = loopStep?.roles ?? ["coder"];
-
-    const implTask = (feedback: string | undefined): string => {
-      const lines = [
-        `Issue #${ctx.issue.number}: ${ctx.issue.title}`,
-        "",
-        ctx.issue.body,
-        "",
-        "## Approach",
-        plan.approach,
-        "",
-        "## Steps",
-        ...plan.steps.map((s, i) => `${i + 1}. ${s}`),
-        "",
-        "## Files to change",
-        ...plan.filesToChange.map((f) => `- ${f}`),
-        "",
-        "## Acceptance criteria",
-        ...plan.acceptanceCriteria.map((c) => `- ${c}`),
-        "",
-        `Implement this plan in the repo at ${ctx.worktreeDir} (branch ${ctx.branch}).`,
-        "Make the code changes, run the relevant tests, and commit to the branch.",
-        "",
-        commitGuidance,
-      ];
-      if (feedback) lines.push("", "FEEDBACK FROM REVIEWER (auto-fix round):", feedback);
-      return lines.join("\n");
-    };
-
-    let feedback: string | undefined;
-    let fixRoundsUsed = 0;
-    let approved = false;
-
-    const testCommand = detectTestCommand(ctx.worktreeDir);
-    await logLine(ctx.rootDir, `detected test command: ${testCommand}`);
-    const commitGuidance = await readContributionGuidance(ctx.worktreeDir);
-
-    // Initial implementation + at most AUTO_FIX_MAX_ROUNDS review-driven fixes.
-    for (let iter = 1; iter <= 1 + AUTO_FIX_MAX_ROUNDS; iter++) {
-      iterationsUsed = iter;
-      dash.loopIteration = iter;
-
-      if (runId) {
-        const lastFailed = await getLastFailedStep(runId, "coder").catch(() => null);
-        if (lastFailed && iter > 1) {
-          await logLine(
-            ctx.rootDir,
-            `iteration ${iter}: resuming coder — previously failed at step "${lastFailed}" (completed steps are skipped automatically)`,
-          );
-        }
-      }
-
-      for (const role of implRoles) {
-        const task = implTask(feedback);
-        const policy = policyFor(role, ctx.provider ?? "gemini");
-
-        if (!runId) {
-          const res = await runAgent(role, "implement", task, policy);
-          if (!res.ok) {
-            setPhase("failed");
-            pushState();
-            await finalize("failed", {}, res.error ?? `${role} failed`);
-            return makeSummary("failed", res.error ?? `${role} failed`);
-          }
-          continue;
-        }
-
-        setPhase("implement");
-        dash.agents[role] = { role, state: "running", model: policy.model };
-        pushState();
-
-        const onText = (t: string) => web?.pushOutput(role, t);
-        const onEvent = (ev: Record<string, unknown>) => {
-          if (scoutTracker.observe(role, ev)) {
-            void logLine(ctx.rootDir, `[scout] invoked by ${role} (call ${scoutTracker.total}, ${scoutTracker.countFor(role)}/${role})`);
-          }
-          web?.pushAgentEvent?.(role, ev);
-        };
-
-        let ok = true;
-        let error: string | undefined;
-        let ar: AgentResult | undefined;
-        if (role === "coder") {
-          const r = await runCoder(
-            ctx,
-            {
-              task,
-              policy,
-              worktreeDir: ctx.worktreeDir,
-              branch: ctx.branch,
-              issueNumber: ctx.issue.number,
-              commitMessage,
-              testCommand,
-              onText,
-              onEvent,
-            },
-            runId,
-            iter,
-          );
-          ar = r.agentResult;
-          ok = r.ok && !(ar && !ar.ok);
-          error = r.error ?? (ar && !ar.ok ? ar.error : undefined);
-        } else {
-          const r = await runTester(
-            ctx,
-            { task, policy, worktreeDir: ctx.worktreeDir, testCommand, expectPass: true, onText, onEvent },
-            runId,
-            iter,
-          );
-          ar = r.agentResult;
-          ok = r.ok && !(ar && !ar.ok);
-          error = r.error ?? (ar && !ar.ok ? ar.error : undefined);
-        }
-
-        // Record cost/usage + agent action for coder/tester (mirrors runAgent).
-        if (ar) {
-          agents[role] = ar;
-        }
-        dash.agents[role] = {
-          role,
-          state: ok ? "done" : "failed",
-          model: policy.model,
-          sessionID: ar?.sessionID ?? undefined,
-          tokens: ar?.tokens,
-          costUsd: ar?.costUsd,
-          startedAt: ar?.startedAt,
-          endedAt: ar?.endedAt,
-          error,
-        };
-        pushState();
-        if (runId && ar) {
-          await db.logAgentAction({
-            run_id: runId,
-            role,
-            model: ar.model,
-            ok: ar.ok,
-            text: ar.text,
-            tokens: ar.tokens,
-            cost_usd: ar.costUsd ?? 0,
-            trace_path: ar.tracePath,
-            started_at: new Date(ar.startedAt),
-            ended_at: new Date(ar.endedAt),
-            attempts: ar.attempts ?? [],
-          });
-        }
-        if (!ok) {
-          setPhase("failed");
-          pushState();
-          await finalize("failed", {}, error ?? `${role} failed`);
-          return makeSummary("failed", error ?? `${role} failed`);
-        }
-      }
-
-      if (!ctx.dryRun) {
-        try {
-          const exec = promisify(execFile);
-          const { stdout } = await exec("git", [
-            "-C",
-            ctx.worktreeDir,
-            "status",
-            "--porcelain",
-          ]);
-          if (stdout.trim()) {
-            await exec("git", [
-              "-C",
-              ctx.worktreeDir,
-              "add",
-              "-A",
-              "--",
-              ".",
-              ...EXCLUDE_ARTIFACTS,
-            ]);
-            const { stdout: staged } = await exec("git", [
-              "-C",
-              ctx.worktreeDir,
-              "diff",
-              "--cached",
-              "--name-only",
-            ]);
-            if (!staged.trim()) {
-              await logLine(
-                ctx.rootDir,
-                "orchestrated commit skipped — only untracked artifacts present",
-              );
-            } else {
-              try {
-                await exec("git", [
-                  "-C",
-                  ctx.worktreeDir,
-                  "commit",
-                  "-m",
-                  commitMessage,
-                ]);
-                await logLine(
-                  ctx.rootDir,
-                  `orchestrated commit created on ${ctx.branch}`,
-                );
-              } catch (e) {
-                await logLine(
-                  ctx.rootDir,
-                  `orchestrated commit failed (non-fatal): ${execErrorText(e)}`,
-                );
-              }
-            }
-          }
-        } catch (e) {
-          await logLine(
-            ctx.rootDir,
-            `worktree commit step skipped (non-fatal): ${String(e)}`,
-          );
-        }
-      }
-
-      const reviewDiff = ctx.dryRun
-        ? "[dry-run] diff unavailable"
-        : (await diffAgainstBase(wt)).slice(0, MAX_REVIEW_DIFF_CHARS);
-      const reviewerTask = [
-        `Issue #${ctx.issue.number}: ${ctx.issue.title}`,
-        "",
-        ctx.issue.body,
-        "",
-        "## Plan",
-        planMd,
-        "",
-        `## Diff against ${wt.baseBranch}`,
-        "",
-        reviewDiff,
-        "",
-        `Review the implementation in this diff (you are read-only).`,
-        `Return ONLY one JSON object with exactly this shape and nothing else:`,
-        `Keep every string field SHORT (under ~120 characters each), avoid prose, and keep arrays small — the response must fit in a single short message.`,
-        `{"verdict": "APPROVE" | "REQUEST_CHANGES", "blockingIssues": ["..."], "nonBlockingNotes": ["..."], "rationale": "..."}`,
-      ].join("\n");
-      const r = await runAgent(
-        "reviewer",
-        "review",
-        reviewerTask,
-        policyFor("reviewer", ctx.provider ?? "gemini"),
-      );
-      if (!r.ok) {
-        setPhase("failed");
-        pushState();
-        await finalize("failed", {}, r.error ?? "reviewer failed");
-        return makeSummary("failed", r.error ?? "reviewer failed");
-      }
-      if (!ctx.dryRun) {
-        const verdict = extractJson<{
-          verdict?: string;
-          blockingIssues?: string[];
-          nonBlockingNotes?: string[];
-          rationale?: string;
-        }>(r.text);
-        const normalized = (verdict?.verdict ?? "").trim().toUpperCase();
-        const isRequestChanges = normalized === "REQUEST_CHANGES";
-        const isApprove = normalized === "APPROVE";
-        // Missing / malformed / unrecognized verdict counts as a rejection: it
-        // feeds the single auto-fix round, then hard-fails (SPEC D11 — no
-        // human is left to resolve ambiguity).
-        if (isRequestChanges || !isApprove) {
-          const reviewerFeedback = isRequestChanges
-            ? [verdict?.rationale, ...(verdict?.blockingIssues ?? [])].filter(Boolean).join("\n") ||
-              "reviewer requested changes"
-            : (verdict?.verdict === undefined
-                ? "reviewer verdict missing/empty"
-                : `unrecognized reviewer verdict "${verdict.verdict}" (expected APPROVE or REQUEST_CHANGES)`);
-          if (fixRoundsUsed < AUTO_FIX_MAX_ROUNDS) {
-            fixRoundsUsed += 1;
-            feedback = reviewerFeedback;
-            await logLine(
-              ctx.rootDir,
-              `reviewer requested changes — coder auto-fix round ${fixRoundsUsed}/${AUTO_FIX_MAX_ROUNDS}`,
-            );
-            await sorEmit(ctx, {
-              event_type: "phase",
-              actor: "manager",
-              payload: {
-                phase: "review",
-                status: "changes_requested",
-                iteration: iter,
-                autofix_round: fixRoundsUsed,
-                autofix_max_rounds: AUTO_FIX_MAX_ROUNDS,
-                feedback: reviewerFeedback,
-              },
-            });
-            continue;
-          }
-          setPhase("failed");
-          pushState();
-          await logLine(ctx.rootDir, "reviewer rejected after final auto-fix round");
-          await finalize("failed", {}, reviewerFeedback);
-          return makeSummary("failed", reviewerFeedback);
-        }
-      }
-
-      approved = true;
-      break;
-    }
-
-    if (!approved) {
-      setPhase("failed");
-      pushState();
-      await finalize("failed", {}, "could not reach an approved implementation");
-      return makeSummary("failed", "could not reach an approved implementation");
-    }
-
-    const prTask = [
-      `Issue #${ctx.issue.number}: ${ctx.issue.title}`,
-      "",
-      ctx.issue.body,
-      "",
-      `The implementation is on branch ${ctx.branch} in ${ctx.worktreeDir}, based on ${wt.baseBranch}.`,
-      `Push the branch to origin, then open a PR against ${wt.baseBranch} with \`gh pr create --repo ${ctx.issue.repo}\`.`,
-      `PR title: Fix #${ctx.issue.number}: ${ctx.issue.title}`,
-      `PR body must start with: Closes #${ctx.issue.number}`,
-      `Managed run: ${ctx.runId}.`,
-      "",
-      await readContributionGuidance(ctx.worktreeDir),
-    ].join("\n");
-    const pr = await runAgent("pr", "pr", prTask, policyFor("pr", ctx.provider ?? "gemini"));
-    const extractPrUrl = (text: string): string | undefined =>
-      /https?:\/\/[^\s)"']+\/pull\/\d+/.exec(text)?.[0];
-    if (pr.ok) {
-      prUrl = extractPrUrl(pr.text);
-    }
-    if (!pr.ok || (!ctx.dryRun && !prUrl)) {
-      if (ctx.dryRun) {
-        prUrl = undefined;
-      } else {
-        let found = false;
-        try {
-          const exec = promisify(execFile);
-          const { stdout } = await exec("gh", [
-            "pr",
-            "view",
-            ctx.branch,
-            "--repo",
-            ctx.issue.repo,
-            "--json",
-            "url,number",
-          ]);
-          const parsed = JSON.parse(stdout);
-          if (typeof parsed?.url === "string" && parsed.url) {
-            prUrl = parsed.url;
-            found = true;
-          }
-        } catch {
-          // no existing PR (or lookup failed); fall through to createPr
-        }
-        if (!found) {
-          try {
-            const exec = promisify(execFile);
-            await exec("git", [
-              "-C",
-              ctx.worktreeDir,
-              "push",
-              "-u",
-              "origin",
-              ctx.branch,
-            ]);
-            const fallback = await createPr(ctx.issue.repo, {
-              head: ctx.branch,
-              base: wt.baseBranch,
-              title: `Fix #${ctx.issue.number}: ${ctx.issue.title}`,
-              body: `Closes #${ctx.issue.number}\n\nManaged run ${ctx.runId}.`,
-            });
-            prUrl = fallback.url || extractPrUrl(fallback.raw);
-          } catch (e) {
-            const m = /https?:\/\/[^\s)"']+/.exec(String(e));
-            prUrl = m?.[0];
-            if (!prUrl) {
-              await logLine(
-                ctx.rootDir,
-                `PR creation failed and no PR URL recoverable: ${String(e)}`,
-              );
-            }
-          }
-        }
-      }
-    }
-
-    setPhase("done");
-    pushState();
-    if (runId) {
-      await db.updateRunStatus({ run_id: runId, phase: "done", status: "completed", iteration: iterationsUsed });
-    }
-    await sorEmit(ctx, {
-      event_type: "phase",
-      actor: "manager",
-      payload: { phase: "done", status: "completed", iteration: iterationsUsed },
-    });
-    const summary = makeSummary("completed");
-    const fallbackLines: string[] = [];
-    for (const role of ROLES) {
-      const a = agents[role];
-      if (a?.attempts && a.attempts.length > 1) {
-        fallbackLines.push(
-          `- ${role} fell back across ${a.attempts.length} models: ${a.attempts.map((x) => x.model).join(" -> ")}`,
-        );
-      }
-    }
-    const tokenLines = ROLES
-      .filter((role) => (agents[role]?.tokens?.total ?? 0) > 0)
-      .map((role) => {
-        const t = agents[role]!.tokens!;
-        const c = agents[role]!.costUsd;
-        return `- ${role}: in ${t.input.toLocaleString()} · out ${t.output.toLocaleString()} · cached ${t.cached.toLocaleString()} · total ${t.total.toLocaleString()} tok${c !== undefined ? ` · $${c.toFixed(4)}` : ""}`;
-      });
-    await logBlock(
-      ctx.rootDir,
-      "Run complete",
-      [
-        `- Status: ${summary.status}`,
-        prUrl ? `- PR: ${prUrl}` : "- PR: (none)",
-        `- Total cost: $${summary.totalCostUsd.toFixed(4)}`,
-        ...tokenLines,
-        `- Iterations used: ${iterationsUsed}`,
-        `- Run dir: ${ctx.runDir}`,
-        `- ${scoutTracker.summary()}`,
-        ...fallbackLines,
-      ].join("\n"),
-    );
-    await writeFile(join(ctx.runDir, "result.json"), JSON.stringify(summary, null, 2) + "\n");
-    await finalize("completed", {
-      review: "auto_approved",
-    });
-    try {
-      await generateMemory(ctx.rootDir);
-    } catch (e) {
-      await logLine(ctx.rootDir, "MEMORY.txt regeneration failed: " + String(e));
-    }
-    return summary;
-  } catch (e) {
-    await logLine(ctx.rootDir, "orchestrator error: " + String(e));
-    setPhase("failed");
-    pushState();
-    await finalize("failed", {}, String(e));
-    return makeSummary("failed", String(e));
-  }
+		return await runDonePhase({
+			ctx,
+			runId,
+			prUrl,
+			agents,
+			scoutTracker,
+			dash,
+			web,
+			setPhase,
+			pushState,
+			finalize,
+			makeSummary,
+			writeResultFile,
+			sorEmit,
+			iterationsUsed,
+		});
+	} catch (e) {
+		await logLine(ctx.rootDir, `orchestrator error: ${String(e)}`);
+		setPhase("failed");
+		pushState();
+		await finalize("failed", {}, String(e));
+		return makeSummary("failed", String(e));
+	} finally {
+		unsubscribeQuota();
+		setActiveResumeHandler(null);
+	}
 }
