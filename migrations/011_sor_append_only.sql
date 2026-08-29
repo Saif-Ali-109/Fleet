@@ -1,4 +1,4 @@
--- migrations/010_sor_append_only.sql
+-- migrations/011_sor_append_only.sql
 -- Create append-only trigger on audit_events to prevent UPDATE/DELETE
 
 -- UP:

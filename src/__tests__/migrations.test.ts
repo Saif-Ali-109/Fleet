@@ -203,4 +203,20 @@ describe("migrations", () => {
 		});
 		expect(files[files.length - 1]).toBe("012_sor_key_rotation.sql");
 	});
+
+	it("each migration file's header NNN prefix matches its filename NNN (F5.1)", () => {
+		const files = readdirSync(MIGRATIONS_DIR)
+			.filter((f) => f.endsWith(".sql"))
+			.sort();
+		for (const file of files) {
+			const nnn = file.slice(0, 3);
+			const content = readFileSync(
+				path.join(MIGRATIONS_DIR, file),
+				"utf-8",
+			);
+			const headerMatch = content.match(/^--\s*migrations\/(\d{3})_/m);
+			expect(headerMatch, `${file} has a migrations/NNN_ header`).toBeTruthy();
+			expect(headerMatch?.[1]).toBe(nnn);
+		}
+	});
 });
