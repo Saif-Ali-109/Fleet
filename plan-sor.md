@@ -271,10 +271,10 @@ fix is unaffected there — no DISABLE/ENABLE is needed for that UPDATE.
   disable/enable is minimal and self-documenting.
 
 **Tests.** Extend the repair test to run against a schema with 011 applied:
-- [ ] F1.1 repair with a corrupt row: succeeds (exit 0), row updated, `sor:verify` green.
-- [ ] F1.2 after repair, `UPDATE audit_events` from a normal session still raises the trigger
+- [x] F1.1 repair with a corrupt row: succeeds (exit 0), row updated, `sor:verify` green.
+- [x] F1.2 after repair, `UPDATE audit_events` from a normal session still raises the trigger
       (invariant preserved).
-- [ ] F1.3 repair failure path (e.g. bad key) rolls back and does not leave the trigger disabled.
+- [x] F1.3 repair failure path (e.g. bad key) rolls back and does not leave the trigger disabled.
 
 ### B2. Key-rotation signing protocol flaw on the first post-rotation append
 
@@ -303,10 +303,10 @@ reproduce the same canonical record.
   (they already are, line 117 & 123) — so this fix restores full interlock.
 
 **Tests.**
-- [ ] F2.1 rotate-then-append-then-verify: key `v1` → `SOR_KEY_ID=v2` (both keys set),
+- [x] F2.1 rotate-then-append-then-verify: key `v1` → `SOR_KEY_ID=v2` (both keys set),
       append one event, run `verifyChain` ⇒ `ok: true`.
-- [ ] F2.2 regression: single-key (v1) append + verify still green (existing coverage).
-- [ ] F2.3 multi-append across a rotation boundary: tail of v1 events + first v2 event
+- [x] F2.2 regression: single-key (v1) append + verify still green (existing coverage).
+- [x] F2.3 multi-append across a rotation boundary: tail of v1 events + first v2 event
       verify end-to-end; firstBadSeq === null.
 
 ### B3. `ensureChain` hardcodes `'v1'`
@@ -326,7 +326,7 @@ This keeps the genesis row's recorded key consistent with the actual current key
 fresh install under a nonzero `SOR_KEY_ID`.
 
 **Test.**
-- [ ] F3.1 `ensureChain` with `SOR_KEY_ID=v2` inserts `sor_chain.key_id = 'v2'`;
+- [x] F3.1 `ensureChain` with `SOR_KEY_ID=v2` inserts `sor_chain.key_id = 'v2'`;
       existing-row conflict path leaves it untouched.
 
 ### B4. Untested modules / untestable CLI
@@ -349,13 +349,13 @@ function:
 `npm run sor:repair` entry identical).
 
 **Tests.**
-- [ ] F4.1 `keyRegistry`: `getKey` normalization (`v2`→`SOR_KEY_V2`, `v1.x`→`SOR_KEY_V1_X`),
+- [x] F4.1 `keyRegistry`: `getKey` normalization (`v2`→`SOR_KEY_V2`, `v1.x`→`SOR_KEY_V1_X`),
       v1 fallback to `SOR_SIGNING_KEY`, `undefined` when unset; `getCurrentKeyId` default `v1`;
       `getCurrentKey` throws when unset.
-- [ ] F4.2 `repairChainForPool`: empty set ⇒ no-op report; valid chain ⇒ `needsUpdate 0`;
+- [x] F4.2 `repairChainForPool`: empty set ⇒ no-op report; valid chain ⇒ `needsUpdate 0`;
       corrupt row ⇒ updated + `sor:verify` green; exercises B1 trigger handling.
-- [ ] F4.3 `ensureChain` direct (see F3.1).
-- [ ] F4.4 `quotaSignals`: `rateLimitSwitchError` builds the exact
+- [x] F4.3 `ensureChain` direct (see F3.1).
+- [x] F4.4 `quotaSignals`: `rateLimitSwitchError` builds the exact
       `GEMINI_RATE_LIMIT_SWITCH:<block>:<waitMs>` string; `parseRateLimitSwitch` round-trips,
       rejects malformed (bad block, `NaN`, negative `waitMs`, missing `:`).
 
@@ -383,7 +383,7 @@ function:
   distinct `tailMismatch` flag. Mark clearly as optional — do not gate the gap-fix work on it.
 
 **Tests.**
-- [ ] F5.1 migration test asserts header/filename `NNN` agreement.
+- [x] F5.1 migration test asserts header/filename `NNN` agreement.
 - [ ] F5.2 (optional) `verifyChain` tail-check test.
 
 ---
