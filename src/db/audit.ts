@@ -63,11 +63,13 @@ function _requireSigningKey(): string {
 	return key;
 }
 
-/** Idempotent: ensure the singleton sor_chain row exists (id=1, seq=0, hash=GENESIS_HASH). */
+/** Idempotent: ensure the singleton sor_chain row exists (id=1, seq=0, hash=GENESIS_HASH).
+ *  The genesis row records the CURRENT key id so a fresh install under a
+ *  nonzero SOR_KEY_ID gets a consistent tail from the start. */
 export async function ensureChain(pool: Pool): Promise<void> {
 	await pool.query(
 		"INSERT INTO sor_chain (id, seq, hash, key_id) VALUES (1, 0, $1, $2) ON CONFLICT (id) DO NOTHING",
-		[GENESIS_HASH, "v1"],
+		[GENESIS_HASH, getCurrentKeyId()],
 	);
 }
 
