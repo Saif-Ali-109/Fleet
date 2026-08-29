@@ -81,7 +81,7 @@ function makeCtx(): RunContext {
 	};
 }
 
-const policy: RolePolicy = { role: "coder", model: "m1", fallbacks: ["m2"] };
+const policy: RolePolicy = { role: "coder", model: "m1", fallbacks: [] };
 
 describe("runWorker timeout", () => {
 	it("SIGTERMs the fork on WORKER_TIMEOUT_MS, escalates to SIGKILL after grace, and records the timeout error", async () => {
@@ -93,7 +93,7 @@ describe("runWorker timeout", () => {
 		expect(res.sawError).toBe(true);
 		expect(res.error).toContain("timed out");
 		expect(res.provider).toBe("gemini");
-		// One candidate provider in the fleet walk → one failed attempt.
+		// No fallback models configured → one failed attempt.
 		expect(res.attempts).toHaveLength(1);
 		expect(res.attempts?.[0]?.ok).toBe(false);
 		expect(res.attempts?.[0]?.provider).toBe("gemini");

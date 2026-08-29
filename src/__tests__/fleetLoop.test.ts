@@ -1631,6 +1631,58 @@ describe("runAgent", () => {
 		}
 	});
 
+	it("surfaces the FIRST transient error when the retry ladder is exhausted, not the last attempt's error", async () => {
+		vi.useFakeTimers();
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const registry = buildRegistry(defWith([]));
+			const { client, create } = mockClient([]);
+			const root503 = Object.assign(
+				new Error(
+					'503 [{"error":{"code":503,"message":"Service Unavailable","status":"UNAVAILABLE"}}]',
+				),
+				{ status: 503 },
+			);
+			create.mockImplementationOnce(async () => {
+				throw root503;
+			});
+			for (let i = 1; i < 4; i++) {
+				create.mockImplementationOnce(async () => {
+					throw new Error("Request timed out.");
+				});
+			}
+			const { events, emit } = collect();
+
+			const pending = runAgent({
+				client,
+				model: "m",
+				systemPrompt: "",
+				task: "",
+				registry,
+				wtCtx: ctx(),
+				emit,
+			});
+			await vi.advanceTimersByTimeAsync(15000);
+			await vi.advanceTimersByTimeAsync(30000);
+			await vi.advanceTimersByTimeAsync(60000);
+			const outcome = await pending;
+
+			expect(outcome.ok).toBe(false);
+			expect(create).toHaveBeenCalledTimes(4);
+			expect(outcome.error).toContain("503");
+			expect(outcome.error).toContain("UNAVAILABLE");
+			expect(outcome.error).not.toContain("Request timed out");
+			const errors = events.filter(
+				(e): e is Extract<WireEvent, { t: "error" }> => e.t === "error",
+			);
+			expect(errors).toHaveLength(1);
+			expect(errors[0]?.error).toContain("503");
+		} finally {
+			errSpy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
 	it("streaming watchdog requeues silent ollama calls", async () => {
 		const prevStream = process.env.FLEET_LLM_STREAM;
 		const prevFirstToken = process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;

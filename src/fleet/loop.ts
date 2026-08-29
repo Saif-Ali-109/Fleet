@@ -462,6 +462,10 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 			if (signal?.aborted) return fail("aborted before LLM call");
 
 			let response: Awaited<ReturnType<typeof create>> | undefined;
+			// Keep the FIRST transient failure so an exhausted retry ladder
+			// surfaces the root cause (e.g. a 503) rather than the last attempt's
+			// unrelated error — the manager walks the model chain on that root.
+			let firstTransient: unknown;
 			for (let attempt = 0; ; attempt++) {
 				const requestId = newRequestId();
 				const requestIdentity: RequestIdentity = {
@@ -600,9 +604,12 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 					}
 					const isOllama = provider === "ollama";
 					if (!isTransientLlmError(err)) throw err;
-					if (!isOllama && attempt >= RETRY_DELAYS_MS.length) throw err;
+					firstTransient ??= err;
+					if (!isOllama && attempt >= RETRY_DELAYS_MS.length)
+						throw firstTransient ?? err;
 					const ollamaCap = isOllama ? ollamaMaxRetries() : null;
-					if (ollamaCap !== null && attempt >= ollamaCap) throw err;
+					if (ollamaCap !== null && attempt >= ollamaCap)
+						throw firstTransient ?? err;
 					const hint = parseRetryDelayMs(err);
 					const delay = isOllama
 						? Math.max(

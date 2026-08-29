@@ -167,6 +167,22 @@ function forkWorker(params: {
 	});
 }
 
+/**
+ * True when a worker terminal error signals a transient network / timeout
+ * failure (missing HTTP status, SDK connection timeout, socket errors, …).
+ * The manager walks the model chain on these exactly like on a 5xx status,
+ * since the worker already exhausted its own retry ladder before surfacing it.
+ */
+export function isTransientNetworkError(msg: string): boolean {
+	return (
+		/APIConnectionTimeoutError/i.test(msg) ||
+		/\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE|Connection error|fetch failed|socket hang up|network error)\b/i.test(
+			msg,
+		) ||
+		/timed?\s*out|headersTimeout/i.test(msg)
+	);
+}
+
 /** Run one worker for `role`, honoring an explicit context provider when set. */
 export async function runWorker(
 	role: Role,
@@ -333,6 +349,20 @@ export async function runWorker(
 						});
 					}
 					continue;
+				}
+				if (isTransientNetworkError(parsed.errorMsg ?? "")) {
+					if (i + 1 < models.length) {
+						emitQuotaEvent({
+							type: "model_switch",
+							role,
+							provider: "gemini",
+							fromModel: model,
+							toModel: models[i + 1] ?? "",
+							block: "timeout",
+							waitMs: 0,
+						});
+						continue;
+					}
 				}
 				const temporary =
 					parsed.errorMsg === "GEMINI_RATE_LIMIT_WAIT_EXCEEDED" ||
