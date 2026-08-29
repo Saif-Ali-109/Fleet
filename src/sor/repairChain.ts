@@ -124,19 +124,35 @@ try {
 			try {
 				await client.query("BEGIN");
 				await client.query("LOCK TABLE audit_events IN ACCESS EXCLUSIVE MODE");
+				// migration 011 blocks UPDATE/DELETE on audit_events via an
+				// append-only trigger. Repair is the ONLY path allowed to rewrite
+				// the chain, so disable that one named trigger inside this
+				// ACCESS EXCLUSIVE transaction. The ENABLE below always runs
+				// before COMMIT; a ROLLBACK on error reverts the DISABLE too.
+				await client.query(
+					"ALTER TABLE audit_events DISABLE TRIGGER audit_events_append_only_trigger",
+				);
 
-				for (const u of updates) {
-					await client.query(
-						"UPDATE audit_events SET prev_hash = $1, hash = $2 WHERE seq = $3",
-						[u.prevHash, u.hash, u.seq],
-					);
-				}
+				try {
+					for (const u of updates) {
+						await client.query(
+							"UPDATE audit_events SET prev_hash = $1, hash = $2 WHERE seq = $3",
+							[u.prevHash, u.hash, u.seq],
+						);
+					}
 
-				const last = updates[updates.length - 1];
-				if (last) {
+					const last = updates[updates.length - 1];
+					if (last) {
+						// sor_chain has no append-only trigger, so no
+						// DISABLE/ENABLE is needed around this UPDATE.
+						await client.query(
+							"UPDATE sor_chain SET seq = $1, hash = $2, key_id = $3, updated_at = now() WHERE id = 1",
+							[last.seq, last.hash, currentKeyId],
+						);
+					}
+				} finally {
 					await client.query(
-						"UPDATE sor_chain SET seq = $1, hash = $2, key_id = $3, updated_at = now() WHERE id = 1",
-						[last.seq, last.hash, currentKeyId],
+						"ALTER TABLE audit_events ENABLE TRIGGER audit_events_append_only_trigger",
 					);
 				}
 
