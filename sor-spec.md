@@ -749,10 +749,10 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 ### 17.2 Per-phase done checklists
 
 **Phase 1 — Kernel scaffolding.**
-- [ ] `src/sor/kernel/{types,hash,provenance,access}.ts` present with the identity tuple,
+- [x] `src/sor/kernel/{types,hash,provenance,access}.ts` present with the identity tuple,
       canonical-hash registry (§7.4), provenance, and access types.
-- [ ] Unit tests cover FR-1..FR-5 at type/hash level.
-- [ ] `npm run typecheck && npm test` green; `npm run sor:verify` green.
+- [x] Unit tests cover FR-1..FR-5 at type/hash level.
+- [x] `npm run typecheck && npm test` green; `npm run sor:verify` green.
 
 **Phase 2 — Policy SoR v1.**
 - [ ] Migrations `013` + `014` up/down round-trip; `013` CHECK widening includes all six types

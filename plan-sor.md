@@ -219,11 +219,11 @@ TODO:
 
 ### A7. Phase 1 definition of done (spec §17.2, mapped)
 
-- [ ] Kernel module present with identity tuple, canonical-hash registry, provenance, access — **FR-1..FR-5**.
-- [ ] Unit tests cover FR-1..FR-5 at type/hash level — **all T1.x..T9.x ticked**.
-- [ ] `npm run typecheck` — 0 errors; `npm test` — all pass.
-- [ ] `npm run sor:verify` — `ok: yes` (chain untouched).
-- [ ] `npm run dry` — keyless smoke still green (no run-path change).
+- [x] Kernel module present with identity tuple, canonical-hash registry, provenance, access — **FR-1..FR-5**.
+- [x] Unit tests cover FR-1..FR-5 at type/hash level — **all T1.x..T9.x ticked**.
+- [x] `npm run typecheck` — 0 errors; `npm test` — all pass.
+- [x] `npm run sor:verify` — `ok: yes` (chain untouched).
+- [x] `npm run dry` — keyless smoke still green (no run-path change).
 
 ---
 
