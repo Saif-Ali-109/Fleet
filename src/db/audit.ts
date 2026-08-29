@@ -96,7 +96,11 @@ export async function appendAuditEvent(
 			...event,
 			created_at: new Date(event.created_at).toISOString(),
 		};
-		const hash = signEvent(key, chain.hash, normalized, chain.key_id);
+		// Embed the same key id that is written to the row and to sor_chain
+		// (chain.key_id is the OLD tail key until we commit). verifyChain
+		// recomputes with row.key_id, so both must agree for the first
+		// post-rotation append to verify.
+		const hash = signEvent(key, chain.hash, normalized, keyId);
 
 		await client.query(
 			`INSERT INTO audit_events
