@@ -22,7 +22,7 @@
 		"generate-memory": "tsx --env-file-if-exists=.env src/db/queries/summaryReport.ts",
 		"analytics": "tsx --env-file-if-exists=.env src/analytics/report.ts",
 		"sor:verify": "tsx --env-file-if-exists=.env src/sor/verifyCli.ts",
-		"sor:repair": "tsx --env-file-if-exists=.env src/sor/repairChain.ts"
+		"sor:repair": "tsx --env-file-if-exists=.env src/sor/repairCli.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.10",
