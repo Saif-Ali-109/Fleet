@@ -6,7 +6,20 @@
 import type { Pool } from "pg";
 import type { SorEvent, SorEventType } from "../sor/events.ts";
 import { getCurrentKey, getCurrentKeyId, getKey } from "../sor/keyRegistry.ts";
-import { GENESIS_HASH, signEvent } from "../sor/signer.ts";
+import { GENESIS_HASH, canonicalJson, signEvent } from "../sor/signer.ts";
+import {
+	canonicalPolicyHash,
+	capabilitySnapshot,
+	emptyPolicy,
+	sha256Hex,
+	validatePolicyDocument,
+} from "../fleet/policy.ts";
+import {
+	RESERVED_NAMESPACE,
+	type PolicyDocument,
+} from "../sor/kernel/types.ts";
+import type { FleetAgentDef } from "../fleet/types.ts";
+import type { Role } from "../types.ts";
 
 export interface AgentRegistryRow {
 	role: string;
@@ -139,31 +152,273 @@ export async function appendAuditEvent(
 	}
 }
 
-/** Upsert each row into agent_registry by role (single atomic multi-row upsert). */
-export async function syncAgentRegistry(
+export type LoadedRolePolicy =
+	| {
+			status: "valid";
+			policy: {
+				policyHash: string;
+				policyVersion: number;
+				sourceHash: string;
+				document: PolicyDocument;
+			};
+	  }
+	| { status: "absent"; policy: null }
+	| { status: "invalid"; policy: null; reason: string };
+
+interface RegistryRow {
+	rules: unknown;
+	policy_hash: string | null;
+	policy_version: number;
+	source_hash: string | null;
+}
+
+/** Canonical hash of the current `FleetAgentDef` — the capability ceiling a
+ *  policy row is reconciled against (`agent_registry.source_hash`, §9.2). */
+export function hashAgentDef(def: FleetAgentDef): string {
+	return sha256Hex(canonicalJson(def));
+}
+
+/** Seed-time `metadata` snapshot per §9.4/§21.3 (systemPromptSha, skillsDir, capabilities). */
+function defMetadata(def: FleetAgentDef): Record<string, unknown> {
+	return {
+		systemPromptSha: sha256Hex(def.systemPrompt),
+		skillsDir: def.skillsDir,
+		capabilityTools: [...def.tools],
+		capabilityMcp: [...def.mcpAllow],
+	};
+}
+
+export interface PolicySyncEvent {
+	kind: "seeded" | "reconciled" | "updated" | "drift-detected";
+	role: Role;
+	prevVersion: number;
+	nextVersion: number;
+	policyHash: string;
+	document?: PolicyDocument;
+}
+
+/** NON-FATAL `policy_sync` append (§12.2, C4). Any failure warns and continues. */
+export async function emitPolicySync(
 	pool: Pool,
-	rows: AgentRegistryRow[],
+	sync: PolicySyncEvent,
 ): Promise<void> {
-	if (rows.length === 0) return;
-
-	const params: unknown[] = [];
-	const tuples: string[] = [];
-	for (const row of rows) {
-		const i = params.length;
-		tuples.push(`($${i + 1}, $${i + 2}, $${i + 3}, $${i + 4})`);
-		params.push(row.role, row.metadata, row.rules, row.source_hash);
+	try {
+		await ensureChain(pool);
+		const event: SorEvent = {
+			run_id: null,
+			event_type: "policy_sync",
+			actor: "manager",
+			backend: null,
+			tool_name: null,
+			tool_input: null,
+			tool_output: null,
+			payload: {
+				sorType: "policy",
+				sourceId: sync.role,
+				namespace: RESERVED_NAMESPACE,
+				version: sync.nextVersion,
+				hash: sync.policyHash,
+				actor: "manager",
+				ts: new Date().toISOString(),
+				kind: sync.kind,
+				prevVersion: sync.prevVersion,
+				...(sync.document !== undefined ? { document: sync.document } : {}),
+			},
+			created_at: new Date().toISOString(),
+		};
+		await appendAuditEvent(pool, event);
+	} catch (err) {
+		console.warn(
+			`[sor] policy_sync skipped: ${err instanceof Error ? err.message : String(err)}`,
+		);
 	}
+}
 
+/** Insert-only seed for one role's `agent_registry` row (fresh install, §9.4). */
+async function seedRegistryRow(
+	pool: Pool,
+	role: Role,
+	def: FleetAgentDef,
+): Promise<void> {
+	const doc = capabilitySnapshot(def, role);
+	const policyHash = canonicalPolicyHash(doc);
 	await pool.query(
-		`INSERT INTO agent_registry (role, metadata, rules, source_hash)
-     VALUES ${tuples.join(", ")}
-     ON CONFLICT (role) DO UPDATE
-       SET metadata = EXCLUDED.metadata,
-           rules = EXCLUDED.rules,
-           source_hash = EXCLUDED.source_hash,
-           synced_at = now()`,
-		params,
+		`INSERT INTO agent_registry (role, metadata, rules, source_hash, policy_hash, policy_version, synced_at)
+     VALUES ($1, $2, $3, $4, $5, 1, now())`,
+		[
+			role,
+			toJsonbParam(defMetadata(def)),
+			toJsonbParam(doc),
+			hashAgentDef(def),
+			policyHash,
+		],
 	);
+	await emitPolicySync(pool, {
+		kind: "seeded",
+		role,
+		prevVersion: 0,
+		nextVersion: 1,
+		policyHash,
+		document: doc,
+	});
+}
+
+/** Idempotent registry bootstrap: seed missing rows, backfill legacy 014 rows,
+ *  and record drift on `source_hash` mismatch (FR-7 — never auto-rewrite `rules`). */
+export async function ensurePolicyRegistry(
+	pool: Pool,
+	defs: Record<Role, FleetAgentDef>,
+): Promise<void> {
+	for (const role of Object.keys(defs) as Role[]) {
+		const def = defs[role];
+		if (!def) continue;
+		const sourceHash = hashAgentDef(def);
+		const result = await pool.query<RegistryRow>(
+			"SELECT rules, policy_hash, policy_version, source_hash FROM agent_registry WHERE role = $1",
+			[role],
+		);
+		const row = result.rows[0];
+		if (!row) {
+			await seedRegistryRow(pool, role, def);
+			continue;
+		}
+		if (row.policy_hash === null) {
+			// Legacy 014 backfill (§21.3): hash the canonicalized existing rules
+			// at first boot, reconcile the metadata snapshot, before any drift check.
+			const rules = row.rules;
+			const doc: PolicyDocument =
+				rules !== null &&
+				typeof rules === "object" &&
+				!Array.isArray(rules)
+					? (rules as unknown as PolicyDocument)
+					: emptyPolicy(role);
+			const policyHash = canonicalPolicyHash(doc);
+			await pool.query(
+				`UPDATE agent_registry
+           SET policy_hash = $2, metadata = $3, source_hash = $4, synced_at = now()
+          WHERE role = $1`,
+				[role, policyHash, toJsonbParam(defMetadata(def)), sourceHash],
+			);
+			continue;
+		}
+		if (row.source_hash === null || row.source_hash !== sourceHash) {
+			await emitPolicySync(pool, {
+				kind: "drift-detected",
+				role,
+				prevVersion: row.policy_version,
+				nextVersion: row.policy_version,
+				policyHash: row.policy_hash,
+			});
+		}
+	}
+}
+
+/** Load one role's validated policy document split three ways: `absent` (no row),
+ *  `invalid` (malformed / NULL hash / hash mismatch) or `valid` (sor-usable). */
+export async function loadRolePolicy(
+	pool: Pool,
+	role: Role,
+): Promise<LoadedRolePolicy> {
+	const result = await pool.query<RegistryRow>(
+		"SELECT rules, policy_hash, policy_version, source_hash FROM agent_registry WHERE role = $1",
+		[role],
+	);
+	const row = result.rows[0];
+	if (!row) {
+		return { status: "absent", policy: null };
+	}
+	if (row.policy_hash === null) {
+		return {
+			status: "invalid",
+			policy: null,
+			reason: "policy_hash is null or malformed",
+		};
+	}
+	const doc = row.rules as unknown;
+	const check = validatePolicyDocument(doc, role);
+	if (!check.ok) {
+		return {
+			status: "invalid",
+			policy: null,
+			reason: `invalid policy document: ${check.reason}`,
+		};
+	}
+	if (canonicalPolicyHash(doc as PolicyDocument) !== row.policy_hash) {
+		return {
+			status: "invalid",
+			policy: null,
+			reason: "policy hash mismatch",
+		};
+	}
+	return {
+		status: "valid",
+		policy: {
+			policyHash: row.policy_hash,
+			policyVersion: row.policy_version,
+			sourceHash: row.source_hash ?? "",
+			document: doc as PolicyDocument,
+		},
+	};
+}
+
+/** Explicit admin reconcile (§9.4): validate the document, write the NEXT
+ *  policy version (even on unchanged content — §4.3), update `source_hash` to
+ *  the current ceiling, and emit `policy_sync {kind:"reconciled", document}`. */
+export async function reconcileRolePolicy(
+	pool: Pool,
+	role: Role,
+	doc: PolicyDocument,
+	defs: Record<Role, FleetAgentDef>,
+): Promise<
+	| { ok: true; policyVersion: number; kind: "reconciled" }
+	| { ok: false; reason: string }
+> {
+	const check = validatePolicyDocument(doc, role);
+	if (!check.ok) {
+		return { ok: false, reason: check.reason };
+	}
+	const def = defs[role];
+	if (!def) {
+		return { ok: false, reason: `no FleetAgentDef for role ${role}` };
+	}
+	const sourceHash = hashAgentDef(def);
+	const policyHash = canonicalPolicyHash(doc);
+	const prevResult = await pool.query<{ policy_version: number }>(
+		"SELECT policy_version FROM agent_registry WHERE role = $1",
+		[role],
+	);
+	const prevRow = prevResult.rows[0];
+	const prevVersion = prevRow?.policy_version ?? 0;
+	const nextVersion = prevVersion + 1;
+	if (!prevRow) {
+		await pool.query(
+			`INSERT INTO agent_registry (role, metadata, rules, source_hash, policy_hash, policy_version, synced_at)
+       VALUES ($1, $2, $3, $4, $5, 1, now())`,
+			[
+				role,
+				toJsonbParam(defMetadata(def)),
+				toJsonbParam(doc),
+				sourceHash,
+				policyHash,
+			],
+		);
+	} else {
+		await pool.query(
+			`UPDATE agent_registry
+         SET rules = $2, policy_hash = $3, policy_version = $4, source_hash = $5, synced_at = now()
+        WHERE role = $1`,
+			[role, toJsonbParam(doc), policyHash, nextVersion, sourceHash],
+		);
+	}
+	await emitPolicySync(pool, {
+		kind: "reconciled",
+		role,
+		prevVersion,
+		nextVersion,
+		policyHash,
+		document: doc,
+	});
+	return { ok: true, policyVersion: nextVersion, kind: "reconciled" };
 }
 
 function eventFromRow(row: AuditEventRow): SorEvent {
