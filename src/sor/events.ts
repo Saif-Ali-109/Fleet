@@ -14,7 +14,13 @@ export type SorEventType =
 	| "reservation"
 	| "reservation_rejection"
 	| "provider_completion"
-	| "retry";
+	| "retry"
+	| "policy_state"
+	| "policy_sync"
+	| "policy_decision"
+	| "content_sync"
+	| "content_access"
+	| "context_update";
 
 export interface SorEvent {
 	run_id: string | null;
@@ -31,7 +37,7 @@ export interface SorEvent {
 export const TOOL_INPUT_CAP = 20000; // max chars before truncation
 export const TOOL_OUTPUT_CAP = 20000;
 
-const VALID_TYPES: readonly SorEventType[] = [
+export const VALID_TYPES: readonly SorEventType[] = [
 	"tool_call",
 	"wakeup",
 	"phase",
@@ -46,6 +52,12 @@ const VALID_TYPES: readonly SorEventType[] = [
 	"reservation_rejection",
 	"provider_completion",
 	"retry",
+	"policy_state",
+	"policy_sync",
+	"policy_decision",
+	"content_sync",
+	"content_access",
+	"context_update",
 ];
 const VALID_BACKENDS: readonly string[] = [
 	"opencode",
@@ -172,8 +184,14 @@ export function normalizeEvent(raw: unknown): SorEvent {
 		actor,
 		backend: backend as string | null,
 		tool_name: toolName,
-		tool_input: raw.tool_input === undefined ? null : raw.tool_input,
-		tool_output: raw.tool_output === undefined ? null : raw.tool_output,
+		tool_input:
+			raw.tool_input === undefined
+				? null
+				: truncateValue(raw.tool_input, TOOL_INPUT_CAP),
+		tool_output:
+			raw.tool_output === undefined
+				? null
+				: truncateValue(raw.tool_output, TOOL_OUTPUT_CAP),
 		payload,
 		created_at: createdAt,
 	};
