@@ -13,6 +13,8 @@ import {
 	RPD_EXHAUSTED,
 	rateLimitSwitchError,
 } from "./quotaSignals.ts";
+import { evaluateToolCall } from "./policyEval.ts";
+import type { RulePredicate } from "./policy.ts";
 import type { SorEmitSink } from "./sorEmit.ts";
 import type { buildRegistry, ToolImpl, WtCtx } from "./tools/registry.ts";
 import type { ToolName } from "./types.ts";
@@ -61,6 +63,22 @@ export interface RunAgentOpts {
 	wtCtx: WtCtx;
 	emit: (evt: WireEvent) => void;
 	sor?: SorEmitSink;
+	/** Policy SoR snapshot (spec §9.6). When present with mode `sor`/`fail-closed`,
+	 *  the PEP runs before `impl.exec`. `compatibility` (or absent) skips the PEP. */
+	policy?: {
+		mode: "sor" | "compatibility" | "fail-closed";
+		effective: { allowedTools: string[]; mcpAllow: string[] };
+		toolRules: Record<string, RulePredicate[]>;
+	};
+	/** NON-FATAL `policy_decision` emitter (per call in `sor`/`fail-closed`). The
+	 *  worker provides a callback that appends via `appendAuditEvent`; failures must
+	 *  never abort or downgrade a decision (a deny is a deny regardless of audit). */
+	policyDecision?: (payload: {
+		decision: "ALLOW" | "DENY";
+		action: string;
+		result: "ok" | "blocked" | "error";
+		reason: string;
+	}) => void;
 	maxSteps?: number;
 	signal?: AbortSignal;
 	provider?: ProviderName;
@@ -715,24 +733,64 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 					);
 				}
 
-				const impl = (registry as Partial<Record<string, ToolImpl>>)[name];
 				const startedAt = Date.now();
+				const denied =
+					opts.policy &&
+					(opts.policy.mode === "sor" ||
+						opts.policy.mode === "fail-closed")
+						? (() => {
+								const d = evaluateToolCall(
+									name,
+									input,
+									opts.policy.effective,
+									opts.policy.toolRules,
+								);
+								try {
+									opts.policyDecision?.({
+										decision: d.decision,
+										action: name,
+										result: d.allowed ? "ok" : "blocked",
+										reason: d.reason,
+									});
+								} catch (err) {
+									console.warn(
+										`[policy] policy_decision skipped: ${err instanceof Error ? err.message : String(err)}`,
+									);
+								}
+								return d.allowed
+									? null
+									: { ok: false as const, content: d.reason };
+							})()
+						: null;
+				const impl = (registry as Partial<Record<string, ToolImpl>>)[name];
 				let result: { ok: boolean; content: string; exitCode?: number };
-				try {
-					if (!impl) {
-						result = { ok: false, content: `unknown tool: ${name}` };
-					} else {
-						const out = await impl.exec(input, wtCtx);
-						result =
-							out.ok === true
-								? { ok: true, content: out.content, exitCode: out.exitCode }
-								: { ok: false, content: out.error };
+				if (denied) {
+					result = denied;
+				} else {
+					try {
+						if (!impl) {
+							result = {
+								ok: false,
+								content: `unknown tool: ${name}`,
+							};
+						} else {
+							const out = await impl.exec(input, wtCtx);
+							result =
+								out.ok === true
+									? {
+											ok: true,
+											content: out.content,
+											exitCode: out.exitCode,
+										}
+									: { ok: false, content: out.error };
+						}
+					} catch (err) {
+						result = {
+							ok: false,
+							content:
+								err instanceof Error ? err.message : String(err),
+						};
 					}
-				} catch (err) {
-					result = {
-						ok: false,
-						content: err instanceof Error ? err.message : String(err),
-					};
 				}
 				const ms = Date.now() - startedAt;
 				emit({
