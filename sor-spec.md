@@ -755,18 +755,18 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 - [x] `npm run typecheck && npm test` green; `npm run sor:verify` green.
 
 **Phase 2 — Policy SoR v1.**
-- [ ] Migrations `013` + `014` up/down round-trip; `013` CHECK widening includes all six types
+- [x] Migrations `013` + `014` up/down round-trip; `013` CHECK widening includes all six types
       and `src/sor/events.ts` union moves in lockstep (§21.1).
-- [ ] `014` legacy backfill per §21.3 (legacy rows = seeded v1; `policy_hash` at first boot).
-- [ ] `ensurePolicyRegistry`/`loadRolePolicy`/`reconcileRolePolicy` replace dormant
+- [x] `014` legacy backfill per §21.3 (legacy rows = seeded v1; `policy_hash` at first boot).
+- [x] `ensurePolicyRegistry`/`loadRolePolicy`/`reconcileRolePolicy` replace dormant
       `syncAgentRegistry`; appends stay NON-FATAL.
-- [ ] Mode resolution at spawn (§9.5) with `SOR_POLICY_*` env injection; worker builds the
+- [x] Mode resolution at spawn (§9.5) with `SOR_POLICY_*` env injection; worker builds the
       effective registry and emits `policy_state`.
-- [ ] PEP before `impl.exec` enforces FR-6 + FR-11 (input-level `toolRules`; unknown tools deny).
-- [ ] `policy_decision` per call in `sor`/`fail-closed`; `policy_sync` on mutations; payloads
+- [x] PEP before `impl.exec` enforces FR-6 + FR-11 (input-level `toolRules`; unknown tools deny).
+- [x] `policy_decision` per call in `sor`/`fail-closed`; `policy_sync` on mutations; payloads
       per §12.2 with truncation caps (§4.2).
-- [ ] CLI `sor:policy seed | reconcile <role> <file> | show <role>` wired in `src/index.ts`.
-- [ ] FR-6..FR-11 held; AT-3, AT-4, AT-5, AT-6 green; typecheck + tests + `sor:verify` green.
+- [x] CLI `sor:policy seed | reconcile <role> <file> | show <role>` wired in `src/index.ts`.
+- [x] FR-6..FR-11 held; AT-3, AT-4, AT-5, AT-6 green; typecheck + tests + `sor:verify` green.
 
 **Phase 3 — Content SoR v1 (stub-level).**
 - [ ] Migration `015` + pgvector; markdown-path ingestion CLI; worker-child embedding;

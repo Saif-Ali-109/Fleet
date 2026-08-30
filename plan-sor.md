@@ -738,11 +738,11 @@ sor:policy show <role>                           # print role's document + polic
 ### C10. Phase 2 tests (test-led)
 
 **Migration tests:**
-- [ ] P1.1 013 UP/DOWN round-trip: after UP, CHECK accepts a `policy_decision` insert; after
+- [x] P1.1 013 UP/DOWN round-trip: after UP, CHECK accepts a `policy_decision` insert; after
       DOWN, the same insert fails (old CHECK restored).
-- [ ] P1.2 014 UP adds nullable `policy_hash` + `policy_version NOT NULL DEFAULT 1`; DOWN drops
+- [x] P1.2 014 UP adds nullable `policy_hash` + `policy_version NOT NULL DEFAULT 1`; DOWN drops
       both; legacy row (pre-014 insert, no cols) backfills correctly via `ensurePolicyRegistry`.
-- [ ] P1.3 header/filename agreement + sequential numbering (extends F5.1); full
+- [x] P1.3 header/filename agreement + sequential numbering (extends F5.1); full
       `006→014` sequential UP/DOWN round-trip (§21.6). In the same change that adds 013/014,
       bump the migrations test's last-file assertion from
       `files[files.length-1] === "012_sor_key_rotation.sql"` to
@@ -750,92 +750,107 @@ sor:policy show <role>                           # print role's document + polic
       corrected 011/012 headers (F5.1).
 
 **`events.ts` tests (lockstep with 013):**
-- [ ] P2.1 `VALID_TYPES` contains all six; existing 14 untouched.
-- [ ] P2.2 `normalizeEvent` accepts each new type with a locked-shape payload.
-- [ ] P2.3 the FIRST parity test tying the TS union to the 013 UP CHECK: a
+- [x] P2.1 `VALID_TYPES` contains all six; existing 14 untouched.
+- [x] P2.2 `normalizeEvent` accepts each new type with a locked-shape payload.
+- [x] P2.3 the FIRST parity test tying the TS union to the 013 UP CHECK: a
       widened-DB-with-old-TS scenario is impossible in one commit — assert every entry of
       `VALID_TYPES` (the TS array) is ⊆ the 013 UP CHECK literal set, extracting the CHECK
       literals from `013_sor_policy_events.sql` in the style of `migrations.test.ts`
       (mirroring how that suite asserts over the migration CHECK).
-- [ ] P2.4 policy-event append round-trip: `normalizeEvent(policy_decision)` →
+- [x] P2.4 policy-event append round-trip: `normalizeEvent(policy_decision)` →
       `appendAuditEvent` inserts a row with `event_type: "policy_decision"`, `payload`
       intact, `prev_hash`/`hash` chained; append travels through `appendAuditEvent` (not
       `buildToolEmission`, which hardcodes `tool_call`).
 
 **`policy.ts` / `policyEval.ts` tests:**
-- [ ] P3.1 validate rejects wrong schemaVersion, role mismatch, unknown rule op, non-array tools.
-- [ ] P3.2 canonicalPolicyHash stable under key order; equals `sha256Hex(canonicalJson(doc))`;
+- [x] P3.1 validate rejects wrong schemaVersion, role mismatch, unknown rule op, non-array tools.
+- [x] P3.2 canonicalPolicyHash stable under key order; equals `sha256Hex(canonicalJson(doc))`;
       differs on any field change.
-- [ ] P3.3 codec round-trip base64 (incl. non-ASCII role/tool strings).
-- [ ] P3.4 evaluateToolCall: allowed tool ⇒ ALLOW; unknown tool ⇒ DENY; `deny` predicate
+- [x] P3.3 codec round-trip base64 (incl. non-ASCII role/tool strings).
+- [x] P3.4 evaluateToolCall: allowed tool ⇒ ALLOW; unknown tool ⇒ DENY; `deny` predicate
       matching ⇒ DENY; `require` predicate failing ⇒ DENY; multiple predicates ALL satisfy ⇒
       ALLOW; empty-grant doc ⇒ zero ALLOWs (FR-11); empty toolRules + tool in allowedTools ⇒
       ALLOW.
 
 **Loop/worker (integration, no model calls):**
-- [ ] P4.1 (sor mode) denied tool: `impl.exec` NOT invoked (spy/marker), side-effectless
+- [x] P4.1 (sor mode) denied tool: `impl.exec` NOT invoked (spy/marker), side-effectless
       result, `policy_decision DENY` emitted.
-- [ ] P4.2 allowed tool: normal exec; `policy_decision ALLOW` emitted per call.
-- [ ] P4.3 fail-closed mode: every tool (including one in the ceiling) denied; zero grants.
-- [ ] P4.4 compatibility mode: PEP skipped, static def.tools behavior, still emits
+- [x] P4.2 allowed tool: normal exec; `policy_decision ALLOW` emitted per call.
+- [x] P4.3 fail-closed mode: every tool (including one in the ceiling) denied; zero grants.
+- [x] P4.4 compatibility mode: PEP skipped, static def.tools behavior, still emits
       `policy_state {mode:"compatibility"}`.
-- [ ] P4.5 unknown tool denied with zero side effects.
-- [ ] P4.6 `policy_state` emitted at worker init with correct mode/version/hash/sourceHash.
-- [ ] P4.7 dry-run/stub session emits NO `policy_state` (mirrors `emitWakeup` no-op) and
+- [x] P4.5 unknown tool denied with zero side effects.
+- [x] P4.6 `policy_state` emitted at worker init with correct mode/version/hash/sourceHash.
+- [x] P4.7 dry-run/stub session emits NO `policy_state` (mirrors `emitWakeup` no-op) and
       performs zero policy DB-appends during `npm run dry` even when a DB is configured.
 
 **Registry/audit (`audit.ts`) tests:**
-- [ ] P5.1 `ensurePolicyRegistry` seeds all roles (insert-only, v1, snapshot, hash computed) on
+- [x] P5.1 `ensurePolicyRegistry` seeds all roles (insert-only, v1, snapshot, hash computed) on
       a fresh DB; idempotent on re-run.
-- [ ] P5.2 legacy 014-backfilled row: `policy_hash` computed from canonicalized existing `rules`
+- [x] P5.2 legacy 014-backfilled row: `policy_hash` computed from canonicalized existing `rules`
       at first boot, `policy_version=1`, before drift.
-- [ ] P5.3 `loadRolePolicy` splits outcomes three ways: `absent` (zero rows for the role /
+- [x] P5.3 `loadRolePolicy` splits outcomes three ways: `absent` (zero rows for the role /
       seed failed) ⇒ routes to **compatibility** (declared, P-I4); `invalid`/`hash-mismatch`
       ⇒ routes to **fail-closed**; `valid` ⇒ routes to **sor**.
-- [ ] P5.4 `reconcileRolePolicy` bumps policy_version (even on unchanged content), updates
+- [x] P5.4 `reconcileRolePolicy` bumps policy_version (even on unchanged content), updates
       source_hash, emits `policy_sync {kind:"reconciled", document}`; drift-only path emits
       `{kind:"drift-detected"}` with NO document and does NOT write rules (FR-7/AT-5).
-- [ ] P5.5 appends NON-FATAL: a forced SOR-write failure in a policy append warns and continues.
-- [ ] P5.6 unit test for the mode-resolution function (extracted into `src/agentRunner.ts`
+- [x] P5.5 appends NON-FATAL: a forced SOR-write failure in a policy append warns and continues.
+- [x] P5.6 unit test for the mode-resolution function (extracted into `src/agentRunner.ts`
       as a pure, unit-testable function, per §C5) covering ALL branches: `valid` ⇒ `sor`;
       `absent` (no row / seed failed) ⇒ `compatibility`; `invalid`/`hash-mismatch` ⇒
       `fail-closed`; DB unreachable after config ⇒ `fail-closed`; plus the FR-11
       empty-but-valid policy ⇒ stays `sor` with zero grants.
 
 **CLI tests:**
-- [ ] P6.1 `seed` creates rows once, refuses to overwrite existing; `reconcile` validates the
+- [x] P6.1 `seed` creates rows once, refuses to overwrite existing; `reconcile` validates the
       file and bumps version; `show` prints the document tuple.
-- [ ] P6.2 `reconcile` rejects malformed file / role mismatch without any write.
+- [x] P6.2 `reconcile` rejects malformed file / role mismatch without any write.
 
 **Acceptance mapping (AT-3, AT-4, AT-5, AT-6):**
-- [ ] P7.1 AT-3: denied unauthorized tool ⇒ `impl.exec` never runs (covered by P4.1).
-- [ ] P7.2 AT-4: code capability cannot exceed policy authorization — a new def tool absent
+- [x] P7.1 AT-3: denied unauthorized tool ⇒ `impl.exec` never runs (covered by P4.1).
+- [x] P7.2 AT-4: code capability cannot exceed policy authorization — a new def tool absent
       from the policy doc yields no grant (P4.3 / P5.2).
-- [ ] P7.3 AT-5: drift cannot silently grant — mismatch only records drift, no rules write
+- [x] P7.3 AT-5: drift cannot silently grant — mismatch only records drift, no rules write
       (P5.4).
-- [ ] P7.4 AT-6: policy version/hash reconstructible from `policy_state` → `policy_sync`
+- [x] P7.4 AT-6: policy version/hash reconstructible from `policy_state` → `policy_sync`
       (full document) for a historical version (forensic reread test).
 
 **sor:verify gate:** after all Phase 2 commits, `npm run sor:verify` stays green (§12.3, AT-9).
 
 ### C11. Phase 2 definition of done (spec §17.3, mapped)
 
-- [ ] Migrations `013` + `014` up/down round-trip; 013 CHECK widening includes all six types and
+- [x] Migrations `013` + `014` up/down round-trip; 013 CHECK widening includes all six types and
       `src/sor/events.ts` union moves in lockstep (§21.1) — **§C3, §C4, P1.x, P2.x**.
-- [ ] 014 legacy backfill per §21.3 (legacy rows = seeded v1; `policy_hash` at first boot) —
+- [x] 014 legacy backfill per §21.3 (legacy rows = seeded v1; `policy_hash` at first boot) —
       **§C3.2, P5.2**.
-- [ ] `ensurePolicyRegistry`/`loadRolePolicy`/`reconcileRolePolicy` replace dormant
+- [x] `ensurePolicyRegistry`/`loadRolePolicy`/`reconcileRolePolicy` replace dormant
       `syncAgentRegistry`; appends stay NON-FATAL — **§C8.1, P5.x**.
-- [ ] Mode resolution at spawn (§9.5) with `SOR_POLICY_*` env injection; worker builds the
+- [x] Mode resolution at spawn (§9.5) with `SOR_POLICY_*` env injection; worker builds the
       effective registry and emits `policy_state` — **§C5, §C8.2, §C8.3, P4.6**.
-- [ ] PEP before `impl.exec` enforces FR-6 + FR-11 (input-level `toolRules`; unknown tools
+- [x] PEP before `impl.exec` enforces FR-6 + FR-11 (input-level `toolRules`; unknown tools
       deny) — **§C7, P4.1–P4.5**.
-- [ ] `policy_decision` per call in `sor`/`fail-closed`; `policy_sync` on mutations; payloads
+- [x] `policy_decision` per call in `sor`/`fail-closed`; `policy_sync` on mutations; payloads
       per §12.2 with truncation caps (§4.2) — **§C4, §C7, §C8**.
-- [ ] CLI `sor:policy seed | reconcile <role> <file> | show <role>` wired in `src/index.ts` —
+- [x] CLI `sor:policy seed | reconcile <role> <file> | show <role>` wired in `src/index.ts` —
       **§C9, P6.x**.
-- [ ] FR-6..FR-11 held; AT-3, AT-4, AT-5, AT-6 green; typecheck + tests + `sor:verify` green —
+- [x] FR-6..FR-11 held; AT-3, AT-4, AT-5, AT-6 green; typecheck + tests + `sor:verify` green —
       **§C10, §C12**.
+
+**Step 11 retrospective (final acceptance + DoD gate).** Full serial pass green:
+`npm run typecheck` 0 errors; `npm test` 1001 passed / 0 failed (6 skipped);
+`npm run dry` completes; `npm run sor:verify` stays `ok: yes`. Cross-step
+reconciliation (Steps 6–10) required **no code fixes** — the contracts already
+matched: `RunAgentOpts.policy` + `policyDecision` wire worker → loop →
+`appendPolicyEventNonFatal`; `planWorkerPolicy` carries `sourceHash` into the
+`policy_state` payload; Step 6 env injection does not perturb non-policy
+spawns. AT-3..AT-6 acceptance landed: P7.1 = P4.1/P4.5 (`impl.exec` never runs
+on a denied call), P7.2 = P4.3/P5.2 + effective-registry ceiling∩grant (AT-4),
+P7.3 = P5.4/policyCli drift section (no silent grant on mismatch), P7.4 =
+`policyForensics` chain reread (v1/v2 reconstructible, drifted version
+unsatisfiable). P4.7 proven by a real forked worker: the dry path performs
+**zero policy DB-appends** even with `DATABASE_URL` + full `SOR_POLICY_*` env
+configured. Phase 3/4 checklists (spec §17.2) remain unchecked — deferred.
 
 ### C12. Phase 2 build order (each step ends green: `npm run typecheck && npm test`, then re-check `npm run sor:verify`)
 
