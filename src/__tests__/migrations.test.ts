@@ -303,6 +303,27 @@ describe("migrations", () => {
 		}
 	});
 
+	// P1.2: 014 adds the Policy SoR columns; DOWN drops both (backfill is in
+	// ensurePolicyRegistry, tested at P5.2, not in SQL)
+	it("014 adds nullable policy_hash + policy_version NOT NULL DEFAULT 1, DOWN drops both", () => {
+		const up = readUp("014_agent_registry_policy.sql");
+		expect(up).toMatch(/ALTER TABLE agent_registry\s+ADD COLUMN policy_hash TEXT/);
+		expect(up).toMatch(
+			/ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 1/,
+		);
+		// Backfill is NOT in SQL — the hash must be computed by ensurePolicyRegistry
+		expect(up).not.toMatch(/UPDATE\s+agent_registry/i);
+
+		const content = readFileSync(
+			path.join(MIGRATIONS_DIR, "014_agent_registry_policy.sql"),
+			"utf-8",
+		);
+		const downMatch = content.match(/--\s*DOWN:\s*\n([\s\S]*?)$/i);
+		const down = downMatch?.[1] ? downMatch[1].trim() : "";
+		expect(down).toMatch(/ALTER TABLE agent_registry\s+DROP COLUMN policy_version/);
+		expect(down).toMatch(/DROP COLUMN policy_hash/);
+	});
+
 	it("migration files are numbered sequentially with no gaps", () => {
 		const files = readdirSync(MIGRATIONS_DIR)
 			.filter((f) => f.endsWith(".sql"))
@@ -311,7 +332,7 @@ describe("migrations", () => {
 		files.forEach((file, i) => {
 			expect(file.startsWith(`${String(i + 1).padStart(3, "0")}_`)).toBe(true);
 		});
-		expect(files[files.length - 1]).toBe("013_sor_policy_events.sql");
+		expect(files[files.length - 1]).toBe("014_agent_registry_policy.sql");
 	});
 
 	it("each migration file's header NNN prefix matches its filename NNN (F5.1)", () => {
