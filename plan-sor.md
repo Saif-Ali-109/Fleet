@@ -1,23 +1,24 @@
 ---
-title: "SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1)"
+title: "SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1 + Phase 3 Content SoR v1)"
 status: active
 date: 2026-08-29
 owner: ain
 audience: implementation agents
-revision: 3
+revision: 4
 derived-from: sor-spec.md (revision 2)
 ---
 
-# SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1)
+# SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1 + Phase 3 Content SoR v1)
 
-Build plan for the **first code slice** (spec §16 / §17.2 + §17.3): the domain-neutral
-**SoR Kernel contract + scaffolding**, then the **real-bug gap fixes** in the existing
-signed audit chain, then **Phase 2 Policy SoR v1** end-to-end (spec §9, §12, §15, §16,
-§17.3, §20, §21). Each phase lands on a green tree. Content/Context (spec §10/§11) are
-explicitly out of scope here and pointed to as later phases.
+Build plan for the **code slices**: the domain-neutral **SoR Kernel contract +
+scaffolding**, then the **real-bug gap fixes** in the existing signed audit chain, then
+**Phase 2 Policy SoR v1** end-to-end (spec §9, §12, §15, §16, §17.3, §20, §21), then
+**Phase 3 Content SoR v1** (spec §10, §15, §16, §17.4). Each phase lands on a green tree.
+Context SoR (spec §11) is out of scope here and pointed to as a later phase.
 
-This revision (3) supersedes revision 1, which covered only Phase 1 kernel scaffolding.
-Revision 3 keeps that plan (lightly polished) and adds the gap-fix and Phase 2 sections.
+This revision (4) supersedes revision 3. Revision 3 kept the Phase 1 + gap-fix + Phase 2
+sections; revision 4 adds **PART G — Phase 3: Content SoR v1 delegation plan**
+(the subagent parallel/sequential build map, per the delegated-execution model).
 
 ---
 
@@ -973,3 +974,353 @@ comment fixes), TUI/dashboard, anything under `.runs/`.
    minimal, safe, self-documenting choice. Only repair does this.
 5. **`sor_chain` tail verification** — spec doesn't require it; included as optional
    nice-to-have (B5) so it can be skipped without blocking green.
+
+---
+
+## PART G — Phase 3: Content SoR v1 (delegation plan)
+
+Delegator-facing implementation plan for Phase 3, executed by **subagents** — **parallel**
+where file sets are disjoint, **sequential** where they share import chains, files, or
+commits. The main agent does no direct code work. Lands on green Phase 1 + Part B + Phase 2
+tree, branch `feat/sor/content-phase3` (branched from green `feat/sor/policy-phase2`).
+
+### G1. What Phase 3 delivers (spec §10, §16, §17.4)
+
+Content SoR makes organizational knowledge authoritative: markdown documents are ingested
+(manual CLI) into a canonical store (`content_sor`), chunked section-aware with embedding
+into a **derived** index (`content_chunks` + pgvector + pg FTS), and served to agents via
+**manager-side read-only MCP tools** returning mandatory provenance
+`{source, document, section, version, content_hash}`. Grounding honesty (C2): unavailable ≠
+no-match; agents never cite non-SOR knowledge as grounded.
+
+**Spec §17.4 done checklist (the contract this plan must satisfy):**
+- Migration `015` + pgvector; markdown-path ingestion CLI; worker-child embedding;
+  section-aware chunking with caps (§4.2: ~4000 chars / ~200 overlap); manager-side read-only
+  MCP tools; provenance on output; unavailable ≠ no-match; idempotent sync; evidence boundary
+  (`content_sync` always, `content_access` session-aggregate default); C2 prompt directive.
+- FR-12..FR-16 held; **AT-1, AT-2 green**; `npm run sor:verify` stays green.
+
+### G2. Locked decisions (user review round, 2026-08-30)
+
+| # | Topic | Decision |
+|---|---|---|
+| D1 | Depth | **Full, production-grade** (real pgvector + pg FTS retrieval, real embed worker-child, real CLI, real MCP read-only tools, full AT-1/AT-2). |
+| D2 | Embedding model | **Reuse existing provider clients** (gemini/openrouter/ollama OpenAI-compatible SDK `embeddings` endpoint) in the embed worker-child. No new provider type. |
+| D3 | Retrieval tool wiring | **New first-class role tools** subject to P-I1 (granted by policy seed via capability snapshot). |
+| D4 | C2 directive | **Constant directive appended to the worker `systemPrompt`** (module-level constant, not a skills file). |
+| D5 | Embed child | **Dedicated embed-worker entry** `src/runtime/embed/main.ts`, forked by the sync pipeline only. |
+
+#### G2.1 Interpretation note (reconciling D3 with locked spec §8.2)
+
+The user chose "New FleetAgentDef tools wired into buildRegistry + effective registry." The
+**locked** spec §8.2 ("for Content/Context, agent-facing read access is served by
+**manager-side read-only domain services exposed via the existing MCP plumbing**; workers
+stay thin; DB access centralized in the manager-side retrieval services") and §21.4
+(no P-I1 exemption) conflict with executing the tools as **worker-process builtins** (which
+would put a DB pool into the worker). **Reconciliation (adopted):** the retrieval tools are
+first-class role tools **exposed as MCP tools on the existing `src/mcp/fleetServer.ts`**
+(the worker's `connectToMcpServer` already surfaces these as `ToolImpl`s) and granted via
+each role's **`def.mcpAllow`** (the policy capability snapshot seeds `mcpAllow` by default,
+so P-I1 is satisfied without a worker-process DB pool). The `ToolName` union and
+`buildRegistry`/`IMPLS` do **NOT** change. This honours D3 (first-class, policy-gated, granted
+by seed) while keeping the locked §8.2 manager-side DB boundary. **Flagged to user** in plan
+review — if they prefer worker-process builtins, the §8.2 manager-side boundary must be
+relaxed (not approved here).
+
+Concrete new tools (spec §10.6, names finalized here): `retrieve_knowledge(query, source?)`,
+`list_sources()`, `get_document(source, document, section?)`. All read-only.
+
+### G3. File-conflict map (drives the parallel/sequential split)
+
+| Task | Files touched (new = created, edit = modified) | Gated by / gates |
+|---|---|---|
+| T1 migration 015 | `migrations/015_content_sor.sql` (new), `src/__tests__/migrations.test.ts` (edit: final-file 014→015, 015 up/down test) | gates T5/T6/T7 |
+| T2 content module | `src/fleet/content.ts` (new), `src/fleet/__tests__/content.test.ts` (new) | gates T5/T6/T7 |
+| T3 embed worker | `src/runtime/embed/main.ts` (new), `src/runtime/embed/__tests__/embed.test.ts` (new) | gates T7 |
+| T4 C2 directive const | `src/fleet/c2Directive.ts` (new), `src/fleet/__tests__/c2Directive.test.ts` (new) | gates T9 |
+| T5 content store (write path) | `src/fleet/contentStore.ts` (new), test (new) | T1+T2; gates T7 |
+| T6 retrieval service (read path) | `src/fleet/contentRetrieval.ts` (new), test (new) | T1+T2; gates T8 |
+| T7 CLI `sor:content:sync` | `src/index.ts` (edit), `src/__tests__/contentCli.test.ts` (new) | T2+T3+T5 |
+| T8 MCP tools + role wiring | `src/mcp/fleetServer.ts` (edit), 6× `src/fleet/agents/*.ts` (edit: `mcpAllow`), policy-seed/drift test | T6 |
+| T9 worker C2 + acceptance + DoD | `src/runtime/worker/main.ts` (edit: append directive), acceptance tests, `sor-spec.md`/this file DoD ticks | all |
+
+**Shared-file audit (parallel hazard):** the ONLY existing file two tasks both touch is
+`src/runtime/worker/main.ts` (T9 only — no other task) and `src/index.ts` (T7 only — no other
+task). `migrations.test.ts` only by T1. No two tasks in the same wave touch the same file.
+`agent defs` (6 files) only by T8. **No cross-task file conflicts in any wave.**
+
+### G4. Wave structure (delegation order)
+
+Each task ends with typecheck + its OWN focused tests green (mirroring the Phase 2 execution
+discipline). The **full `npm test`** suite and `npm run sor:verify` run only in the final
+**serial** acceptance wave (concurrent full-suite runs race on the shared Postgres).
+
+```
+Wave A  (parallel — 4 tasks, disjoint NEW files, no gates between them)
+  ├ T1  migrations/015_content_sor.sql + migrations.test.ts
+  ├ T2  src/fleet/content.ts (parse/chunk/hash/provenance/idempotency) + tests
+  ├ T3  src/runtime/embed/main.ts (embed worker-child) + tests
+  └ T4  src/fleet/c2Directive.ts (C2 grounding directive constant) + tests
+
+Wave B  (parallel — 2 tasks, both NEW files, gated by T1 DDL + T2 shapes)
+  ├ T5  src/fleet/contentStore.ts (write: insert/update/version, content_sync) + tests
+  └ T6  src/fleet/contentRetrieval.ts (read: FTS + pgvector, provenance, unavailable≠no-match) + tests
+
+Wave C  (parallel — 2 tasks, disjoint files, gated by Wave B)
+  ├ T7  src/index.ts  sor:content:sync CLI (pipeline: scan → parse/chunk → embed → store → content_sync)
+  └ T8  src/mcp/fleetServer.ts read-only tools + 6× agent defs mcpAllow + policy-seed/drift test
+
+Wave D  (SERIAL — integration acceptance + full green gate)
+  └ T9  worker main.ts C2 directive wiring + AT-1/AT-2 acceptance + full npm test +
+         npm run sor:verify + npm run dry + DoD tick (§17.4)
+```
+
+Rationale (honouring USER.md "when in doubt: sequential"):
+- Wave A is fully parallel: T1–T4 are brand-new/isolated files, no cross-task .ts import
+  until the later waves read their exports (contracts pinned in G5).
+- Wave B waits for T1 (schema exists to code against) + T2 (chunk/provenance shapes).
+- Wave C: T7 (CLI) needs T2/T3/T5; T8 (MCP+defs) needs T6. They touch disjoint files
+  (`index.ts` vs `fleetServer.ts`+defs), so parallel is safe.
+- Wave D is mandatory-serial: full-suite + sor:verify + the integration fix-up for any Wave
+  A/B/C cross-task contract drift.
+
+### G5. Locked cross-task contracts (copy-exact into every relevant subagent prompt)
+
+These are the shared seams that let parallel tasks integrate without re-edit.
+
+- **Canonical document (T2 output, T5/T6/T7 read):**
+  `ContentDoc = { sorType:"content"; sourceId: string; namespace:"fleet"; version: number;
+  hash: string; status: "active"|"invalid"|"superseded"; canonicalContent: string;
+  metadata: { title?: string; source: string; document: string; license?: string };
+  provenance: { externalRef?: string; acquiredAt?: string; sourceHash?: string } }`
+  - `hash` = `sha256Hex(canonicalizeText(canonicalContent))` — reuse Phase 1 kernel
+    `src/sor/kernel/{hash.ts}` (content→text path). Never include `hash` in the body.
+  - `sourceId` = stable per (source, document) path, e.g. `fleet|content|md:<relpath>`.
+- **Chunk (T2 output, T5 writes, T6 returns):**
+  `ContentChunk = { docId: string; version: number; section: string; chunkIndex: number;
+  text: string; contentHash: string /*chunk-level sha256*/ ; embedding: number[]|null;
+  ref: { sorType:"content"; sourceId: string; version: number; hash: string } }`
+  - Caps (spec §4.2/§10.5): chunk cap **4000 chars**, overlap **200 chars**, section-aware
+    (split on markdown ATX headings `##`/`###`; never split mid-code-fence).
+- **Provenance tuple (C3/FR-15, on EVERY retrieval result):**
+  `{ source, document, section, version, content_hash }` where `content_hash` is the
+  **canonical document hash** (from `content_sor.hash`), NOT the chunk hash.
+- **Unavailable vs no-match (C2/FR-14):** retrieval infra failure ⇒ tool returns
+  `{ ok:false, kind:"unavailable" }`; succeeded-but-zero-hits ⇒ `{ ok:true, kind:"no-match",
+  query }`. The agent never fabricates; the C2 directive (T4) instructs this.
+- **Embed worker IPC (T3 fork ↔ T7 CLI):** T7 `fork`s `src/runtime/embed/main.ts` with
+  `--import tsx` (mirror `forkWorker` in `src/agentRunner.ts`), sends a job message
+  `{ type:"embed", texts: string[], provider?, model? }`, receives
+  `{ type:"embed_result", vectors: number[][] | null, error? }` (null ⇒ unavailable → chunk
+  stored with `embedding: null`, retrieval degrades to pure FTS for that chunk).
+  Provider/model resolved worker-side via `src/providers/registry.ts` reusing the existing
+  OpenAI-compatible client (`client.embeddings.create`) — NO model call outside the embed
+  child. Manual, per-sync; no scheduler.
+- **content_sync event (T5/T7 emit, NON-FATAL append via `appendAuditEvent` in audit.ts):**
+  payload `{ kind: "added"|"updated"|"removed"|"unchanged", status, sourceId, version }`.
+  Idempotency (FR-13): unchanged canonical hash ⇒ `kind:"unchanged"`, NO version bump;
+  changed ⇒ version+1, `kind:"updated"`. Unparseable source ⇒ `status:'invalid'` row, never served.
+- **content_access event (T6/T8 emit on session aggregate boundary; default aggregate):**
+  payload `{ sessionId, mode:"aggregate"|"percall", count, topSources[] }` — per-call opt-in
+  via `CONTENT_ACCESS_MODE=percall`. NOT emitted per retrieval by default.
+- **New MCP tool names (T6/T8, must match exactly):** `retrieve_knowledge`, `list_sources`,
+  `get_document`. Added to `ALLOWED_TOOLS_PER_ROLE` in `fleetServer.ts` per role, and to each
+  role's `def.mcpAllow` array (T8). Policy P-I1 governs them via `mcpAllow` grants (Phase 2
+  already intersects `def.mcpAllow` with grant `mcpAllow`; no code change needed there).
+
+### G6. Task detail sheets (for the delegator to copy into subagent prompts)
+
+#### T1 — Migration 015 + mirror (Wave A, parallel)
+- `migrations/015_content_sor.sql`: `CREATE EXTENSION IF NOT EXISTS vector;` (PG14+),
+  `content_sor` table (denormalized kernel identity: `source_id`, `namespace`, `version`,
+  `hash`; `canonical_content TEXT`, `metadata JSONB`, `provenance JSONB`, `status TEXT`,
+  `created_at`), `content_chunks` table (`doc_id`, `version`, `section`, `chunk_index`,
+  `text`, `content_hash`, `embedding vector(1536)`, `ref JSONB` for the kernel reference
+  tuple K3), indexes (pg FTS `tsvector` GIN on text; `content_sor` UNIQUE `(source_id,
+  version)`; `content_chunks` index on `(doc_id, version)`). Both UP and DOWN. Exact
+  `vector` dim finalized by the embed provider (v1 default 1536).
+- `migrations.test.ts`: bump last-file assertion `014_…` → `015_content_sor.sql`; add 015
+  UP/DOWN round-trip + actual postgres vector extension surfacing (missing extension ⇒ the
+  migration serial-sequence check tolerates/skips if extension absent — note it).
+- Commit: `feat(sor): content_sor and content_chunks schema with pgvector`.
+
+#### T2 — Content module (Wave A, parallel)
+`src/fleet/content.ts`: pure functions —
+- `parseMarkdownSource(relPath, text, rootPath)`: returns one `ContentDoc` draft (title from
+  first H1, sections from headings) + `ContentChunk[]` via section-aware chunker (cap 4000 /
+  overlap 200; never split code fences).
+- `canonicalize + hash` via kernel `hash.ts` (text path). `buildContentDoc(…)` produces the
+  locked `ContentDoc`; `computeDocHash(doc)`; `provenanceOf(ref, source, document, section)`
+  → the locked 5-tuple.
+- `syncOutcome(prev: ContentDoc|null, next: ContentDoc)` → `{kind:"added"|"updated"|
+  "unchanged", version}` (idempotency FR-13: same canonical hash ⇒ `unchanged`, no bump).
+- Pure, unit-tested (`content.test.ts`). No DB, no I/O beyond passed strings. Reuses only
+  `src/sor/kernel/*` + `node:crypto`.
+
+#### T3 — Embed worker-child (Wave A, parallel)
+`src/runtime/embed/main.ts` (fork entry; mirror `forkWorker` pattern — tsx loader, child IPC):
+- Parse a job `{ texts: string[], provider?, model? }`; resolve provider/model via
+  `src/providers/registry.ts` + the role/`FLEET_*`/model-policy layers (reuse existing
+  OpenAI-compatible client `.embeddings.create`). No manager-side model call.
+- Reply `{ vectors: number[][] | null, error? }`. On provider/key failure ⇒ `null` (chunk
+  stays `embedding:null`, retrieval degrades to FTS — never blocks the sync).
+- Batch size + retry bounded; pure-enough unit test with a mocked client (no live token spend).
+- Commit: `feat(sor): worker-child embedding entry for content sync`.
+
+#### T4 — C2 grounding directive (Wave A, parallel)
+`src/fleet/c2Directive.ts`: export `const C2_GROUNDING_DIRECTIVE` — a short directive string
+stating: agents must never assert SOR/granted knowledge without an actual retrieval; on
+retrieval-infra failure return/state `"knowledge source unavailable"`; a zero-hit retrieval is
+the distinct `"no authoritative content found for <query>"`; every cited item requires the full
+provenance tuple; never present model-memory as grounded. `c2Directive.test.ts` asserts the
+string contains the required markers. Pure. (Wiring into worker/systemPrompt happens in T9.)
+
+#### T5 — Content store write path (Wave B, parallel)
+`src/fleet/contentStore.ts`: DB writes —
+- `upsertDocument(pool, doc: ContentDoc, chunks: ContentChunk[])`: for `added`/`updated`
+  (used only when T2 `syncOutcome` says not-unchanged) insert the `content_sor` row, delete
+  the prior version's chunks, insert new `content_chunks` rows (with `embedding` vector
+  param); for `unchanged` do nothing but emit `content_sync {kind:"unchanged"}`.
+- Version bump on update (T2 supplies the version). Emit `content_sync` (NON-FATAL
+  `appendAuditEvent`, warn+continue) — never abort a sync over an event failure.
+- Uses `pool` from `src/db/client.ts`. Recording-pool/mock style tests (like audit.test.ts);
+  no full-suite dependency.
+- Commit: `feat(sor): content store write path with content_sync`.
+
+#### T6 — Retrieval service read path (Wave B, parallel)
+`src/fleet/contentRetrieval.ts`: DB reads —
+- `retrieveKnowledge(pool, {query, source?})` → ranked items: pg **FTS** (tsvector, lexical,
+  deterministic) primary for lookup; pg **pgvector** ANN (cosine) as ranking when embeddings
+  present. Every item resolves back to its `content_sor` canonical row (K3/C1) and carries the
+  locked provenance 5-tuple. Infra failure ⇒ `{ ok:false, kind:"unavailable" }`; zero hits ⇒
+  `{ ok:true, kind:"no-match", query }`.
+- `listSources(pool)`, `getDocument(pool, {source, document, section?})` → provenance-tagged.
+- Session-aggregate `content_access` emission hook (called by T8 MCP server on aggregate
+  boundary; default `aggregate`, opt-in `percall`).
+- Recording/mock tests + (optionally) one real-DB test mirroring `resetChain` pattern. No model
+  calls.
+- Commit: `feat(sor): manager-side content retrieval with provenance`.
+
+#### T7 — CLI `sor:content:sync` (Wave C, parallel)
+`src/index.ts` (add to the `sor:` CLI family; keep `sor:policy` intact):
+- `sor:content sync <paths…>` — manual sync (no scheduler/watcher): for each markdown path,
+  `parseMarkdownSource` (T2) → `syncOutcome` (T2) → if changed, spawn embed child (T3) →
+  `upsertDocument` (T5) → emit `content_sync`. Prints a per-document summary
+  (`added|updated|unchanged|invalid`) and exits non-zero on any fatal (non-SOR) error.
+- `sor:content list-sources` / `sor:content show <source> <document>` — thin CLI reads over T6.
+- Optionally `CONTENT_SAMPLE_RATE` (spec §15 env) honored. `.env.example` gains the content
+  sync config env block (spec §15).
+- `contentCli.test.ts` with injected pool (recording style). Commit:
+  `feat(sor): sor:content sync/show CLI`.
+
+#### T8 — MCP read-only tools + role wiring (Wave C, parallel)
+- `src/mcp/fleetServer.ts`: add `retrieve_knowledge`, `list_sources`, `get_document`
+  handlers (call T6 retrieval service, which owns the manager-side DB pool), their
+  `inputSchema`s, and extend `ALLOWED_TOOLS_PER_ROLE` for the roles to grant
+  (spec §10.6 + §21.4; **v1 default: analyzer, planner, coder, reviewer**; tester/pr optional).
+- 6× `src/fleet/agents/*.ts`: add the granted tool names to each role's `def.mcpAllow` array
+  (capability ceiling). Because the def changes, an existing seeded DB will report
+  `policy_sync {kind:"drift-detected"}` until `sor:policy reconcile <role>` — assert this in
+  a policy-seed/drift test (P7.3-style: drift cannot silently grant; after reconcile the tools
+  are granted; before, workers lack them and retrieval degrades per C2).
+- No `ToolName` union / `buildRegistry` change (interpretation G2.1).
+- Commit: `feat(sor): read-only content MCP retrieval tools per role`.
+
+#### T9 — Worker C2 directive + acceptance + DoD (Wave D, SERIAL)
+- `src/runtime/worker/main.ts`: append `C2_GROUNDING_DIRECTIVE` (T4) to the built
+  `systemPrompt` (near `injectSkills(def.systemPrompt, role)`).
+- Acceptance tests (spec §17.1):
+  - **AT-1** (FR-4/12/15): a retrieval returns the exact provenance
+    `{source, document, section, version, content_hash}`; a forged/no-record vector hit is
+    not an answer (K3/C1) — assert the service refuses to return an item with no resolvable
+    canonical row.
+  - **AT-2** (FR-14): infra-failure ⇒ `{kind:"unavailable"}` and the worker/session path
+    prompts the source-unavailable stance; zero-hit is distinct `no-match`.
+  - Re-run the Phase 2 AT-3..AT-6 suites (regression — retrieval tools must be P-I1 gated,
+    so an ungranted role cannot call them).
+- Full gate: `npm run typecheck` (0 errors), full `npm test` (report count), `npm run
+  sor:verify` (`ok: yes`), `npm run dry` green. Tick the Phase 3 checklist in `sor-spec.md`
+  §17.4 and this file's DoD (G8). This is the ONLY task that runs the full suite, so it runs
+  alone.
+- Commit(s): `feat(sor): C2 grounding directive in worker prompt` +
+  `test(sor): content acceptance AT-1..AT-2` (+ `docs: check phase 3 DoD`).
+
+### G7. Disciplines for every subagent (copy into each prompt)
+
+- Read `sor-spec.md` §10, §15, §16, §17, §18 and `plan-sor.md` Part E/Part F BEFORE coding.
+- **Tabs** over spaces; explicit `.ts` import extensions; `interface` over `type`; no comments
+  unless warranted; mirror surrounding conventions (`src/fleet/policy.ts`, `loop.ts`,
+  `audit.ts`, `agentRunner.ts`).
+- **No model calls in manager code** (`index.ts`, `agentRunner.ts`, `loop.ts`,
+  `contentStore`, `contentRetrieval`, `fleetServer.ts`, dashboard/router). Embedding calls
+  live ONLY in `src/runtime/embed/main.ts`. Content retrieval is a DB read, not a model call,
+  and runs in the manager-side retrieval service (§8.2) / MCP server child.
+- **All SOR appends NON-FATAL** (warn+continue; never abort a sync/run over an event write).
+- Run `npm run typecheck` (0 errors) + ONLY your OWN focused test file(s)
+  (`npx vitest run <your file>`). Do **NOT** run the full `npm test` suite (parallel waves
+  share the machine/DB). The full gate is enforced in Wave D (T9).
+- Commit ONLY your listed files — explicit `git add <path>`, NEVER `git add -A`. Leave other
+  parallel tasks' dirty files untouched (they will be committed by their owners).
+- Every commit green (typecheck + your tests). Imperative subject + body (AGENTS.md).
+- Do NOT touch `src/sor/signer.ts`, `src/sor/verify.ts`, `src/sor/keyRegistry.ts`,
+  `src/orchestrator.ts`, `src/fleet/sorEmit.ts`, migrations 001–014, TUI/dashboard, `.runs/`.
+  Do NOT weaken tool gating or bash worktree cwd-locking.
+- Manual sync cadence only — **no scheduler, no HTTP content sources, no GitHub-repo syncing**,
+  no multi-tenancy (reserved namespace `"fleet"`).
+
+### G8. Build order recap (branch `feat/sor/content-phase3`)
+
+| Order | Wave | Task | Commit subject |
+|---|---|---|---|
+| 1 | A | T1 | `feat(sor): content_sor and content_chunks schema with pgvector` |
+| 1 | A | T2 | `feat(sor): content parse, chunking, provenance and idempotent sync` |
+| 1 | A | T3 | `feat(sor): worker-child embedding entry for content sync` |
+| 1 | A | T4 | `feat(sor): C2 grounding directive constant` |
+| 2 | B | T5 | `feat(sor): content store write path with content_sync` |
+| 2 | B | T6 | `feat(sor): manager-side content retrieval with provenance` |
+| 3 | C | T7 | `feat(sor): sor:content sync/show CLI` |
+| 3 | C | T8 | `feat(sor): read-only content MCP retrieval tools per role` |
+| 4 | D | T9 | `feat/test/docs(sor): C2 directive wiring + AT-1/AT-2 acceptance + DoD` |
+
+### G9. Phase 3 definition of done (spec §17.4 mapped)
+
+- Migration `015` + pgvector; `content_sor` + `content_chunks` up/down round-trip — **T1**.
+- Markdown ingestion CLI (`sor:content sync`) manual-only; `.env.example` updated — **T7**.
+- Worker-child embedding via existing provider clients; manager never calls a model — **T3, T7**.
+- Section-aware chunking with cap ≈4000 / overlap ≈200 (+ section + chunk_index stored) —
+  **T2, T5**.
+- Manager-side read-only MCP tools `retrieve_knowledge` / `list_sources` / `get_document`;
+  provenance on every output; unavailable ≠ no-match; P-I1 gated — **T6, T8**.
+- Idempotent sync: unchanged ⇒ `content_sync {kind:"unchanged"}`, no version bump — **T2, T5**.
+- Evidence boundary: `content_sync` always; `content_access` session-aggregate default,
+  per-call opt-in — **T5, T6/T8**.
+- C2 prompt directive appended to worker `systemPrompt` — **T4, T9**.
+- FR-12..FR-16 held; AT-1, AT-2 green; Phase 2 AT-3..AT-6 regression green; typecheck +
+  tests + `sor:verify` green — **T9, G7**.
+- Phase 3 checkbox ticked in `sor-spec.md` §17.4 (docs commit, per AGENTS.md session protocol).
+
+### G10. Risks & notes for the delegator
+
+- **Cross-task contract drift** between Wave A/B/C items is the main integration risk; the
+  G5 contracts MUST be copy-exact into each prompt. Wave D is the reconciliation net.
+- **pgvector availability**: migration `015` requires PG14+ with the extension. If the CI/test
+  Postgres lacks it, `CREATE EXTENSION IF NOT EXISTS vector` fails — the migration
+  serial-sequence test must gracefully handle an absent extension (assert the 015 file's
+  UP/DOWN exists and the tail pointer bumps, without requiring the extension to load). Flag
+  if CI Postgres needs the `pgvector` extension installed.
+- **Fork-in-sync**: the embed child is `fork`-spawned by the CLI (like `forkWorker`); ensure
+  it is not left dangling on sync failure (kill child in `finally`).
+- **Policy drift from T8 def changes**: adding `mcpAllow` to role defs flips
+  `source_hash`, so an already-seeded policy DB reports drift until reconcile. This is
+  correct behaviour (FR-7/AT-5), not a bug — but tests must assert it, and operators must
+  run `sor:policy reconcile` after deploy.
+- **No user auth / curation UI**, no self-serve admin (spec §18) — CLI + manager entry points
+  only.
+
+---
+
+## PART H — Overall build order (Phase 1 → Gap fixes → Phase 2 → Phase 3)
+
+| # | Work | Branch | Each ends green |
+|---|---|---|---|
+| G1–G10 | **Phase 3 Content SoR v1** (§G4 waves) | `feat/sor/content-phase3` | typecheck + focused tests each; full suite + sor:verify in Wave D |
