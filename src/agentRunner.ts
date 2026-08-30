@@ -11,8 +11,14 @@ import {
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { appendAuditEvent, ensureChain } from "./db/audit.ts";
+import {
+	appendAuditEvent,
+	ensureChain,
+	loadRolePolicy,
+	type LoadedRolePolicy,
+} from "./db/audit.ts";
 import { pool } from "./db/client.ts";
+import { canonicalPolicyHash, emptyPolicy } from "./fleet/policy.ts";
 import { emitQuotaEvent } from "./fleet/quotaEvents.ts";
 import { parseRateLimitSwitch, RPD_EXHAUSTED } from "./fleet/quotaSignals.ts";
 import {
@@ -26,6 +32,7 @@ import {
 	withProviderFallback,
 } from "./providers/registry.ts";
 import { parseProviderTrace } from "./runner/providers.ts";
+import type { PolicyMode } from "./sor/kernel/types.ts";
 import { MANAGER_ID, newRequestId } from "./telemetry.ts";
 import type {
 	AgentResult,
@@ -539,8 +546,107 @@ export async function runWorker(
 	);
 }
 
+// ---- Policy mode resolution (plan-sor.md §C5/C8.2; spec §9.5, §9.7) ----
+// Pure + injectable: the DB read arrives as an injected `loadRolePolicy`, so
+// every branch is unit-testable without a live Postgres (P5.6).
+
+export interface PolicyModeResolution {
+	mode: PolicyMode;
+	/** Row `policy_version` — set in `sor`, omitted in compatibility/fail-closed. */
+	policyVersion?: number;
+	/** Validated document hash — `sor` row hash, or the empty-grant sentinel in `fail-closed`. */
+	policyHash?: string;
+	/** JSON text of the document injected as `SOR_POLICY_JSON_B64` (`sor`/`fail-closed`). */
+	documentJson?: string;
+	/** True only for the configured+reachable-but-zero-rows case (P-I4 mode honesty). */
+	absent?: boolean;
+}
+
+export type LoadRolePolicyLike = (role: Role) => Promise<LoadedRolePolicy>;
+
+export interface ResolvePolicyModeOpts {
+	role: Role;
+	/** Injected SOR-config check (DATABASE_URL present / policy subsystem enabled). */
+	sorConfigured: () => boolean;
+	/** Injected DB read — rejects when a configured DB is unreachable. */
+	loadRolePolicy: LoadRolePolicyLike;
+}
+
+/** SOR policy is configured whenever DATABASE_URL is set (no disable flag exists). */
+export function isSorPolicyConfigured(): boolean {
+	return (
+		typeof process.env.DATABASE_URL === "string" &&
+		process.env.DATABASE_URL.length > 0
+	);
+}
+
+/** fail-closed snapshot: a valid zero-grant document + its canonical hash sentinel. */
+function failClosedSnapshot(role: Role): PolicyModeResolution {
+	const doc = emptyPolicy(role);
+	return {
+		mode: "fail-closed",
+		policyHash: canonicalPolicyHash(doc),
+		documentJson: JSON.stringify(doc),
+	};
+}
+
+/**
+ * Resolve the per-session policy mode at spawn (§9.5, locked order):
+ * no SOR config ⇒ compatibility; valid row ⇒ sor; zero rows ⇒ compatibility
+ * (P-I4, never fail-closed); invalid/tampered row or unreachable DB ⇒ fail-closed.
+ */
+export async function resolvePolicyMode(
+	opts: ResolvePolicyModeOpts,
+): Promise<PolicyModeResolution> {
+	const { role, sorConfigured, loadRolePolicy } = opts;
+	if (!sorConfigured()) {
+		return { mode: "compatibility" };
+	}
+	let loaded: LoadedRolePolicy;
+	try {
+		loaded = await loadRolePolicy(role);
+	} catch {
+		// Configured but unreachable: fail closed, never compatibility (§9.5).
+		return failClosedSnapshot(role);
+	}
+	if (loaded.status === "absent") {
+		// No row / seed failed: genuine absence ⇒ declared compatibility (P-I4).
+		return { mode: "compatibility", absent: true };
+	}
+	if (loaded.status === "invalid") {
+		return failClosedSnapshot(role);
+	}
+	return {
+		mode: "sor",
+		policyVersion: loaded.policy.policyVersion,
+		policyHash: loaded.policy.policyHash,
+		documentJson: JSON.stringify(loaded.policy.document),
+	};
+}
+
+/** Env entries for the worker fork; compatibility injects nothing (the worker declares it). */
+export function policyForkEnv(
+	resolved: PolicyModeResolution,
+): Record<string, string> {
+	if (resolved.mode === "compatibility") return {};
+	const env: Record<string, string> = { SOR_POLICY_MODE: resolved.mode };
+	if (resolved.policyHash !== undefined) {
+		env.SOR_POLICY_HASH = resolved.policyHash;
+	}
+	if (resolved.policyVersion !== undefined) {
+		env.SOR_POLICY_VERSION = String(resolved.policyVersion);
+	}
+	if (resolved.documentJson !== undefined) {
+		env.SOR_POLICY_JSON_B64 = Buffer.from(
+			resolved.documentJson,
+			"utf8",
+		).toString("base64");
+	}
+	return env;
+}
+
 /** Fork one worker attempt for `provider` and parse its trace slice into a ParsedStream. */
-export function spawnOnce(
+export async function spawnOnce(
 	provider: ProviderName,
 	role: Role,
 	task: string,
@@ -551,6 +657,13 @@ export function spawnOnce(
 	modelOverride?: string,
 	resumeFromPath?: string,
 ): Promise<ParsedStream> {
+	const policyEnv = policyForkEnv(
+		await resolvePolicyMode({
+			role,
+			sorConfigured: isSorPolicyConfigured,
+			loadRolePolicy: (r) => loadRolePolicy(pool, r),
+		}),
+	);
 	return new Promise((resolve) => {
 		const quota = provider === "gemini" ? quotaCoordinator() : undefined;
 		const workerId = newRequestId();
@@ -666,6 +779,9 @@ export function spawnOnce(
 					// Pin the fleet to this one candidate so the worker's own
 					// resolveProviderModel lands on exactly the walked provider.
 					FLEET_PROVIDERS: provider,
+					// Policy snapshot: has no effect in `compatibility` (empty),
+					// injected as `SOR_POLICY_MODE/HASH/VERSION/JSON_B64` otherwise.
+					...policyEnv,
 				},
 				fdOut,
 				fdErr,
