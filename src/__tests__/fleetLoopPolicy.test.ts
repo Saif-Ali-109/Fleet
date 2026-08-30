@@ -260,7 +260,7 @@ describe("runAgent policy PEP (Step 8)", () => {
 	it("P4.4: compatibility mode skips the PEP, runs static def.tools, and emits zero policy_decision (policy_state is worker-level)", async () => {
 		const registry = buildRegistry(defWith(["read"]));
 		const readExec = spyExec(registry as Record<string, ToolImpl>, "read");
-		const { client } = mockClient([
+		const { client, create } = mockClient([
 			resp({
 				role: "assistant",
 				content: null,
@@ -291,8 +291,13 @@ describe("runAgent policy PEP (Step 8)", () => {
 		expect(outcome.text).toBe("compat ok");
 		expect(readExec).toHaveBeenCalledTimes(1);
 		expect(policyDecision).not.toHaveBeenCalled();
-		// Replicate the worker-level policy_state assertion for mode honesty (Step 7 owns emission).
-		expect({ mode: "compatibility" }).toEqual({ mode: "compatibility" });
+		// Compatibility mode exposes the static def.tools to the model unchanged
+		// (no grant intersection). Step 7 owns the worker-level policy_state
+		// emission for this mode (covered in workerPolicySnapshot.test.ts).
+		const firstCall = (create.mock.calls[0] ?? [])[0] as {
+			tools?: Array<{ function?: { name?: string } }>;
+		};
+		expect(firstCall.tools?.map((t) => t.function?.name)).toEqual(["read"]);
 	});
 
 	it("P4.5 / P7.1 (AT-3): sor mode unknown tool denied with zero side effects (no impl.exec, no registry fallback)", async () => {
