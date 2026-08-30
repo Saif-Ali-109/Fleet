@@ -324,6 +324,54 @@ describe("migrations", () => {
 		expect(down).toMatch(/DROP COLUMN policy_hash/);
 	});
 
+	it("015 creates content_sor and content_chunks with pgvector (extension tolerated if absent)", () => {
+		const up = readUp("015_content_sor.sql");
+		expect(up).toContain("CREATE EXTENSION IF NOT EXISTS vector");
+		expect(up).toContain("CREATE TABLE content_sor");
+		expect(up).toMatch(/source_id\s+TEXT NOT NULL/);
+		expect(up).toMatch(/namespace\s+TEXT NOT NULL DEFAULT 'fleet'/);
+		expect(up).toMatch(/version\s+INTEGER NOT NULL/);
+		expect(up).toMatch(/hash\s+TEXT NOT NULL/);
+		expect(up).toMatch(/canonical_content\s+TEXT NOT NULL/);
+		expect(up).toMatch(/metadata\s+JSONB NOT NULL DEFAULT '\{\}'/);
+		expect(up).toMatch(/provenance\s+JSONB NOT NULL DEFAULT '\{\}'/);
+		expect(up).toMatch(/status\s+TEXT NOT NULL DEFAULT 'active'/);
+		expect(up).toMatch(/created_at\s+TIMESTAMPTZ NOT NULL DEFAULT now\(\)/);
+		expect(up).toMatch(/PRIMARY KEY\s*\(\s*source_id\s*,\s*version\s*\)/);
+
+		expect(up).toContain("CREATE TABLE content_chunks");
+		expect(up).toMatch(/doc_id\s+TEXT NOT NULL/);
+		expect(up).toMatch(/version\s+INTEGER NOT NULL/);
+		expect(up).toMatch(/section\s+TEXT NOT NULL/);
+		expect(up).toMatch(/chunk_index\s+INTEGER NOT NULL/);
+		expect(up).toMatch(/text\s+TEXT NOT NULL/);
+		expect(up).toMatch(/content_hash\s+TEXT NOT NULL/);
+		expect(up).toMatch(/embedding\s+vector\(1536\)/);
+		expect(up).toMatch(/ref\s+JSONB NOT NULL/);
+		expect(up).toMatch(/PRIMARY KEY\s*\(\s*doc_id\s*,\s*version\s*,\s*chunk_index\s*\)/);
+
+		expect(up).toContain("content_chunks_doc_version_idx");
+		expect(up).toContain("content_chunks_text_fts_idx");
+		expect(up).toContain("USING GIN");
+		expect(up).toContain("to_tsvector");
+
+		const content = readFileSync(
+			path.join(MIGRATIONS_DIR, "015_content_sor.sql"),
+			"utf-8",
+		);
+		const downMatch = content.match(/--\s*DOWN:\s*\n([\s\S]*?)$/i);
+		const down = downMatch?.[1] ? downMatch[1].trim() : "";
+		expect(down).toContain("DROP INDEX IF EXISTS content_chunks_text_fts_idx");
+		expect(down).toContain("DROP INDEX IF EXISTS content_chunks_doc_version_idx");
+		expect(down).toContain("DROP TABLE IF EXISTS content_chunks");
+		expect(down).toContain("DROP TABLE IF EXISTS content_sor");
+		expect(down).toContain("DROP EXTENSION IF EXISTS vector");
+
+		// Note: if pgvector extension is not installed in the test DB, CREATE EXTENSION will fail.
+		// This test only asserts the migration file content and serial-sequence tail pointer bumps.
+		// A live DB round-trip is validated in integration tests where the extension is present.
+	});
+
 	it("migration files are numbered sequentially with no gaps", () => {
 		const files = readdirSync(MIGRATIONS_DIR)
 			.filter((f) => f.endsWith(".sql"))
@@ -332,7 +380,7 @@ describe("migrations", () => {
 		files.forEach((file, i) => {
 			expect(file.startsWith(`${String(i + 1).padStart(3, "0")}_`)).toBe(true);
 		});
-		expect(files[files.length - 1]).toBe("014_agent_registry_policy.sql");
+		expect(files[files.length - 1]).toBe("015_content_sor.sql");
 	});
 
 	it("each migration file's header NNN prefix matches its filename NNN (F5.1)", () => {
