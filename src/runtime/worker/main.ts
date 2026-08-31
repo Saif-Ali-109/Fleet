@@ -29,6 +29,7 @@ import {
 } from "../../fleet/tools/mcp.ts";
 import { buildRegistry, type WtCtx } from "../../fleet/tools/registry.ts";
 import type { FleetAgentDef, ToolName } from "../../fleet/types.ts";
+import { buildSystemPromptWithC2 } from "../../mcp/contentTools.ts";
 import { policyFor } from "../../models/modelPolicy.ts";
 import { RESERVED_NAMESPACE } from "../../sor/kernel/types.ts";
 import {
@@ -49,6 +50,22 @@ const DEFS: Record<Role, FleetAgentDef> = {
 };
 
 const ROLES: readonly string[] = Object.keys(DEFS);
+
+/** Content SoR ground roles in v1: the worker systemPrompt gains the C2 directive (§10.7). */
+const C2_GROUNDED_ROLES: ReadonlySet<Role> = new Set(["coder", "reviewer"]);
+
+/**
+ * Build the effective worker systemPrompt for a role: skills injection, plus
+ * (for the Content SoR ground roles in v1 only) the C2 grounding directive
+ * appended via T8's seam. Other roles keep the unmodified skills-injected prompt.
+ */
+export function buildWorkerSystemPrompt(
+	def: FleetAgentDef,
+	role: Role,
+): string {
+	const base = injectSkills(def.systemPrompt, role);
+	return C2_GROUNDED_ROLES.has(role) ? buildSystemPromptWithC2(base) : base;
+}
 
 export interface WorkerJobCtx {
 	rootDir: string;
@@ -381,7 +398,7 @@ async function run(): Promise<number> {
 	const def = DEFS[job.role];
 	const policySnapshot = parsePolicyEnv(process.env);
 	const policyPlan = planWorkerPolicy(def, policySnapshot);
-	const systemPrompt = injectSkills(def.systemPrompt, job.role);
+	const systemPrompt = buildWorkerSystemPrompt(def, job.role);
 	const registry = buildRegistry({ ...def, tools: policyPlan.tools });
 	const wtCtx: WtCtx = {
 		worktreeDir: job.ctx.worktreeDir,
