@@ -4,7 +4,7 @@ status: active
 date: 2026-08-29
 owner: ain
 audience: implementation agents
-revision: 4
+revision: 5
 derived-from: sor-spec.md (revision 2)
 ---
 
@@ -16,9 +16,15 @@ scaffolding**, then the **real-bug gap fixes** in the existing signed audit chai
 **Phase 3 Content SoR v1** (spec §10, §15, §16, §17.4). Each phase lands on a green tree.
 Context SoR (spec §11) is out of scope here and pointed to as a later phase.
 
-This revision (4) supersedes revision 3. Revision 3 kept the Phase 1 + gap-fix + Phase 2
+This revision (5) supersedes revision 4. Revision 3 kept the Phase 1 + gap-fix + Phase 2
 sections; revision 4 adds **PART G — Phase 3: Content SoR v1 delegation plan**
 (the subagent parallel/sequential build map, per the delegated-execution model).
+**Revision 5 locks the Phase 3 embedding standard to Gemini `text-embedding-004` (768-dim)
+(decision D2 + §G9):** migration 015 `content_chunks.embedding` is `vector(768)` (not the
+earlier v1-default 1536), the migration test assertion updates accordingly, the embed
+worker/CLI must resolve to Gemini `text-embedding-004` and fail closed on a non-768 result,
+and OpenRouter/OpenAI `text-embedding-3-small` (1536-dim) is now incompatible with the
+schema. No pgvector ANN index exists, so nothing to recreate on the dim change.
 
 ---
 
@@ -1005,7 +1011,7 @@ no-match; agents never cite non-SOR knowledge as grounded.
 | # | Topic | Decision |
 |---|---|---|
 | D1 | Depth | **Full, production-grade** (real pgvector + pg FTS retrieval, real embed worker-child, real CLI, real MCP read-only tools, full AT-1/AT-2). |
-| D2 | Embedding model | **Reuse existing provider clients** (gemini/openrouter/ollama OpenAI-compatible SDK `embeddings` endpoint) in the embed worker-child. No new provider type. |
+| D2 | Embedding model | **Standardize on Gemini `text-embedding-004` (768-dim)**, served via the existing Gemini OpenAI-compatible client in the embed worker-child. Column is `vector(768)`. OpenRouter/OpenAI `text-embedding-3-small` (1536-dim) is **incompatible** with this schema. No new provider type. |
 | D3 | Retrieval tool wiring | **New first-class role tools** subject to P-I1 (granted by policy seed via capability snapshot). |
 | D4 | C2 directive | **Constant directive appended to the worker `systemPrompt`** (module-level constant, not a skills file). |
 | D5 | Embed child | **Dedicated embed-worker entry** `src/runtime/embed/main.ts`, forked by the sync pipeline only. |
@@ -1115,7 +1121,9 @@ These are the shared seams that let parallel tasks integrate without re-edit.
   stored with `embedding: null`, retrieval degrades to pure FTS for that chunk).
   Provider/model resolved worker-side via `src/providers/registry.ts` reusing the existing
   OpenAI-compatible client (`client.embeddings.create`) — NO model call outside the embed
-  child. Manual, per-sync; no scheduler.
+  child. Manual, per-sync; no scheduler. **Dimension (decision D2): worker MUST produce
+  768-dim vectors (Gemini `text-embedding-004`) to match the `vector(768)` column; a 1536-dim
+  result is a write failure, handled as `vectors:null`.
 - **content_sync event (T5/T7 emit, NON-FATAL append via `appendAuditEvent` in audit.ts):**
   payload `{ kind: "added"|"updated"|"removed"|"unchanged", status, sourceId, version }`.
   Idempotency (FR-13): unchanged canonical hash ⇒ `kind:"unchanged"`, NO version bump;
@@ -1135,14 +1143,19 @@ These are the shared seams that let parallel tasks integrate without re-edit.
   `content_sor` table (denormalized kernel identity: `source_id`, `namespace`, `version`,
   `hash`; `canonical_content TEXT`, `metadata JSONB`, `provenance JSONB`, `status TEXT`,
   `created_at`), `content_chunks` table (`doc_id`, `version`, `section`, `chunk_index`,
-  `text`, `content_hash`, `embedding vector(1536)`, `ref JSONB` for the kernel reference
+  `text`, `content_hash`, `embedding vector(768)`, `ref JSONB` for the kernel reference
   tuple K3), indexes (pg FTS `tsvector` GIN on text; `content_sor` UNIQUE `(source_id,
-  version)`; `content_chunks` index on `(doc_id, version)`). Both UP and DOWN. Exact
-  `vector` dim finalized by the embed provider (v1 default 1536).
+  version)`; `content_chunks` index on `(doc_id, version)`). Both UP and DOWN.
+  **Embedding dimension is locked to `768`** (Gemini `text-embedding-004`, decision D2).
+  There is currently **no ANN/HNSW/IVFFlat vector index** — the vector path is a plain
+  sequential `<=>` scan, so no index needs recreating on the dim change (perf tuning is a
+  separate later decision).
 - `migrations.test.ts`: bump last-file assertion `014_…` → `015_content_sor.sql`; add 015
   UP/DOWN round-trip + actual postgres vector extension surfacing (missing extension ⇒ the
   migration serial-sequence check tolerates/skips if extension absent — note it).
-- Commit: `feat(sor): content_sor and content_chunks schema with pgvector`.
+  **Any hard-coded `vector(1536)` assertion here must be updated to `vector(768)`** (decision
+  D2); the current test asserts `embedding\s+vector\(1536\)`.
+- Commit: `feat(sor): content_sor and content_chunks schema with pgvector` (768-dim).
 
 #### T2 — Content module (Wave A, parallel)
 `src/fleet/content.ts`: pure functions —
@@ -1162,8 +1175,13 @@ These are the shared seams that let parallel tasks integrate without re-edit.
 - Parse a job `{ texts: string[], provider?, model? }`; resolve provider/model via
   `src/providers/registry.ts` + the role/`FLEET_*`/model-policy layers (reuse existing
   OpenAI-compatible client `.embeddings.create`). No manager-side model call.
-- Reply `{ vectors: number[][] | null, error? }`. On provider/key failure ⇒ `null` (chunk
-  stays `embedding:null`, retrieval degrades to FTS — never blocks the sync).
+  **Model resolution is locked (decision D2): the embed source MUST be Gemini
+  `text-embedding-004` (768-dim).** Enforce via explicit `--provider gemini
+  --model text-embedding-004` from the sync CLI (T7) AND fail closed on a non-768-dim result
+  (return `vectors:null` + error) so an auto-pick can never write a 1536-dim vector into the
+  `vector(768)` column (a dimension-mismatch write failure).
+- Reply `{ vectors: number[][] | null, error? }`. On provider/key/dimension failure ⇒ `null`
+  (chunk stays `embedding:null`, retrieval degrades to FTS — never blocks the sync).
 - Batch size + retry bounded; pure-enough unit test with a mocked client (no live token spend).
 - Commit: `feat(sor): worker-child embedding entry for content sync`.
 
