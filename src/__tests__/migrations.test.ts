@@ -346,7 +346,7 @@ describe("migrations", () => {
 		expect(up).toMatch(/chunk_index\s+INTEGER NOT NULL/);
 		expect(up).toMatch(/text\s+TEXT NOT NULL/);
 		expect(up).toMatch(/content_hash\s+TEXT NOT NULL/);
-		expect(up).toMatch(/embedding\s+vector\(1536\)/);
+		expect(up).toMatch(/embedding\s+vector\(768\)/);
 		expect(up).toMatch(/ref\s+JSONB NOT NULL/);
 		expect(up).toMatch(/PRIMARY KEY\s*\(\s*doc_id\s*,\s*version\s*,\s*chunk_index\s*\)/);
 

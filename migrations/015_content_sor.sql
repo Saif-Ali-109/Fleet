@@ -25,7 +25,7 @@ CREATE TABLE content_chunks (
 	chunk_index   INTEGER NOT NULL,
 	text          TEXT NOT NULL,
 	content_hash  TEXT NOT NULL,
-	embedding     vector(1536),
+	embedding     vector(768),
 	ref           JSONB NOT NULL,
 	PRIMARY KEY (doc_id, version, chunk_index)
 );

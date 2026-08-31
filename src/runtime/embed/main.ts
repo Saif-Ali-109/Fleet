@@ -22,6 +22,8 @@ interface EmbedResult {
 const DEFAULT_BATCH_SIZE = 32;
 const MAX_RETRIES = 2;
 const RETRY_BACKOFF_MS = 200;
+// Locked embedding dimension (Gemini text-embedding-004): migration 015 column is vector(768).
+const EMBEDDING_DIM = 768;
 
 function getBatchSize(): number {
 	const raw = process.env.CONTENT_EMBED_BATCH?.trim();
@@ -38,14 +40,13 @@ function resolveProviderModel(jobProvider?: string, jobModel?: string): { provid
 		if (!def) return null;
 		provider = jobProvider as ProviderName;
 	} else {
+		// Standard: prefer Gemini (text-embedding-004, 768-dim) when no explicit provider.
 		const candidates = providersWithKeys(getFleetProviders());
 		if (candidates.length === 0) return null;
-		const first = candidates[0];
-		if (!first) return null;
-		provider = first;
+		provider = (candidates.find((p) => p === "gemini") ?? candidates[0]) as ProviderName;
 	}
 
-	const model = jobModel ?? (jobProvider ? "text-embedding-3-small" : getProviderDef(provider).name === "gemini" ? "text-embedding-004" : "text-embedding-3-small");
+	const model = jobModel ?? "text-embedding-004";
 	return { provider, model };
 }
 
@@ -85,6 +86,15 @@ async function processEmbedJob(job: EmbedJob): Promise<EmbedResult> {
 		const vectors = await embedWithRetry(client, batch, model);
 		if (vectors === null) {
 			return { type: "embed_result", vectors: null, error: `embedding failed for provider ${provider}, model ${model}` };
+		}
+		// Fail closed on a non-768-dim vector: column is vector(768); a mismatched
+		// dimension is a write failure (locked standard, decision D2/decision-log #39).
+		if (vectors.some((v) => v.length !== EMBEDDING_DIM)) {
+			return {
+				type: "embed_result",
+				vectors: null,
+				error: `embedding produced non-${EMBEDDING_DIM}-dim vectors for provider ${provider}, model ${model} (expected ${EMBEDDING_DIM})`,
+			};
 		}
 		allVectors.push(...vectors);
 	}
