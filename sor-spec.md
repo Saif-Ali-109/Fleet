@@ -769,10 +769,10 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 - [x] FR-6..FR-11 held; AT-3, AT-4, AT-5, AT-6 green; typecheck + tests + `sor:verify` green.
 
 **Phase 3 — Content SoR v1 (stub-level).**
-- [ ] Migration `015` + pgvector; markdown-path ingestion CLI; worker-child embedding;
+- [x] Migration `015` + pgvector; markdown-path ingestion CLI; worker-child embedding;
       section-aware chunking with caps (§4.2); manager-side read-only MCP tools; provenance on
       output; unavailable ≠ no-match; idempotent sync; evidence boundary; C2 prompt directive.
-- [ ] FR-12..FR-16 held; AT-1, AT-2 green.
+- [x] FR-12..FR-16 held; AT-1, AT-2 green.
 
 **Phase 4 — Context SoR v1 (stub-level).**
 - [ ] Migration `016`; run-scoped seed at boot + org-constraint CLI; freshness markers;
