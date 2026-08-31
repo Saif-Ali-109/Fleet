@@ -506,8 +506,10 @@ manager-side read-only MCP tools → agent
   `section` index, `version`, `license`…), `provenance` (`externalRef`, `acquiredAt`,
   `source_hash`), `status`. One row per canonical document version.
 - **`content_chunks`** — **derived** index. `(doc_id, version, section, chunk_index, text,
-  content_hash, embedding vector)`. Each chunk carries the kernel reference tuple of its
-  authoritative record (K3).
+  content_hash, embedding vector(768))`. Each chunk carries the kernel reference tuple of its
+  authoritative record (K3). Dimension is locked to `768` (Gemini `text-embedding-004`,
+  decision-log §20 #39); a writer producing a different vector length is a dimension-mismatch
+  write failure ⇒ chunk stored `embedding: null` (FTS fallback).
 - **Hash distinction (locked):** `chunk.content_hash` is the **chunk-level text hash**
   (derived, used by the index); the provenance tuple's `content_hash` (§10.4) is the
   **canonical document hash** from `content_sor` — the authoritative identity that every
@@ -804,7 +806,8 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 - `RulePredicate`/`ArgumentMatcher` exact DSL syntax, tool-path vocabulary (Phase 2).
 - Policy registry module layout beyond the named files (§16, §21.5).
 - Exact chunk size cap/overlap numbers within the §4.2 bounds (~4000/~200) (Phase 3).
-- Embedding provider/model selection & quota wiring (worker-side config; Phase 3).
+- Embedding **quota** wiring (worker-side config; Phase 3). (Model is now locked: Gemini
+  `text-embedding-004`, 768-dim — decision-log §20 #39.)
 - Context TTL numeric defaults & per-category taxonomy within the §11.4 mechanism (Phase 4).
 - Manager-side service/MCP endpoint naming for content & context (Phases 3–4).
 
@@ -850,6 +853,7 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 | 36 | Out-of-scope additions (this round) | §18 adds: no HTTP fetch, no GitHub syncing, no scheduler/watcher, no multi-tenant, no self-serve admin UI |
 | 37 | Acceptance structure (this round) | per-phase done checklists + AT-1..AT-10 with FR links (§17) |
 | 38 | HOW placement (this round) | **keep HOW in the spec** (no split into a separate design doc) |
+| 39 | Embedding model (this round) | **Gemini `text-embedding-004` (768-dim)**; `content_chunks.embedding` column `vector(768)`; OpenRouter/OpenAI `text-embedding-3-small` (1536-dim) is incompatible with the schema; worker/CLI resolve to Gemini and fail closed on a non-768 outcome (§10.2) |
 
 ## 21. Residue locks — Phase 2 implementation touchpoints
 
