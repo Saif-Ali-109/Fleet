@@ -372,6 +372,30 @@ describe("migrations", () => {
 		// A live DB round-trip is validated in integration tests where the extension is present.
 	});
 
+	it("016 creates context_sor with freshness fields and operational_state", () => {
+		const up = readUp("016_context_sor.sql");
+		expect(up).toContain("CREATE TABLE context_sor");
+		expect(up).toMatch(/source_id\s+TEXT NOT NULL/);
+		expect(up).toMatch(/namespace\s+TEXT NOT NULL DEFAULT 'fleet'/);
+		expect(up).toMatch(/version\s+INTEGER NOT NULL/);
+		expect(up).toMatch(/hash\s+TEXT NOT NULL/);
+		expect(up).toMatch(/category\s+TEXT NOT NULL/);
+		expect(up).toMatch(/operational_state\s+JSONB NOT NULL DEFAULT '\{\}'/);
+		expect(up).toMatch(/fresh_until\s+TIMESTAMPTZ/);
+		expect(up).toMatch(/stale_after\s+TIMESTAMPTZ/);
+		expect(up).toMatch(/status\s+TEXT NOT NULL DEFAULT 'active'/);
+		expect(up).toMatch(/created_at\s+TIMESTAMPTZ NOT NULL DEFAULT now\(\)/);
+		expect(up).toMatch(/PRIMARY KEY\s*\(\s*source_id\s*,\s*version\s*\)/);
+
+		const content = readFileSync(
+			path.join(MIGRATIONS_DIR, "016_context_sor.sql"),
+			"utf-8",
+		);
+		const downMatch = content.match(/--\s*DOWN:\s*\n([\s\S]*?)$/i);
+		const down = downMatch?.[1] ? downMatch[1].trim() : "";
+		expect(down).toContain("DROP TABLE IF EXISTS context_sor");
+	});
+
 	it("migration files are numbered sequentially with no gaps", () => {
 		const files = readdirSync(MIGRATIONS_DIR)
 			.filter((f) => f.endsWith(".sql"))
@@ -380,7 +404,7 @@ describe("migrations", () => {
 		files.forEach((file, i) => {
 			expect(file.startsWith(`${String(i + 1).padStart(3, "0")}_`)).toBe(true);
 		});
-		expect(files[files.length - 1]).toBe("015_content_sor.sql");
+		expect(files[files.length - 1]).toBe("016_context_sor.sql");
 	});
 
 	it("each migration file's header NNN prefix matches its filename NNN (F5.1)", () => {
