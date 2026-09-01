@@ -24,7 +24,8 @@
 		"sor:verify": "tsx --env-file-if-exists=.env src/sor/verifyCli.ts",
 		"sor:repair": "tsx --env-file-if-exists=.env src/sor/repairCli.ts",
 		"sor:content:sync": "tsx --env-file-if-exists=.env src/cli/contentCommands.ts",
-		"sor:context": "tsx --env-file-if-exists=.env src/cli/contextCommands.ts"
+		"sor:context": "tsx --env-file-if-exists=.env src/cli/contextCommands.ts",
+		"sor:at": "vitest run --config vitest.at.config.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.10",
