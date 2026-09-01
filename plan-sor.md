@@ -1,22 +1,24 @@
 ---
-title: "SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1 + Phase 3 Content SoR v1)"
+title: "SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1 + Phase 3 Content SoR v1 + Phases 4-7: Context SoR, unified surface, cross-domain ATs, MCP wiring)"
 status: active
-date: 2026-08-29
+date: 2026-09-01
 owner: ain
 audience: implementation agents
-revision: 5
+revision: 6
 derived-from: sor-spec.md (revision 2)
 ---
 
-# SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1 + Phase 3 Content SoR v1)
+# SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1 + Phase 3 Content SoR v1 + Phases 4-7: Context SoR, unified surface, cross-domain ATs, MCP wiring)
 
 Build plan for the **code slices**: the domain-neutral **SoR Kernel contract +
 scaffolding**, then the **real-bug gap fixes** in the existing signed audit chain, then
 **Phase 2 Policy SoR v1** end-to-end (spec §9, §12, §15, §16, §17.3, §20, §21), then
-**Phase 3 Content SoR v1** (spec §10, §15, §16, §17.4). Each phase lands on a green tree.
-Context SoR (spec §11) is out of scope here and pointed to as a later phase.
+**Phase 3 Content SoR v1** (spec §10, §15, §16, §17.4), then **Phases 4-7** (spec §11,
+§13, §17.1, §20 #40-#43). Each phase lands on a green tree.
+Phases 1-3 are historical; the current plan targets the remaining phases in PART I.
+Context SoR (spec §11) is now in scope as Phase 4 (see PART I).
 
-This revision (5) supersedes revision 4. Revision 3 kept the Phase 1 + gap-fix + Phase 2
+This revision (6) supersedes revision 5. Revision 3 kept the Phase 1 + gap-fix + Phase 2
 sections; revision 4 adds **PART G — Phase 3: Content SoR v1 delegation plan**
 (the subagent parallel/sequential build map, per the delegated-execution model).
 **Revision 5 locks the Phase 3 embedding standard to Gemini `text-embedding-004` (768-dim)
@@ -25,6 +27,10 @@ earlier v1-default 1536), the migration test assertion updates accordingly, the 
 worker/CLI must resolve to Gemini `text-embedding-004` and fail closed on a non-768 result,
 and OpenRouter/OpenAI `text-embedding-3-small` (1536-dim) is now incompatible with the
 schema. No pgvector ANN index exists, so nothing to recreate on the dim change.
+**Revision 6 documents Phases 4-7 as landed** (see new PART I): Phase 4 Context SoR v1,
+Phase 5 unified manager client surface, Phase 6 cross-domain verification ATs + one-pass AT
+runner, and Phase 7 MCP wiring of the `content.*` tools to the C2-grounded roles. PART E
+out-of-scope statements that deferred Phases 3/4/5/6 are reconciled (see PART I §I5).
 
 ---
 
@@ -916,14 +922,15 @@ imperative subjects + explanatory bodies (AGENTS.md).
 
 ## PART E — Out of scope (explicit)
 
-From spec §18 plus this slice's boundary:
-- **Content SoR v1 (Phase 3):** migration 015 + pgvector, markdown ingestion CLI, worker-child
-  embedding, chunking, retrieval service + read-only MCP tools, `content_sync`/`content_access`
-  emitters, C2 prompt directive. Only the **event types** land in union/CHECK now (forced by
-  013 lockstep); no emitters/content code.
-- **Context SoR v1 (Phase 4):** migration 016, run-scoped seed, org-constraint CLI, freshness
-  markers, `context_update` emitters. Only the event type lands now.
-- **Phase 5 unified surface** and **Phase 6 cross-domain ATs** (spec §13/§17.1).
+From spec §18 plus this slice's boundary. **Reconciled at rev 6:** Phases 3, 4, 5 and 6
+are no longer deferred (see **PART I — Phases 4-7**, which supersedes the former Phase 3/4/5/6
+deferral bullets below; Content SoR v1 Phase 3 itself is documented in **PART G**). The
+genuinely out-of-scope §18 items and the do-not-modify list are unchanged.
+- **Content SoR v1 (Phase 3):** now in scope and delivered — see PART G. (rev 6: removed from
+  the deferral list; the current working branch `feat/sor/content-phase3` lands it.)
+- **Context SoR v1 (Phase 4):** now in scope as PART I §I1 (rev 6 — no longer deferred).
+- **Phase 5 unified surface** and **Phase 6 cross-domain ATs** (spec §13/§17.1): now in scope
+  as PART I §I2 / §I3 (rev 6 — no longer deferred).
 - Weakening the audit chain / append-only trigger / key rotation / NON-FATAL appends
   (all preserved; repair-only trigger disable is the single, transaction-wrapped exception).
 - Live/online PEP over IPC in v1 — spawn-time snapshots only (§18).
@@ -1342,3 +1349,120 @@ string contains the required markers. Pure. (Wiring into worker/systemPrompt hap
 | # | Work | Branch | Each ends green |
 |---|---|---|---|
 | G1–G10 | **Phase 3 Content SoR v1** (§G4 waves) | `feat/sor/content-phase3` | typecheck + focused tests each; full suite + sor:verify in Wave D |
+
+---
+
+## PART I — Phases 4-7 (Context SoR, Unified client, Cross-domain ATs, MCP wiring)
+
+Delegator-facing implementation plan for Phases 4-7, executed on the Phase 3-complete
+`feat/sor/content-phase3` tree. Heading style mirrors PART G: G1 deliverable+DoD, locked
+decisions, wave structure, DoD bullets tagged with task. Phases 4, 5 and 6 are **fully
+implemented and committed**; Phase 7 (MCP wiring of `content.*` tools to C2-grounded roles)
+is being built in parallel by a subagent. This PART documents what landed so the delegator /
+reviewer has a single source of truth for the 4-7 slice.
+
+### I1. Phase 4 — Context SoR v1 (spec §11, §17.5)
+
+Context SoR makes the **situation** agents operate in authoritative: run-scoped context is
+seeded at manager boot, org action constraints come from CLI/config, every read returns an
+explicit freshness marker `{state, fresh, staleAfter}`, and freshness is governed by a base
+TTL with per-category overrides (decision #40).
+
+**Deliverables (landed):**
+- Migration `016_context_sor.sql`.
+- `src/fleet/context.ts` — TTL base 24h + per-category `CONTEXT_TTL_*` overrides; freshness
+  via the kernel.
+- `contextStore.ts` — `putContext` controlled write; agent-write rejection;
+  `context_update` with `prevVersion`.
+- `contextRetrieval.ts` — freshness `{state, fresh, staleAfter}`; not-found ≠ unavailable.
+- `src/cli/contextCommands.ts` — `sor:context` (`seed-org`/`show`/`list`).
+- Run-scoped `seedRunContext` at **both** boot sites.
+- **AT-7** green.
+
+**Definition of done (§17.5 mapped, all landed):**
+- Migration `016` up/down round-trip; `context_sor` seeded — **T-C4**.
+- Base TTL 24h + per-category `CONTEXT_TTL_*` overrides; reads `{state, fresh, staleAfter}` —
+  **T-C4**.
+- Agents never write context (denied at service); `context_update` carries `prevVersion` —
+  **T-C4**.
+- `sor:context seed-org/show/list` CLI; run-scoped `seedRunContext` at both boot sites —
+  **T-C4**.
+- AT-7 green; regression AT-1..AT-6 green — **T-C4, I6**.
+
+### I2. Phase 5 — Unified surface (spec §13, decision #41)
+
+Manager-side conceptual client that unifies the per-domain operations behind one module.
+
+**Deliverables (landed):**
+- `src/fleet/sorClient.ts` — four ops `retrieveKnowledge` / `retrieveContext` /
+  `evaluatePolicy` / `recordProvenance` + `buildSorClient(pool)`.
+- §14 semantics preserved — **no universal fallback** across domains (decision #41).
+- Acceptance `sorClientAcceptance.test.ts`.
+
+**Definition of done:**
+- `buildSorClient(pool)` returns all four ops with per-domain result semantics — **T-C5**.
+- `recordProvenance` is explicit (never auto-emitted on reads) — **T-C5**.
+- Acceptance test asserts per-domain semantics and absence of a universal fallback — **T-C5, I6**.
+
+### I3. Phase 6 — Verification (spec §17.1; AT-8..AT-10 + one-pass runner)
+
+Cross-domain acceptance tests plus the one-pass AT runner.
+
+**Deliverables (landed):**
+- **AT-8** (`at8DerivedIndexNotAuthoritative.test.ts`) — a derived index cannot be
+  authoritative without a resolvable record.
+- **AT-9** (`at9ChainVerifiable.test.ts`) — audit chain verifiable through all phases,
+  20 VALID_TYPES end-to-end.
+- **AT-10** (`at10NoMemoryGrounding.test.ts`) — coder/reviewer C2: agents do not treat SOR
+  domains as model memory.
+- One-pass runner `npm run sor:at` → `vitest.at.config.ts` (object-spread inherit; vitest
+  `mergeConfig` concatenates `include`) + `src/sor/atSuiteFiles.ts` manifest +
+  `src/__tests__/atSuiteManifest.test.ts` (decision #42).
+
+**Definition of done:**
+- AT-8..AT-10 all green; `npm run sor:at` runs the manifest suite in one pass — **T-C6**.
+- Manifest test guards `AT_SUITE_INCLUDE` as the single source of truth — **T-C6, I6**.
+- §17 checklists for Phases 4/5/6 all `[x]` (committed as `docs(sor): tick Phase 6 DoD`).
+
+### I4. Phase 7 — MCP wiring (content tools for grounded roles; in parallel)
+
+Phase 7 wires the Content SoR read tools to the C2-grounded roles over MCP.
+
+**Deliverables (in progress, built in parallel):**
+- The three `content.*` tools — `content.retrieve`, `content.list_sources`,
+  `content.get_document` — registered in `src/mcp/fleetServer.ts` (ListTools + dispatch +
+  `ALLOWED_TOOLS_PER_ROLE`).
+- Granted by default to `coder` + `reviewer` (`def.mcpAllow`); analyzer/pr keep existing
+  grants; context/policy have **NO** MCP tool names (decision #41 holds).
+
+**Definition of done (Phase 7):**
+- `content.*` tools exposed in ListTools + dispatch + `ALLOWED_TOOLS_PER_ROLE` — **T-C7**.
+- Granted to `coder` + `reviewer` via `def.mcpAllow`; analyzer/pr unchanged; no context/policy
+  names — **T-C7**.
+- Drift consequence noted: existing seeded policy DBs report drift until `sor:policy
+  reconcile` (capabilitySnapshot seeds `doc.mcpAllow` from `def.mcpAllow`) — **I7**.
+
+### I5. PART E reconciliation (rev 6)
+
+PART E (out of scope) previously deferred Phases 3/4/5/6. Rev 6 reconciles: Phase 3 is in
+PART G, Phases 4/5/6 are landed (I1-I3), Phase 7 is in progress (I4). The genuinely
+out-of-scope §18 items (live/online PEP over IPC, admin UI, multi-tenancy, HTTP/GitHub
+content sources, scheduler/watcher, no new runtime deps, no model calls in manager code, the
+do-not-modify list) remain intact.
+
+### I6. Disciplines (mirror §G7)
+
+Same as §G7: tabs, explicit `.ts` extensions, no model calls in manager code, SOR appends
+non-fatal, explicit `git add <path>` per file (never `-A`), every commit green, don't touch
+`.runs/` or weaken gating/worktree locking. Phases 4/5/6 commits are already on the branch.
+
+### I7. Risks & notes for the delegator
+
+- **Cross-phase drift** between Phase 4 (`context_update`), Phase 5 (client surface) and
+  AT-9's 20-type chain verification is the main integration risk; keep `VALID_TYPES` and the
+  migration CHECK in lockstep.
+- **Phase 7 policy drift** — adding `mcpAllow` to coder/reviewer flips `source_hash`, so an
+  already-seeded policy DB reports drift (FR-7/AT-5) until the operator runs `sor:policy
+  reconcile`. This is correct behaviour, not a bug; document it for operators.
+- **Decision #41 holds** — do not add context/policy MCP tool names; `sorClient` operations
+  are manager-side API, not MCP tools.
