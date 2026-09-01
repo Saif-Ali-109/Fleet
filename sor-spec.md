@@ -777,9 +777,9 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 - [x] FR-12..FR-16 held; AT-1, AT-2 green.
 
 **Phase 4 — Context SoR v1 (stub-level).**
-- [ ] Migration `016`; run-scoped seed at boot + org-constraint CLI; freshness markers;
+- [x] Migration `016`; run-scoped seed at boot + org-constraint CLI; freshness markers;
       `context_update`; write rejection for agents.
-- [ ] FR-17..FR-19 held; AT-7 green.
+- [x] FR-17..FR-19 held; AT-7 green.
 
 **Phase 5 — Unified surface.** Conceptual client (§13) over domain services; no regressions.
 
@@ -854,6 +854,7 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 | 37 | Acceptance structure (this round) | per-phase done checklists + AT-1..AT-10 with FR links (§17) |
 | 38 | HOW placement (this round) | **keep HOW in the spec** (no split into a separate design doc) |
 | 39 | Embedding model (this round) | **Gemini `text-embedding-004` (768-dim)**; `content_chunks.embedding` column `vector(768)`; OpenRouter/OpenAI `text-embedding-3-small` (1536-dim) is incompatible with the schema; worker/CLI resolve to Gemini and fail closed on a non-768 outcome (§10.2) |
+| 40 | Context TTL defaults (Phase 4) | **base TTL 24h + per-category overrides** (`CONTEXT_TTL_HOURS` base; `CONTEXT_TTL_RUN_HOURS`, `CONTEXT_TTL_ORG_HOURS` per-category); reads return `{state, fresh, staleAfter}` with within-TTL usable-with-caveat / beyond-TTL non-authoritative (§11.4, §13, FR-18). Materializes the "numeric defaults are a Phase 4 detail" note (§11.4) as fixed constants in `src/fleet/context.ts` |
 
 ## 21. Residue locks — Phase 2 implementation touchpoints
 
