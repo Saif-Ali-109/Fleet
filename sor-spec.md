@@ -781,7 +781,19 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
       `context_update`; write rejection for agents.
 - [x] FR-17..FR-19 held; AT-7 green.
 
-**Phase 5 — Unified surface.** Conceptual client (§13) over domain services; no regressions.
+**Phase 5 — Unified surface.**
+- [x] Conceptual client `src/fleet/sorClient.ts` with four operations: `retrieveKnowledge`,
+      `retrieveContext`, `evaluatePolicy`, `recordProvenance`; each delegates to the domain
+      service and preserves the domain's native result semantics (§14 — no universal fallback).
+- [x] Content hit/no-match/unavailable preserves FR-14 never-guess; context returns
+      `{state, fresh, staleAfter, version}` with not-found ≠ unavailable (FR-18); policy
+      returns ALLOW/DENY with unknown-tool deny (FR-6/FR-11); provenance dispatches by topic
+      to the exact §12.2 payload contracts; all provenance writes are NON-FATAL end-to-end.
+- [x] Optional ergonomic factory `buildSorClient(pool)` returns the `SorClient` interface.
+- [x] Evidence recording is the explicit `recordProvenance` operation; reads do not auto-emit.
+- [x] Acceptance suite `src/fleet/__tests__/sorClientAcceptance.test.ts` exercises all four
+      operations through real domain services; no regressions.
+- [x] FR-4/FR-17/FR-19 grip overall held; typecheck + tests + `sor:verify` green.
 
 **Phase 6 — Verification.** Full AT suite green in one pass; `sor:verify` green.
 
@@ -855,6 +867,7 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 | 38 | HOW placement (this round) | **keep HOW in the spec** (no split into a separate design doc) |
 | 39 | Embedding model (this round) | **Gemini `text-embedding-004` (768-dim)**; `content_chunks.embedding` column `vector(768)`; OpenRouter/OpenAI `text-embedding-3-small` (1536-dim) is incompatible with the schema; worker/CLI resolve to Gemini and fail closed on a non-768 outcome (§10.2) |
 | 40 | Context TTL defaults (Phase 4) | **base TTL 24h + per-category overrides** (`CONTEXT_TTL_HOURS` base; `CONTEXT_TTL_RUN_HOURS`, `CONTEXT_TTL_ORG_HOURS` per-category); reads return `{state, fresh, staleAfter}` with within-TTL usable-with-caveat / beyond-TTL non-authoritative (§11.4, §13, FR-18). Materializes the "numeric defaults are a Phase 4 detail" note (§11.4) as fixed constants in `src/fleet/context.ts` |
+| 41 | Unified surface (Phase 5) | Manager-side conceptual client module (`sorClient.ts`) is separate from MCP tool naming: T8-registered `content.*` names remain intact; G5 unprefixed operation names (`retrieveKnowledge`, `retrieveContext`, `evaluatePolicy`, `recordProvenance`) are the client's API surface. Per-domain result semantics preserved (no universal fallback). Evidence recording is explicit via `recordProvenance`; reads never auto-emit. |
 
 ## 21. Residue locks — Phase 2 implementation touchpoints
 
