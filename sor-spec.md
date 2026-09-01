@@ -795,7 +795,26 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
       operations through real domain services; no regressions.
 - [x] FR-4/FR-17/FR-19 grip overall held; typecheck + tests + `sor:verify` green.
 
-**Phase 6 — Verification.** Full AT suite green in one pass; `sor:verify` green.
+**Phase 6 — Verification.**
+- [x] AT-8 test (`src/fleet/__tests__/at8DerivedIndexNotAuthoritative.test.ts`, FR-1/2/3): derived
+      vector/FTS hits with no resolvable `content_sor` record (missing/inactive/version-mismatch)
+      are never surfaced — retrieval returns the distinct no-match, never a fabricated answer;
+      SQL JOIN `cc.doc_id=cs.source_id AND cc.version=cs.version` + `cs.status='active'` guard
+      asserted on both vector and FTS branches; `getDocument` shares the guard; store writes
+      doc+chunks in one tx (no orphan by own path).
+- [x] AT-9 test (`src/sor/__tests__/at9ChainVerifiable.test.ts`, FR-2/20/21): all 20 `VALID_TYPES`
+      appended via real `appendAuditEvent` then `verifyChain` replays `ok:true` with full counts;
+      `runSorVerify` → 0 on clean chain, → 1 on tampered; migration-013 ↔ `VALID_TYPES` lockstep
+      intact.
+- [x] AT-10 test (`src/fleet/__tests__/at10NoMemoryGrounding.test.ts`, FR-5): C2 grounding directive
+      injected for exactly coder/reviewer roles; prompt-injected non-SOR knowledge never cited with a
+      provenance tuple; Content+Context+Policy thread as independent domains (provenance / freshness /
+      decision), never as model memory (X1).
+- [x] One-pass AT runner: `npm run sor:at` (`vitest run --config vitest.at.config.ts`) runs the
+      11-file AT suite (AT-1..AT-10 + §13 cross-domain acceptance) in a single pass;
+      `src/sor/atSuiteFiles.ts` is the manifest; `src/__tests__/atSuiteManifest.test.ts` guards
+      path resolution + AT-1..AT-10 coverage.
+- [x] Full AT suite green in one pass; `sor:verify` green.
 
 ## 18. Out of scope / explicit non-goals
 
@@ -868,6 +887,7 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 | 39 | Embedding model (this round) | **Gemini `text-embedding-004` (768-dim)**; `content_chunks.embedding` column `vector(768)`; OpenRouter/OpenAI `text-embedding-3-small` (1536-dim) is incompatible with the schema; worker/CLI resolve to Gemini and fail closed on a non-768 outcome (§10.2) |
 | 40 | Context TTL defaults (Phase 4) | **base TTL 24h + per-category overrides** (`CONTEXT_TTL_HOURS` base; `CONTEXT_TTL_RUN_HOURS`, `CONTEXT_TTL_ORG_HOURS` per-category); reads return `{state, fresh, staleAfter}` with within-TTL usable-with-caveat / beyond-TTL non-authoritative (§11.4, §13, FR-18). Materializes the "numeric defaults are a Phase 4 detail" note (§11.4) as fixed constants in `src/fleet/context.ts` |
 | 41 | Unified surface (Phase 5) | Manager-side conceptual client module (`sorClient.ts`) is separate from MCP tool naming: T8-registered `content.*` names remain intact; G5 unprefixed operation names (`retrieveKnowledge`, `retrieveContext`, `evaluatePolicy`, `recordProvenance`) are the client's API surface. Per-domain result semantics preserved (no universal fallback). Evidence recording is explicit via `recordProvenance`; reads never auto-emit. |
+| 42 | Phase 6 AT runner (Phase 6) | A dedicated `vitest.at.config.ts` (object-spread inherit of the base config, since vitest `mergeConfig` concatenates `include` arrays) scopes the AT suite to the 11-file manifest; `AT_SUITE_INCLUDE` in `src/sor/atSuiteFiles.ts` is the single source of truth consumed by both the config and the manifest test. |
 
 ## 21. Residue locks — Phase 2 implementation touchpoints
 
