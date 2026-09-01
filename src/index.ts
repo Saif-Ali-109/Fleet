@@ -28,6 +28,7 @@ import {
 	geminiQuotaConfig,
 	geminiRateLimitWaitMs,
 } from "./gemini/quotaConfig.ts";
+import { seedRunContext } from "./fleet/contextSeed.ts";
 import { pruneOldRunDirs } from "./git/worktree.ts";
 import {
 	addIssueLabel,
@@ -464,6 +465,8 @@ async function runSingleIssue(args: {
 		provider,
 	};
 
+	await seedRunContext(pool, ctx); // run-scoped context seed (non-fatal, skipped on dryRun)
+
 	runActive = true;
 	const summary = await runOrchestrator(ctx, { web: webFeed }).finally(() => {
 		runActive = false;
@@ -893,6 +896,8 @@ async function runSingleIssueFromQueue(
 		provider,
 		cloneDir: sharedClone,
 	};
+
+	await seedRunContext(pool, ctx); // run-scoped context seed (non-fatal, skipped on dryRun)
 
 	// Issue lifecycle mark-started (0.1): non-fatal and dry-run safe. A gh
 	// failure here only warns — it must never abort the run.
