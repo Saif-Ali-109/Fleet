@@ -1064,6 +1064,47 @@ describe("runAgent", () => {
 		}
 	});
 
+	it("retries OpenRouter upstream overload errors without a status code", async () => {
+		vi.useFakeTimers();
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const registry = buildRegistry(defWith([]));
+			const { client, create } = mockClient([]);
+			create.mockImplementationOnce(async () => {
+				throw new Error(
+					"Upstream error from Nvidia: Service temporarily overloaded",
+				);
+			});
+			create.mockImplementationOnce(async () =>
+				resp({ role: "assistant", content: "recovered" }),
+			);
+			const { events, emit } = collect();
+
+			const pending = runAgent({
+				client,
+				model: "m",
+				systemPrompt: "",
+				task: "",
+				registry,
+				wtCtx: ctx(),
+				emit,
+			});
+			await vi.advanceTimersByTimeAsync(15000);
+			const outcome = await pending;
+
+			expect(outcome.ok).toBe(true);
+			expect(outcome.text).toBe("recovered");
+			expect(create).toHaveBeenCalledTimes(2);
+			expect(errSpy).toHaveBeenCalledWith(
+				expect.stringContaining("[llm-retry]"),
+			);
+			expect(events.some((e) => e.t === "error")).toBe(false);
+		} finally {
+			errSpy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
 	it("retries header-timeout aborts from slow local backends", async () => {
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});

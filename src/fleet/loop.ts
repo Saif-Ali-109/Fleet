@@ -120,6 +120,12 @@ function isTransientLlmError(err: unknown): boolean {
 	return (
 		/\b(429|50[0-4])\b/.test(msg) ||
 		/RESOURCE_EXHAUSTED/i.test(msg) ||
+		// OpenRouter reports upstream overloads (Nvidia/other providers) as
+		// "Service temporarily overloaded" — transient, worth a retry even
+		// though the status code isn't present as literal text.
+		/temporarily overloaded|Service overloaded|Service is overloaded/i.test(
+			msg,
+		) ||
 		/\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE|Connection error|fetch failed|socket hang up|network error)\b/i.test(
 			msg,
 		) ||
