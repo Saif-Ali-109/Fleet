@@ -134,7 +134,7 @@ export async function fetchIssue(
 	};
 }
 
-/** Issue lifecycle labels (0.1) — managed runs mark issues started / done via labels. */
+/** Issue lifecycle labels (0.1) — Fleet runs mark issues started / done via labels. */
 export const ISSUE_LABEL_IN_PROGRESS = "fleet/in-progress";
 export const ISSUE_LABEL_DONE = "fleet/done";
 
