@@ -213,7 +213,12 @@ function wantsStreaming(): boolean {
  */
 export async function createStreaming(
 	create: CreateFn,
-	opts: { model: string; messages: unknown[]; tools?: unknown[] },
+	opts: {
+		model: string;
+		messages: unknown[];
+		tools?: unknown[];
+		tool_choice?: "auto" | "none";
+	},
 	firstTokenMs: number = Number.isFinite(
 		Number(process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS),
 	)
@@ -570,14 +575,68 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 					const reqOpts = {
 						model,
 						messages,
-						...(tools.length > 0 ? { tools } : {}),
+						...(tools.length > 0
+							? { tools, tool_choice: "auto" as const }
+							: {}),
 					};
 					providerCallStarted = true;
+					console.log(
+						"[llm-debug] REQUEST:",
+						JSON.stringify(
+							{
+								model,
+								schema_type:
+									((tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool)
+										?.function?.parameters as { type?: string })?.type ??
+									null,
+								first_tool_schema:
+									tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool | null,
+								tool_count: tools.length,
+								tool_choice: "tool_choice" in reqOpts ? reqOpts.tool_choice : "UNSET",
+							},
+							null,
+							2,
+						),
+					);
 					response = wantsStreaming()
 						? ((await createStreaming(create, reqOpts)) as Awaited<
 								ReturnType<typeof create>
 							>)
 						: await create(reqOpts);
+					console.log(
+						"[llm-debug] RESPONSE:",
+						JSON.stringify(
+							{
+								finish_reason: (
+									response as {
+										choices?: Array<{
+											finish_reason?: string | null;
+											message?: {
+												content?: string | null;
+												tool_calls?: unknown;
+											};
+										}>;
+									}
+								).choices?.[0]?.finish_reason ?? "UNSET",
+								has_tool_calls: Boolean(
+									(
+										response as {
+											choices?: Array<{
+												message?: { tool_calls?: unknown };
+											}>;
+										}
+									).choices?.[0]?.message?.tool_calls,
+								),
+								message: (
+									response as {
+										choices?: Array<{ message?: { content?: string | null } }>;
+									}
+								).choices?.[0]?.message?.content ?? null,
+							},
+							null,
+							2,
+						),
+					);
 					if (providerCallStarted) {
 						emitTelemetry({
 							t: "telemetry",
