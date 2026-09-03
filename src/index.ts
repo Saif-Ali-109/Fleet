@@ -1,12 +1,28 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Pool } from "pg";
 import { killActiveWorkers, resetWorkerAbort } from "./agentRunner.ts";
 import { fixBranchName, shouldSkipIssue } from "./daemon/dedup.ts";
 import { parseIssueEvent, verifyWebhookSignature } from "./daemon/webhook.ts";
 import { WebDashboard, type WebhookHandler } from "./dashboard/webDashboard.ts";
-import { appendAuditEvent, ensureChain } from "./db/audit.ts";
+import {
+	appendAuditEvent,
+	ensureChain,
+	ensurePolicyRegistry,
+	loadRolePolicy,
+	reconcileRolePolicy,
+} from "./db/audit.ts";
 import { db, pool } from "./db/client.ts";
+import { analyzerDef } from "./fleet/agents/analyzer.ts";
+import { coderDef } from "./fleet/agents/coder.ts";
+import { plannerDef } from "./fleet/agents/planner.ts";
+import { prDef } from "./fleet/agents/pr.ts";
+import { reviewerDef } from "./fleet/agents/reviewer.ts";
+import { testerDef } from "./fleet/agents/tester.ts";
+import { seedRunContext } from "./fleet/contextSeed.ts";
+import { validatePolicyDocument } from "./fleet/policy.ts";
+import type { FleetAgentDef } from "./fleet/types.ts";
 import {
 	assertGeminiModelChainConfiguration,
 	assertGeminiQuotaConfiguration,
@@ -37,8 +53,9 @@ import {
 	type WebFeed,
 } from "./orchestrator.ts";
 import type { SorEvent } from "./sor/events.ts";
+import type { PolicyDocument } from "./sor/kernel/types.ts";
 import type { DashboardState } from "./tui/dashboard.ts";
-import type { Issue, RunContext } from "./types.ts";
+import type { Issue, Role, RunContext } from "./types.ts";
 import { PROVIDER_NAMES, type ProviderName } from "./types.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -166,7 +183,18 @@ const usage =
   --provider <name>      Provider to run the fleet workers:
                          gemini | openrouter | ollama (default gemini,
                          or ORCHESTRATOR_PROVIDER env).
-  --help                 Show this help.`;
+  --help                 Show this help.
+
+Policy SoR CLI (privileged manager/CLI entry points only):
+  sor:policy seed                          Insert-only seed of all six roles from the
+                                           current FleetAgentDef snapshot (fails if any
+                                           role already exists — no overwrite).
+  sor:policy reconcile <role> <file>       Validate a policy document file (schema +
+                                           meta.subject_role == <role>) and write the
+                                           next policyVersion + source_hash, emitting
+                                           policy_sync (reject malformed docs, never write).
+  sor:policy show <role>                   Print the role's document, policy_version,
+                                           policy_hash and source_hash.`;
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -436,6 +464,8 @@ async function runSingleIssue(args: {
 		dryRun,
 		provider,
 	};
+
+	await seedRunContext(pool, ctx); // run-scoped context seed (non-fatal, skipped on dryRun)
 
 	runActive = true;
 	const summary = await runOrchestrator(ctx, { web: webFeed }).finally(() => {
@@ -867,6 +897,8 @@ async function runSingleIssueFromQueue(
 		cloneDir: sharedClone,
 	};
 
+	await seedRunContext(pool, ctx); // run-scoped context seed (non-fatal, skipped on dryRun)
+
 	// Issue lifecycle mark-started (0.1): non-fatal and dry-run safe. A gh
 	// failure here only warns — it must never abort the run.
 	if (!dryRun) {
@@ -881,7 +913,7 @@ async function runSingleIssueFromQueue(
 				owner,
 				repo,
 				num,
-				`Started managed run \`${runId}\` (provider: ${provider}).`,
+				`Fleet started run \`${runId}\` (provider: ${provider}).`,
 			);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);
@@ -918,10 +950,225 @@ async function runSingleIssueFromQueue(
 	return { status: s.status, prUrl: s.prUrl, failure: s.failure };
 }
 
+// ── sor:policy CLI (§9.4, plan-sor.md C9) ─────────────────────────────────
+// Privileged manager/CLI entry points only (spec §8.1 — policy writes are a
+// manager/CLI concern; agents never call these). All policy writes flow
+// through the registry/reconcile functions in src/db/audit.ts, which append
+// `policy_sync` NON-FATALLY with the document embedded.
+
+/** The six fleet role defs — the capability ceiling snapshot (§9.4/C6.1). */
+export const policyDefsByRole: Record<Role, FleetAgentDef> = {
+	analyzer: analyzerDef,
+	planner: plannerDef,
+	coder: coderDef,
+	tester: testerDef,
+	reviewer: reviewerDef,
+	pr: prDef,
+};
+
+const POLICY_ROLES: Role[] = Object.keys(policyDefsByRole) as Role[];
+
+export interface SorPolicyDeps {
+	pool: Pool;
+	defs: Record<Role, FleetAgentDef>;
+}
+
+export type SorPolicyResult =
+	| { ok: true; detail: string }
+	| { ok: false; reason: string };
+
+function isPolicyRole(value: string): value is Role {
+	return (POLICY_ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * `sor:policy seed` — insert-only seed of all six roles. Refuses (never
+ * overwrites) if any role row already exists. Emits `policy_sync {seeded}`
+ * per role through `ensurePolicyRegistry`.
+ */
+export async function sorPolicySeed(
+	deps: SorPolicyDeps,
+): Promise<SorPolicyResult> {
+	const existing = await deps.pool.query<{ role: string }>(
+		"SELECT role FROM agent_registry WHERE role = ANY($1)",
+		[POLICY_ROLES],
+	);
+	const present = (existing.rows ?? []).map((r) => r.role);
+	if (present.length > 0) {
+		return {
+			ok: false,
+			reason: `seed is insert-only — roles already exist, refusing to overwrite: ${present.join(", ")}`,
+		};
+	}
+	await ensurePolicyRegistry(deps.pool, deps.defs);
+	return {
+		ok: true,
+		detail: `seeded ${POLICY_ROLES.length} roles: ${POLICY_ROLES.join(", ")}`,
+	};
+}
+
+/**
+ * `sor:policy reconcile <role> <file>` — reads + validates a policy document
+ * file (schema + `meta.subject_role == role`), then writes the NEXT
+ * `policyVersion` + updated `source_hash`, emitting `policy_sync {reconciled,
+ * prevVersion, document}`. Malformed docs / role mismatches are rejected with
+ * `{ok:false, reason}` and NEVER write.
+ */
+export async function sorPolicyReconcile(
+	deps: SorPolicyDeps,
+	role: string,
+	file: string,
+): Promise<SorPolicyResult> {
+	if (!isPolicyRole(role)) {
+		return {
+			ok: false,
+			reason: `unknown role '${role}' (expected one of ${POLICY_ROLES.join(", ")})`,
+		};
+	}
+	if (!existsSync(file)) {
+		return { ok: false, reason: `policy file not found: ${file}` };
+	}
+	let raw: string;
+	try {
+		raw = readFileSync(file, "utf8");
+	} catch (err) {
+		return {
+			ok: false,
+			reason: `unreadable policy file: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (err) {
+		return {
+			ok: false,
+			reason: `malformed policy document (invalid JSON): ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+	const check = validatePolicyDocument(parsed, role);
+	if (!check.ok) {
+		return { ok: false, reason: check.reason };
+	}
+	const out = await reconcileRolePolicy(
+		deps.pool,
+		role,
+		parsed as PolicyDocument,
+		deps.defs,
+	);
+	if (!out.ok) {
+		return { ok: false, reason: out.reason };
+	}
+	return {
+		ok: true,
+		detail: `reconciled ${role} -> policy_version=${out.policyVersion} (${out.kind})`,
+	};
+}
+
+/**
+ * `sor:policy show <role>` — prints the role's policy document plus
+ * `policy_version`, `policy_hash` and `source_hash` (read-only, no writes).
+ */
+export async function sorPolicyShow(
+	deps: SorPolicyDeps,
+	role: string,
+): Promise<SorPolicyResult> {
+	if (!isPolicyRole(role)) {
+		return {
+			ok: false,
+			reason: `unknown role '${role}' (expected one of ${POLICY_ROLES.join(", ")})`,
+		};
+	}
+	const out = await loadRolePolicy(deps.pool, role);
+	if (out.status === "absent") {
+		return {
+			ok: false,
+			reason: `no policy row for role '${role}' — run 'sor:policy seed' first`,
+		};
+	}
+	if (out.status === "invalid") {
+		return {
+			ok: false,
+			reason: `policy for role '${role}' failed validation: ${out.reason}`,
+		};
+	}
+	const { policy } = out;
+	return {
+		ok: true,
+		detail: [
+			`role:           ${role}`,
+			`policy_version: ${policy.policyVersion}`,
+			`policy_hash:    ${policy.policyHash}`,
+			`source_hash:    ${policy.sourceHash}`,
+			"document:",
+			JSON.stringify(policy.document, null, 2),
+		].join("\n"),
+	};
+}
+
+/** Dispatch `sor:policy <subcommand> …` argv to the matching command. */
+export async function runSorPolicyCli(
+	deps: SorPolicyDeps,
+	argv: string[],
+): Promise<SorPolicyResult> {
+	const sub = argv[0];
+	if (sub === "seed") {
+		if (argv.length !== 1) {
+			return { ok: false, reason: "sor:policy seed takes no arguments" };
+		}
+		return sorPolicySeed(deps);
+	}
+	if (sub === "reconcile") {
+		const role = argv[1];
+		const file = argv[2];
+		if (role === undefined || file === undefined || argv.length !== 3) {
+			return {
+				ok: false,
+				reason: "sor:policy reconcile requires <role> <file>",
+			};
+		}
+		return sorPolicyReconcile(deps, role, file);
+	}
+	if (sub === "show") {
+		const role = argv[1];
+		if (role === undefined || argv.length !== 2) {
+			return { ok: false, reason: "sor:policy show requires <role>" };
+		}
+		return sorPolicyShow(deps, role);
+	}
+	if (sub === undefined) {
+		return {
+			ok: false,
+			reason:
+				"sor:policy requires a subcommand: seed | reconcile <role> <file> | show <role>",
+		};
+	}
+	return {
+		ok: false,
+		reason: `unknown sor:policy subcommand '${sub}' (expected seed | reconcile <role> <file> | show <role>)`,
+	};
+}
+
 async function main(): Promise<void> {
 	const argv = process.argv.slice(2);
 	if (argv.includes("--help")) {
 		console.log(usage());
+		return;
+	}
+	if (argv[0] === "sor:policy") {
+		// Privileged manager/CLI policy entry points (§9.4, C9) — dispatch and
+		// exit before any run/daemon boot. No model calls happen here.
+		const result = await runSorPolicyCli(
+			{ pool, defs: policyDefsByRole },
+			argv.slice(1),
+		);
+		if (!result.ok) {
+			console.error(`sor:policy: ${result.reason}`);
+			process.exitCode = 1;
+		} else {
+			console.log(result.detail);
+		}
+		shutdownController.concludeAfterFinalize();
 		return;
 	}
 

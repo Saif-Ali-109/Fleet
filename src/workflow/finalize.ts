@@ -80,7 +80,7 @@ export async function finalizeRun(opts: FinalizeRunOpts): Promise<void> {
 			if (status === "completed") {
 				await addIssueLabel(owner, repo, ctx.issue.number, ISSUE_LABEL_DONE);
 				const lines = [
-					`Managed run \`${ctx.runId}\` completed.`,
+					`Fleet run \`${ctx.runId}\` completed.`,
 					prUrl ? `- PR: ${prUrl}` : "- PR: (none)",
 					`- Total cost: $${totalCostUsd().toFixed(4)}`,
 					`- Backend: ${ctx.provider ?? "gemini"}`,
@@ -92,7 +92,7 @@ export async function finalizeRun(opts: FinalizeRunOpts): Promise<void> {
 					owner,
 					repo,
 					ctx.issue.number,
-					`Managed run \`${ctx.runId}\` ${status}${suffix}.`,
+					`Fleet run \`${ctx.runId}\` ${status}${suffix}.`,
 				);
 			}
 		} catch (e) {

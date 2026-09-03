@@ -1064,6 +1064,47 @@ describe("runAgent", () => {
 		}
 	});
 
+	it("retries OpenRouter upstream overload errors without a status code", async () => {
+		vi.useFakeTimers();
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const registry = buildRegistry(defWith([]));
+			const { client, create } = mockClient([]);
+			create.mockImplementationOnce(async () => {
+				throw new Error(
+					"Upstream error from Nvidia: Service temporarily overloaded",
+				);
+			});
+			create.mockImplementationOnce(async () =>
+				resp({ role: "assistant", content: "recovered" }),
+			);
+			const { events, emit } = collect();
+
+			const pending = runAgent({
+				client,
+				model: "m",
+				systemPrompt: "",
+				task: "",
+				registry,
+				wtCtx: ctx(),
+				emit,
+			});
+			await vi.advanceTimersByTimeAsync(15000);
+			const outcome = await pending;
+
+			expect(outcome.ok).toBe(true);
+			expect(outcome.text).toBe("recovered");
+			expect(create).toHaveBeenCalledTimes(2);
+			expect(errSpy).toHaveBeenCalledWith(
+				expect.stringContaining("[llm-retry]"),
+			);
+			expect(events.some((e) => e.t === "error")).toBe(false);
+		} finally {
+			errSpy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
 	it("retries header-timeout aborts from slow local backends", async () => {
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1625,6 +1666,58 @@ describe("runAgent", () => {
 			expect(outcome.ok).toBe(false);
 			expect(create).toHaveBeenCalledTimes(4);
 			expect(events.some((e) => e.t === "error")).toBe(true);
+		} finally {
+			errSpy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("surfaces the FIRST transient error when the retry ladder is exhausted, not the last attempt's error", async () => {
+		vi.useFakeTimers();
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const registry = buildRegistry(defWith([]));
+			const { client, create } = mockClient([]);
+			const root503 = Object.assign(
+				new Error(
+					'503 [{"error":{"code":503,"message":"Service Unavailable","status":"UNAVAILABLE"}}]',
+				),
+				{ status: 503 },
+			);
+			create.mockImplementationOnce(async () => {
+				throw root503;
+			});
+			for (let i = 1; i < 4; i++) {
+				create.mockImplementationOnce(async () => {
+					throw new Error("Request timed out.");
+				});
+			}
+			const { events, emit } = collect();
+
+			const pending = runAgent({
+				client,
+				model: "m",
+				systemPrompt: "",
+				task: "",
+				registry,
+				wtCtx: ctx(),
+				emit,
+			});
+			await vi.advanceTimersByTimeAsync(15000);
+			await vi.advanceTimersByTimeAsync(30000);
+			await vi.advanceTimersByTimeAsync(60000);
+			const outcome = await pending;
+
+			expect(outcome.ok).toBe(false);
+			expect(create).toHaveBeenCalledTimes(4);
+			expect(outcome.error).toContain("503");
+			expect(outcome.error).toContain("UNAVAILABLE");
+			expect(outcome.error).not.toContain("Request timed out");
+			const errors = events.filter(
+				(e): e is Extract<WireEvent, { t: "error" }> => e.t === "error",
+			);
+			expect(errors).toHaveLength(1);
+			expect(errors[0]?.error).toContain("503");
 		} finally {
 			errSpy.mockRestore();
 			vi.useRealTimers();

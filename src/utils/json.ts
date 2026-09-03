@@ -3,9 +3,50 @@
  * Strips optional ```json fences and parses the first balanced {...} object in `text`.
  * Includes protections against excessive salvage attempts and empty object acceptance.
  */
+
+/**
+ * Strip `#`-style and `//`-style comments from JSON produced by a model.
+ * Comments are only removed OUTSIDE string literals so URLs ("http://…"),
+ * hex colors ("#fff"), and any `#`/`//` inside a value are preserved.
+ * JSON itself has no comments, but models frequently annotate output with
+ * explanations that otherwise make a strict JSON.parse throw.
+ */
+function stripJsonComments(text: string): string {
+	let out = "";
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		const next = text[i + 1];
+		if (inString) {
+			out += ch;
+			if (escaped) escaped = false;
+			else if (ch === "\\") escaped = true;
+			else if (ch === '"') inString = false;
+			continue;
+		}
+		if (ch === '"') {
+			inString = true;
+			out += ch;
+			continue;
+		}
+		// Line comment: `# ...` to end of line, or `// ...` to end of line.
+		if ((ch === "#" && next !== undefined) || (ch === "/" && next === "/")) {
+			while (i < text.length && text[i] !== "\n") i += 1;
+			out += "\n";
+			continue;
+		}
+		out += ch;
+	}
+	return out;
+}
+
 export function extractJson<T>(text: string): T | null {
 	// Strip optional ```json fences
-	const cleaned = text.replace(/```(?:json)?/gi, "");
+	let cleaned = text.replace(/```(?:json)?/gi, "");
+	// Models often annotate JSON with `#` / `//` comments; strip them so the
+	// balanced-object parse below succeeds (URLs/strings stay intact).
+	cleaned = stripJsonComments(cleaned);
 	const start = cleaned.indexOf("{");
 	if (start === -1) return null;
 

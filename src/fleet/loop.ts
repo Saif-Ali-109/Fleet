@@ -8,6 +8,8 @@ import {
 	type TelemetryKind,
 } from "../telemetry.ts";
 import type { ProviderName, Role } from "../types.ts";
+import type { RulePredicate } from "./policy.ts";
+import { evaluateToolCall } from "./policyEval.ts";
 import {
 	RATE_LIMIT_SWITCH_PREFIX,
 	RPD_EXHAUSTED,
@@ -61,6 +63,22 @@ export interface RunAgentOpts {
 	wtCtx: WtCtx;
 	emit: (evt: WireEvent) => void;
 	sor?: SorEmitSink;
+	/** Policy SoR snapshot (spec §9.6). When present with mode `sor`/`fail-closed`,
+	 *  the PEP runs before `impl.exec`. `compatibility` (or absent) skips the PEP. */
+	policy?: {
+		mode: "sor" | "compatibility" | "fail-closed";
+		effective: { allowedTools: string[]; mcpAllow: string[] };
+		toolRules: Record<string, RulePredicate[]>;
+	};
+	/** NON-FATAL `policy_decision` emitter (per call in `sor`/`fail-closed`). The
+	 *  worker provides a callback that appends via `appendAuditEvent`; failures must
+	 *  never abort or downgrade a decision (a deny is a deny regardless of audit). */
+	policyDecision?: (payload: {
+		decision: "ALLOW" | "DENY";
+		action: string;
+		result: "ok" | "blocked" | "error";
+		reason: string;
+	}) => void;
 	maxSteps?: number;
 	signal?: AbortSignal;
 	provider?: ProviderName;
@@ -102,6 +120,12 @@ function isTransientLlmError(err: unknown): boolean {
 	return (
 		/\b(429|50[0-4])\b/.test(msg) ||
 		/RESOURCE_EXHAUSTED/i.test(msg) ||
+		// OpenRouter reports upstream overloads (Nvidia/other providers) as
+		// "Service temporarily overloaded" — transient, worth a retry even
+		// though the status code isn't present as literal text.
+		/temporarily overloaded|Service overloaded|Service is overloaded/i.test(
+			msg,
+		) ||
 		/\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE|Connection error|fetch failed|socket hang up|network error)\b/i.test(
 			msg,
 		) ||
@@ -189,7 +213,12 @@ function wantsStreaming(): boolean {
  */
 export async function createStreaming(
 	create: CreateFn,
-	opts: { model: string; messages: unknown[]; tools?: unknown[] },
+	opts: {
+		model: string;
+		messages: unknown[];
+		tools?: unknown[];
+		tool_choice?: "auto" | "none";
+	},
 	firstTokenMs: number = Number.isFinite(
 		Number(process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS),
 	)
@@ -462,6 +491,10 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 			if (signal?.aborted) return fail("aborted before LLM call");
 
 			let response: Awaited<ReturnType<typeof create>> | undefined;
+			// Keep the FIRST transient failure so an exhausted retry ladder
+			// surfaces the root cause (e.g. a 503) rather than the last attempt's
+			// unrelated error — the manager walks the model chain on that root.
+			let firstTransient: unknown;
 			for (let attempt = 0; ; attempt++) {
 				const requestId = newRequestId();
 				const requestIdentity: RequestIdentity = {
@@ -542,14 +575,79 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 					const reqOpts = {
 						model,
 						messages,
-						...(tools.length > 0 ? { tools } : {}),
+						...(tools.length > 0
+							? { tools, tool_choice: "auto" as const }
+							: {}),
 					};
 					providerCallStarted = true;
+					if (process.env.FLEET_LLM_DEBUG === "1") {
+						console.log(
+							"[llm-debug] REQUEST:",
+							JSON.stringify(
+								{
+									model,
+									schema_type:
+										(
+											(
+												tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool
+											)?.function?.parameters as { type?: string }
+										)?.type ?? null,
+									first_tool_schema:
+										tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool | null,
+									tool_count: tools.length,
+									tool_choice:
+										"tool_choice" in reqOpts ? reqOpts.tool_choice : "UNSET",
+								},
+								null,
+								2,
+							),
+						);
+					}
 					response = wantsStreaming()
 						? ((await createStreaming(create, reqOpts)) as Awaited<
 								ReturnType<typeof create>
 							>)
 						: await create(reqOpts);
+					if (process.env.FLEET_LLM_DEBUG === "1") {
+						console.log(
+							"[llm-debug] RESPONSE:",
+							JSON.stringify(
+								{
+									finish_reason:
+										(
+											response as {
+												choices?: Array<{
+													finish_reason?: string | null;
+													message?: {
+														content?: string | null;
+														tool_calls?: unknown;
+													};
+												}>;
+											}
+										).choices?.[0]?.finish_reason ?? "UNSET",
+									has_tool_calls: Boolean(
+										(
+											response as {
+												choices?: Array<{
+													message?: { tool_calls?: unknown };
+												}>;
+											}
+										).choices?.[0]?.message?.tool_calls,
+									),
+									message:
+										(
+											response as {
+												choices?: Array<{
+													message?: { content?: string | null };
+												}>;
+											}
+										).choices?.[0]?.message?.content ?? null,
+								},
+								null,
+								2,
+							),
+						);
+					}
 					if (providerCallStarted) {
 						emitTelemetry({
 							t: "telemetry",
@@ -600,9 +698,12 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 					}
 					const isOllama = provider === "ollama";
 					if (!isTransientLlmError(err)) throw err;
-					if (!isOllama && attempt >= RETRY_DELAYS_MS.length) throw err;
+					firstTransient ??= err;
+					if (!isOllama && attempt >= RETRY_DELAYS_MS.length)
+						throw firstTransient ?? err;
 					const ollamaCap = isOllama ? ollamaMaxRetries() : null;
-					if (ollamaCap !== null && attempt >= ollamaCap) throw err;
+					if (ollamaCap !== null && attempt >= ollamaCap)
+						throw firstTransient ?? err;
 					const hint = parseRetryDelayMs(err);
 					const delay = isOllama
 						? Math.max(
@@ -708,24 +809,62 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 					);
 				}
 
-				const impl = (registry as Partial<Record<string, ToolImpl>>)[name];
 				const startedAt = Date.now();
+				const denied =
+					opts.policy &&
+					(opts.policy.mode === "sor" || opts.policy.mode === "fail-closed")
+						? (() => {
+								const d = evaluateToolCall(
+									name,
+									input,
+									opts.policy.effective,
+									opts.policy.toolRules,
+								);
+								try {
+									opts.policyDecision?.({
+										decision: d.decision,
+										action: name,
+										result: d.allowed ? "ok" : "blocked",
+										reason: d.reason,
+									});
+								} catch (err) {
+									console.warn(
+										`[policy] policy_decision skipped: ${err instanceof Error ? err.message : String(err)}`,
+									);
+								}
+								return d.allowed
+									? null
+									: { ok: false as const, content: d.reason };
+							})()
+						: null;
+				const impl = (registry as Partial<Record<string, ToolImpl>>)[name];
 				let result: { ok: boolean; content: string; exitCode?: number };
-				try {
-					if (!impl) {
-						result = { ok: false, content: `unknown tool: ${name}` };
-					} else {
-						const out = await impl.exec(input, wtCtx);
-						result =
-							out.ok === true
-								? { ok: true, content: out.content, exitCode: out.exitCode }
-								: { ok: false, content: out.error };
+				if (denied) {
+					result = denied;
+				} else {
+					try {
+						if (!impl) {
+							result = {
+								ok: false,
+								content: `unknown tool: ${name}`,
+							};
+						} else {
+							const out = await impl.exec(input, wtCtx);
+							result =
+								out.ok === true
+									? {
+											ok: true,
+											content: out.content,
+											exitCode: out.exitCode,
+										}
+									: { ok: false, content: out.error };
+						}
+					} catch (err) {
+						result = {
+							ok: false,
+							content: err instanceof Error ? err.message : String(err),
+						};
 					}
-				} catch (err) {
-					result = {
-						ok: false,
-						content: err instanceof Error ? err.message : String(err),
-					};
 				}
 				const ms = Date.now() - startedAt;
 				emit({

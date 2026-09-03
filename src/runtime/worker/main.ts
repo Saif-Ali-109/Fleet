@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import type OpenAI from "openai";
+import { appendAuditEvent, ensureChain, hashAgentDef } from "../../db/audit.ts";
+import { pool } from "../../db/client.ts";
 import { analyzerDef } from "../../fleet/agents/analyzer.ts";
 import { coderDef } from "../../fleet/agents/coder.ts";
 import { plannerDef } from "../../fleet/agents/planner.ts";
@@ -9,6 +12,12 @@ import { prDef } from "../../fleet/agents/pr.ts";
 import { reviewerDef } from "../../fleet/agents/reviewer.ts";
 import { testerDef } from "../../fleet/agents/tester.ts";
 import { runAgent, type WireEvent } from "../../fleet/loop.ts";
+import {
+	decodePolicyDocument,
+	type PolicyDocument,
+	type PolicyMode,
+	type RulePredicate,
+} from "../../fleet/policy.ts";
 import { injectSkills } from "../../fleet/skills/loader.ts";
 import { createSorEmitSink } from "../../fleet/sorEmit.ts";
 import {
@@ -16,13 +25,15 @@ import {
 	connectToMcpServer,
 } from "../../fleet/tools/mcp.ts";
 import { buildRegistry, type WtCtx } from "../../fleet/tools/registry.ts";
-import type { FleetAgentDef } from "../../fleet/types.ts";
+import type { FleetAgentDef, ToolName } from "../../fleet/types.ts";
+import { buildSystemPromptWithC2 } from "../../mcp/contentTools.ts";
 import { policyFor } from "../../models/modelPolicy.ts";
 import {
 	getClientForProvider,
 	getFleetProviders,
 	providersWithKeys,
 } from "../../providers/registry.ts";
+import { RESERVED_NAMESPACE } from "../../sor/kernel/types.ts";
 import type { RequestIdentity } from "../../telemetry.ts";
 import type { ProviderName, Role } from "../../types.ts";
 
@@ -36,6 +47,22 @@ const DEFS: Record<Role, FleetAgentDef> = {
 };
 
 const ROLES: readonly string[] = Object.keys(DEFS);
+
+/** Content SoR ground roles in v1: the worker systemPrompt gains the C2 directive (§10.7). */
+const C2_GROUNDED_ROLES: ReadonlySet<Role> = new Set(["coder", "reviewer"]);
+
+/**
+ * Build the effective worker systemPrompt for a role: skills injection, plus
+ * (for the Content SoR ground roles in v1 only) the C2 grounding directive
+ * appended via T8's seam. Other roles keep the unmodified skills-injected prompt.
+ */
+export function buildWorkerSystemPrompt(
+	def: FleetAgentDef,
+	role: Role,
+): string {
+	const base = injectSkills(def.systemPrompt, role);
+	return C2_GROUNDED_ROLES.has(role) ? buildSystemPromptWithC2(base) : base;
+}
 
 export interface WorkerJobCtx {
 	rootDir: string;
@@ -151,6 +178,173 @@ export function parseWorkerJob(raw: string): WorkerJob {
 	};
 }
 
+export interface WorkerPolicySnapshot {
+	mode: PolicyMode;
+	policyVersion: number | null;
+	policyHash: string | null;
+	document: PolicyDocument | null;
+}
+
+/**
+ * Parse the manager-injected `SOR_POLICY_*` env (§9.7). Absent env ⇒ declared
+ * `compatibility` baseline (mode honesty). An undecodable document is dropped
+ * with a warning so planning can fall back to fail-closed (P-I3).
+ */
+export function parsePolicyEnv(env: NodeJS.ProcessEnv): WorkerPolicySnapshot {
+	const rawMode = env.SOR_POLICY_MODE;
+	const mode: PolicyMode =
+		rawMode === "sor" ||
+		rawMode === "fail-closed" ||
+		rawMode === "compatibility"
+			? rawMode
+			: "compatibility";
+	const rawVersion = env.SOR_POLICY_VERSION;
+	const policyVersion =
+		rawVersion !== undefined &&
+		/^\d+$/.test(rawVersion) &&
+		Number.isSafeInteger(Number(rawVersion))
+			? Number(rawVersion)
+			: null;
+	const policyHash = env.SOR_POLICY_HASH || null;
+	let document: PolicyDocument | null = null;
+	const rawDoc = env.SOR_POLICY_JSON_B64;
+	if (rawDoc !== undefined && rawDoc.length > 0) {
+		try {
+			document = decodePolicyDocument(rawDoc);
+		} catch (err) {
+			console.warn(
+				`[sor] policy document skipped: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
+	return { mode, policyVersion, policyHash, document };
+}
+
+export interface WorkerPolicyPlan {
+	mode: PolicyMode;
+	policyVersion: number | null;
+	policyHash: string | null;
+	sourceHash: string;
+	tools: ToolName[];
+	mcpAllow: string[];
+	toolRules: Record<string, RulePredicate[]>;
+}
+
+/**
+ * Effective policy = capability ceiling ∩ grant (§9.1/P-I1):
+ * `sor` intersects `def.tools ∪ def.mcpAllow` with the injected document's
+ * grants; `fail-closed` has zero tools; `compatibility` is static `def.tools`.
+ * A `sor` sweep whose document is missing or role-mismatched falls back to
+ * `fail-closed` (P-I3 — an invalid presence never degrades to compatibility).
+ */
+export function planWorkerPolicy(
+	def: FleetAgentDef,
+	snapshot: WorkerPolicySnapshot,
+): WorkerPolicyPlan {
+	const sourceHash = hashAgentDef(def);
+	if (snapshot.mode === "compatibility") {
+		return {
+			mode: "compatibility",
+			policyVersion: null,
+			policyHash: null,
+			sourceHash,
+			tools: [...def.tools],
+			mcpAllow: [...def.mcpAllow],
+			toolRules: {},
+		};
+	}
+	const doc = snapshot.mode === "sor" ? snapshot.document : null;
+	if (
+		snapshot.mode === "fail-closed" ||
+		!doc ||
+		doc.meta.subject_role !== def.name
+	) {
+		return {
+			mode: "fail-closed",
+			policyVersion: snapshot.policyVersion,
+			policyHash: snapshot.policyHash,
+			sourceHash,
+			tools: [],
+			mcpAllow: [],
+			toolRules: snapshot.document?.toolRules ?? {},
+		};
+	}
+	return {
+		mode: "sor",
+		policyVersion: snapshot.policyVersion,
+		policyHash: snapshot.policyHash,
+		sourceHash,
+		tools: def.tools.filter((t) => doc.allowedTools.includes(t)),
+		mcpAllow: def.mcpAllow.filter((t) => doc.mcpAllow.includes(t)),
+		toolRules: doc.toolRules,
+	};
+}
+
+/**
+ * NON-FATAL append of a worker-side policy event (§12.2, C8.4): failure warns
+ * via the callback path and never aborts the run. No-op when no DATABASE_URL.
+ */
+function appendPolicyEventNonFatal(info: {
+	role: string;
+	runId: string;
+	provider: ProviderName | null;
+	eventType: "policy_state" | "policy_decision";
+	payload: Record<string, unknown>;
+}): void {
+	if (!process.env.DATABASE_URL) return;
+	void (async () => {
+		try {
+			await ensureChain(pool);
+			await appendAuditEvent(pool, {
+				run_id: info.runId,
+				event_type: info.eventType,
+				actor: info.role,
+				backend: info.provider,
+				tool_name: null,
+				tool_input: null,
+				tool_output: null,
+				payload: info.payload,
+				created_at: new Date().toISOString(),
+			});
+		} catch (err) {
+			console.warn(
+				`[sor] ${info.eventType} skipped: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	})();
+}
+
+/** NON-FATAL `policy_state` append for a live worker session (§12.2, C8.3). */
+function emitPolicyState(info: {
+	role: string;
+	runId: string;
+	provider: ProviderName | null;
+	mode: PolicyMode;
+	policyVersion: number | null;
+	policyHash: string | null;
+	sourceHash: string;
+}): void {
+	appendPolicyEventNonFatal({
+		role: info.role,
+		runId: info.runId,
+		provider: info.provider,
+		eventType: "policy_state",
+		payload: {
+			sorType: "policy",
+			sourceId: info.role,
+			namespace: RESERVED_NAMESPACE,
+			version: info.policyVersion ?? 0,
+			hash: info.policyHash ?? "",
+			actor: info.role,
+			ts: new Date().toISOString(),
+			mode: info.mode,
+			policyVersion: info.policyVersion,
+			policyHash: info.policyHash,
+			sourceHash: info.sourceHash,
+		},
+	});
+}
+
 function readStdin(): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let data = "";
@@ -203,9 +397,12 @@ async function run(): Promise<number> {
 	}
 
 	const sessionId = randomUUID();
+	const runId = job.ctx.runId ?? basename(job.ctx.runDir);
 	const def = DEFS[job.role];
-	const systemPrompt = injectSkills(def.systemPrompt, job.role);
-	const registry = buildRegistry(def);
+	const policySnapshot = parsePolicyEnv(process.env);
+	const policyPlan = planWorkerPolicy(def, policySnapshot);
+	const systemPrompt = buildWorkerSystemPrompt(def, job.role);
+	const registry = buildRegistry({ ...def, tools: policyPlan.tools });
 	const wtCtx: WtCtx = {
 		worktreeDir: job.ctx.worktreeDir,
 		role: job.role,
@@ -213,10 +410,10 @@ async function run(): Promise<number> {
 	};
 
 	let mcpConn: Awaited<ReturnType<typeof connectToMcpServer>> | null = null;
-	if (def.mcpAllow.length > 0) {
+	if (policyPlan.mcpAllow.length > 0) {
 		mcpConn = await connectToMcpServer(job.role);
 		for (const [name, impl] of mcpConn.tools) {
-			if (def.mcpAllow.includes(name)) {
+			if (policyPlan.mcpAllow.includes(name)) {
 				registry[name as keyof typeof registry] = impl;
 			}
 		}
@@ -293,6 +490,16 @@ async function run(): Promise<number> {
 		...(job.ctx.managerId ? { managerId: job.ctx.managerId } : {}),
 		...(job.ctx.runId ? { runId: job.ctx.runId } : {}),
 		...(job.ctx.workerId ? { workerId: job.ctx.workerId } : {}),
+	});
+
+	emitPolicyState({
+		role: job.role,
+		runId,
+		provider,
+		mode: policyPlan.mode,
+		policyVersion: policyPlan.policyVersion,
+		policyHash: policyPlan.policyHash,
+		sourceHash: policyPlan.sourceHash,
 	});
 
 	const sor = createSorEmitSink({
@@ -412,6 +619,49 @@ async function run(): Promise<number> {
 							}
 						})
 				: undefined,
+		...(policyPlan.mode !== "compatibility"
+			? {
+					policy: {
+						mode: policyPlan.mode,
+						effective: {
+							allowedTools: policyPlan.tools,
+							mcpAllow: policyPlan.mcpAllow,
+						},
+						toolRules: policyPlan.toolRules,
+					},
+					policyDecision: ({
+						decision,
+						action,
+						result,
+						reason,
+					}: {
+						decision: "ALLOW" | "DENY";
+						action: string;
+						result: "ok" | "blocked" | "error";
+						reason: string;
+					}) => {
+						appendPolicyEventNonFatal({
+							role: job.role,
+							runId,
+							provider,
+							eventType: "policy_decision",
+							payload: {
+								sorType: "policy",
+								sourceId: job.role,
+								namespace: RESERVED_NAMESPACE,
+								version: policyPlan.policyVersion ?? 0,
+								hash: policyPlan.policyHash ?? "",
+								actor: job.role,
+								ts: new Date().toISOString(),
+								decision,
+								action,
+								result,
+								reason,
+							},
+						});
+					},
+				}
+			: {}),
 	});
 
 	process.removeListener("SIGTERM", onSignal);

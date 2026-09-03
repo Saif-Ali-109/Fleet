@@ -30,24 +30,26 @@ describe("modelDefaults", () => {
 	});
 
 	it("matches the SPEC §5 strong tier exactly (analyzer/planner/reviewer)", () => {
-		expect(modelDefaults.gemini.analyzer).toBe("gemini-2.5-pro");
-		expect(modelDefaults.gemini.planner).toBe("gemini-2.5-pro");
-		expect(modelDefaults.gemini.reviewer).toBe("gemini-2.5-pro");
-		expect(modelDefaults.openrouter.analyzer).toBe("google/gemini-2.5-pro");
-		expect(modelDefaults.openrouter.planner).toBe("google/gemini-2.5-pro");
-		expect(modelDefaults.openrouter.reviewer).toBe("google/gemini-2.5-pro");
+		expect(modelDefaults.gemini.analyzer).toBe("gemini-3.7-flash");
+		expect(modelDefaults.gemini.planner).toBe("gemini-3.7-flash");
+		expect(modelDefaults.gemini.reviewer).toBe("gemini-3.7-flash");
+		expect(modelDefaults.openrouter.analyzer).toBe("google/gemini-3.7-flash");
+		expect(modelDefaults.openrouter.planner).toBe("google/gemini-3.7-flash");
+		expect(modelDefaults.openrouter.reviewer).toBe("google/gemini-3.7-flash");
 		expect(modelDefaults.ollama.analyzer).toBe("qwen2.5:14b");
 		expect(modelDefaults.ollama.planner).toBe("qwen2.5:14b");
 		expect(modelDefaults.ollama.reviewer).toBe("qwen2.5:14b");
 	});
 
 	it("matches the SPEC §5 cheap tier exactly (coder/tester/pr)", () => {
-		expect(modelDefaults.gemini.coder).toBe("gemini-2.5-flash");
-		expect(modelDefaults.gemini.tester).toBe("gemini-2.5-flash");
-		expect(modelDefaults.gemini.pr).toBe("gemini-2.5-flash");
-		expect(modelDefaults.openrouter.coder).toBe("google/gemini-2.5-flash");
-		expect(modelDefaults.openrouter.tester).toBe("google/gemini-2.5-flash");
-		expect(modelDefaults.openrouter.pr).toBe("google/gemini-2.5-flash");
+		expect(modelDefaults.gemini.coder).toBe("gemini-3.5-flash-lite");
+		expect(modelDefaults.gemini.tester).toBe("gemini-3.5-flash-lite");
+		expect(modelDefaults.gemini.pr).toBe("gemini-3.5-flash-lite");
+		expect(modelDefaults.openrouter.coder).toBe("google/gemini-3.5-flash-lite");
+		expect(modelDefaults.openrouter.tester).toBe(
+			"google/gemini-3.5-flash-lite",
+		);
+		expect(modelDefaults.openrouter.pr).toBe("google/gemini-3.5-flash-lite");
 		expect(modelDefaults.ollama.coder).toBe("qwen2.5-coder:7b");
 		expect(modelDefaults.ollama.tester).toBe("qwen2.5-coder:7b");
 		expect(modelDefaults.ollama.pr).toBe("qwen2.5-coder:7b");
@@ -56,20 +58,20 @@ describe("modelDefaults", () => {
 	it("keeps the full table equal to the SPEC §5 grid", () => {
 		expect(modelDefaults).toEqual({
 			gemini: {
-				analyzer: "gemini-2.5-pro",
-				planner: "gemini-2.5-pro",
-				reviewer: "gemini-2.5-pro",
-				coder: "gemini-2.5-flash",
-				tester: "gemini-2.5-flash",
-				pr: "gemini-2.5-flash",
+				analyzer: "gemini-3.7-flash",
+				planner: "gemini-3.7-flash",
+				reviewer: "gemini-3.7-flash",
+				coder: "gemini-3.5-flash-lite",
+				tester: "gemini-3.5-flash-lite",
+				pr: "gemini-3.5-flash-lite",
 			},
 			openrouter: {
-				analyzer: "google/gemini-2.5-pro",
-				planner: "google/gemini-2.5-pro",
-				reviewer: "google/gemini-2.5-pro",
-				coder: "google/gemini-2.5-flash",
-				tester: "google/gemini-2.5-flash",
-				pr: "google/gemini-2.5-flash",
+				analyzer: "google/gemini-3.7-flash",
+				planner: "google/gemini-3.7-flash",
+				reviewer: "google/gemini-3.7-flash",
+				coder: "google/gemini-3.5-flash-lite",
+				tester: "google/gemini-3.5-flash-lite",
+				pr: "google/gemini-3.5-flash-lite",
 			},
 			ollama: {
 				analyzer: "qwen2.5:14b",

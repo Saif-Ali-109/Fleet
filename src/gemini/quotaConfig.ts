@@ -12,11 +12,9 @@ export type GeminiQuotaLimits = Record<string, GeminiQuotaLimit>;
 
 export const GEMINI_QUOTA_DEFAULTS: Readonly<GeminiQuotaLimits> = Object.freeze(
 	{
-		"gemini-2.5-pro": { rpm: 5, tpm: 250_000, rpd: 100 },
-		"gemini-2.5-flash": { rpm: 10, tpm: 250_000, rpd: 250 },
-		"gemini-3-flash-preview": { rpm: 5, tpm: 250_000, rpd: 20 },
-		"gemini-3.5-flash": { rpm: 5, tpm: 250_000, rpd: 20 },
-		"gemini-2.5-flash-lite": { rpm: 15, tpm: 250_000, rpd: 1_000 },
+		"gemini-3.7-flash": { rpm: 3, tpm: 250_000, rpd: 18 },
+		"gemini-3.6-flash": { rpm: 3, tpm: 250_000, rpd: 18 },
+		"gemini-3.5-flash": { rpm: 3, tpm: 250_000, rpd: 18 },
 		"gemini-3.5-flash-lite": { rpm: 15, tpm: 250_000, rpd: 500 },
 		"gemini-3.1-flash-lite": { rpm: 15, tpm: 250_000, rpd: 500 },
 	},

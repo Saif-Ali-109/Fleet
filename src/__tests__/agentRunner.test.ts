@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	isQuotaPaused,
+	isTransientNetworkError,
 	killActiveWorkers,
 	parseTrace,
 	readStderrTail,
@@ -923,6 +924,94 @@ describe("runWorker Gemini quota chain walk", () => {
 		]);
 	}, 30000);
 
+	it("falls back on a worker-side network timeout and succeeds on the next model", async () => {
+		process.env.FLEET_PROVIDERS = "gemini";
+		process.env.GEMINI_API_KEY = "dummy-key-for-timeout-fallback";
+		installQuotaWorker([{ error: "Request timed out." }, {}]);
+		const ctx = makeRealCtx();
+		const events = collectQuotaEvents();
+
+		const policy: RolePolicy = {
+			role: "coder",
+			model: "m-a",
+			fallbacks: ["m-b"],
+		};
+		const res = await runWorker("coder", "timeout fallback", ctx, policy, {});
+
+		expect(res.ok).toBe(true);
+		expect(res.model).toBe("m-b");
+		expect(res.attempts).toEqual([
+			{
+				model: "m-a",
+				ok: false,
+				error: "Request timed out.",
+				provider: "gemini",
+			},
+			{ model: "m-b", ok: true, provider: "gemini" },
+		]);
+		expect(events).toEqual([
+			{
+				type: "model_switch",
+				role: "coder",
+				provider: "gemini",
+				fromModel: "m-a",
+				toModel: "m-b",
+				block: "timeout",
+				waitMs: 0,
+			},
+		]);
+		const fakeQuotaDir = process.env.FAKE_QUOTA_DIR ?? "";
+		expect(
+			readFileSync(join(fakeQuotaDir, "models.log"), "utf8").trim().split("\n"),
+		).toEqual(["m-a", "m-b"]);
+	}, 30000);
+
+	it("fails on the last model when every chain model times out", async () => {
+		process.env.FLEET_PROVIDERS = "gemini";
+		process.env.GEMINI_API_KEY = "dummy-key-for-all-timeout";
+		installQuotaWorker([
+			{ error: "Request timed out." },
+			{ error: "APIConnectionTimeoutError: Request timed out." },
+		]);
+		const ctx = makeRealCtx();
+		const events = collectQuotaEvents();
+
+		const policy: RolePolicy = {
+			role: "coder",
+			model: "m-a",
+			fallbacks: ["m-b"],
+		};
+		const res = await runWorker("coder", "all timeout", ctx, policy, {});
+
+		expect(res.ok).toBe(false);
+		expect(res.error).toContain("Request timed out.");
+		expect(res.attempts).toEqual([
+			{
+				model: "m-a",
+				ok: false,
+				error: "Request timed out.",
+				provider: "gemini",
+			},
+			{
+				model: "m-b",
+				ok: false,
+				error: "APIConnectionTimeoutError: Request timed out.",
+				provider: "gemini",
+			},
+		]);
+		expect(events).toEqual([
+			{
+				type: "model_switch",
+				role: "coder",
+				provider: "gemini",
+				fromModel: "m-a",
+				toModel: "m-b",
+				block: "timeout",
+				waitMs: 0,
+			},
+		]);
+	}, 30000);
+
 	it("keeps the openrouter walk single-model and quota-event-free", async () => {
 		process.env.FLEET_WORKER_ENTRY = FAKE_WORKER;
 		process.env.OPENROUTER_API_KEY = "dummy-key-for-openrouter-walk";
@@ -944,6 +1033,39 @@ describe("runWorker Gemini quota chain walk", () => {
 		]);
 		expect(events).toEqual([]);
 	}, 30000);
+});
+
+// ---- isTransientNetworkError tests ----
+
+describe("isTransientNetworkError", () => {
+	it("matches timeout, connection, and transport-failure messages", () => {
+		for (const msg of [
+			"Request timed out.",
+			"APIConnectionTimeoutError: Request timed out.",
+			"connect ECONNREFUSED 127.0.0.1:11434",
+			"read ECONNRESET",
+			"connect ETIMEDOUT 1.2.3.4:443",
+			"socket hang up",
+			"fetch failed",
+			"Connection error.",
+			"network error",
+			"headersTimeout is too low",
+		]) {
+			expect(isTransientNetworkError(msg)).toBe(true);
+		}
+	});
+
+	it("rejects non-network terminal errors", () => {
+		for (const msg of [
+			"kaboom",
+			"400 INVALID_ARGUMENT",
+			"GEMINI_RATE_LIMIT_WAIT_EXCEEDED",
+			"GEMINI_RATE_LIMIT_SWITCH:rpm:4200",
+			RPD_EXHAUSTED,
+		]) {
+			expect(isTransientNetworkError(msg)).toBe(false);
+		}
+	});
 });
 
 // ---- parseTrace tests ----

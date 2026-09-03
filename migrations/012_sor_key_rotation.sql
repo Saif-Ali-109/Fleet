@@ -1,4 +1,4 @@
--- migrations/011_sor_key_rotation.sql
+-- migrations/012_sor_key_rotation.sql
 -- SOR key rotation support
 
 -- UP:

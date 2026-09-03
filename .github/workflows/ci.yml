@@ -15,16 +15,16 @@ jobs:
         env:
           POSTGRES_USER: multiorm
           POSTGRES_PASSWORD: multiorm
-          POSTGRES_DB: multiorch
+          POSTGRES_DB: fleet
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U multiorm -d multiorch"
+          --health-cmd "pg_isready -U multiorm -d fleet"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: 'postgresql://multiorm:multiorm@localhost:5432/multiorch?sslmode=disable'
+      DATABASE_URL: 'postgresql://multiorm:multiorm@localhost:5432/fleet?sslmode=disable'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

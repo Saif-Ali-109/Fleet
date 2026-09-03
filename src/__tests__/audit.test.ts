@@ -76,11 +76,14 @@ function recordingPool(
 describe("appendAuditEvent payload bind", () => {
 	const KEY = "test-signing-key";
 	let savedKey: string | undefined;
+	let savedKeyId: string | undefined;
 
 	beforeEach(() => {
 		savedKey = process.env.SOR_SIGNING_KEY;
+		savedKeyId = process.env.SOR_KEY_ID;
 		process.env.SOR_SIGNING_KEY = KEY;
 		process.env.SOR_KEY_V1 = KEY;
+		process.env.SOR_KEY_ID = "v1";
 	});
 
 	afterEach(() => {
@@ -90,6 +93,11 @@ describe("appendAuditEvent payload bind", () => {
 		} else {
 			process.env.SOR_SIGNING_KEY = savedKey;
 			process.env.SOR_KEY_V1 = savedKey;
+		}
+		if (savedKeyId === undefined) {
+			delete process.env.SOR_KEY_ID;
+		} else {
+			process.env.SOR_KEY_ID = savedKeyId;
 		}
 	});
 
@@ -147,8 +155,17 @@ describe("appendAuditEvent payload bind", () => {
 			q.text.startsWith("INSERT INTO audit_events"),
 		);
 		expect(insert?.values?.[9]).toBe("prev-hash");
+		// Row key_id bind and the embedded signing key id agree (B2 fix): the
+		// first post-rotation append signs with the CURRENT key id, matching
+		// what verifyChain recomputes from row.key_id.
+		expect(insert?.values?.[11]).toBe("v1");
 		expect(insert?.values?.[10]).toBe(
-			signEvent(KEY, "prev-hash", { ...event, created_at: event.created_at }),
+			signEvent(
+				KEY,
+				"prev-hash",
+				{ ...event, created_at: event.created_at },
+				"v1",
+			),
 		);
 	});
 });
