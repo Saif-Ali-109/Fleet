@@ -580,63 +580,67 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 							: {}),
 					};
 					providerCallStarted = true;
-					console.log(
-						"[llm-debug] REQUEST:",
-						JSON.stringify(
-							{
-								model,
-								schema_type:
-									((tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool)
-										?.function?.parameters as { type?: string })?.type ??
-									null,
-								first_tool_schema:
-									tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool | null,
-								tool_count: tools.length,
-								tool_choice: "tool_choice" in reqOpts ? reqOpts.tool_choice : "UNSET",
-							},
-							null,
-							2,
-						),
-					);
+					if (process.env.FLEET_LLM_DEBUG === "1") {
+						console.log(
+							"[llm-debug] REQUEST:",
+							JSON.stringify(
+								{
+									model,
+									schema_type:
+										((tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool)
+											?.function?.parameters as { type?: string })?.type ??
+										null,
+									first_tool_schema:
+										tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool | null,
+									tool_count: tools.length,
+									tool_choice: "tool_choice" in reqOpts ? reqOpts.tool_choice : "UNSET",
+								},
+								null,
+								2,
+							),
+						);
+					}
 					response = wantsStreaming()
 						? ((await createStreaming(create, reqOpts)) as Awaited<
 								ReturnType<typeof create>
 							>)
 						: await create(reqOpts);
-					console.log(
-						"[llm-debug] RESPONSE:",
-						JSON.stringify(
-							{
-								finish_reason: (
-									response as {
-										choices?: Array<{
-											finish_reason?: string | null;
-											message?: {
-												content?: string | null;
-												tool_calls?: unknown;
-											};
-										}>;
-									}
-								).choices?.[0]?.finish_reason ?? "UNSET",
-								has_tool_calls: Boolean(
-									(
+					if (process.env.FLEET_LLM_DEBUG === "1") {
+						console.log(
+							"[llm-debug] RESPONSE:",
+							JSON.stringify(
+								{
+									finish_reason: (
 										response as {
 											choices?: Array<{
-												message?: { tool_calls?: unknown };
+												finish_reason?: string | null;
+												message?: {
+													content?: string | null;
+													tool_calls?: unknown;
+												};
 											}>;
 										}
-									).choices?.[0]?.message?.tool_calls,
-								),
-								message: (
-									response as {
-										choices?: Array<{ message?: { content?: string | null } }>;
-									}
-								).choices?.[0]?.message?.content ?? null,
-							},
-							null,
-							2,
-						),
-					);
+									).choices?.[0]?.finish_reason ?? "UNSET",
+									has_tool_calls: Boolean(
+										(
+											response as {
+												choices?: Array<{
+													message?: { tool_calls?: unknown };
+												}>;
+											}
+										).choices?.[0]?.message?.tool_calls,
+									),
+									message: (
+										response as {
+											choices?: Array<{ message?: { content?: string | null } }>;
+										}
+									).choices?.[0]?.message?.content ?? null,
+								},
+								null,
+								2,
+							),
+						);
+					}
 					if (providerCallStarted) {
 						emitTelemetry({
 							t: "telemetry",
