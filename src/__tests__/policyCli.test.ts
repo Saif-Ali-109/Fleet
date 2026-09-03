@@ -50,9 +50,10 @@ interface RecordedQuery {
 	values?: unknown[];
 }
 
-function makePool(
-	responder?: RegistryResponder,
-): { pool: Pool; queries: RecordedQuery[] } {
+function makePool(responder?: RegistryResponder): {
+	pool: Pool;
+	queries: RecordedQuery[];
+} {
 	const queries: RecordedQuery[] = [];
 	const respond = async (...args: unknown[]) => {
 		const text =
@@ -124,9 +125,7 @@ describe("sor:policy seed (P6.1)", () => {
 
 		const seeds = inserts(queries);
 		expect(seeds.length).toBe(6);
-		expect(
-			seeds.map((s) => s.values?.[0]).sort(),
-		).toEqual([...ROLES].sort());
+		expect(seeds.map((s) => s.values?.[0]).sort()).toEqual([...ROLES].sort());
 		for (const role of ROLES) {
 			const s = seeds.find((x) => x.values?.[0] === role);
 			expect(s).toBeDefined();
@@ -178,11 +177,7 @@ describe("sor:policy reconcile (P6.1, P6.2)", () => {
 					? { rows: [{ policy_version: 2 }] }
 					: undefined,
 			);
-			const res = await sorPolicyReconcile(
-				{ pool, defs: DEFS },
-				"coder",
-				file,
-			);
+			const res = await sorPolicyReconcile({ pool, defs: DEFS }, "coder", file);
 			expect(res.ok).toBe(true);
 			if (res.ok) expect(res.detail).toContain("policy_version=3");
 
@@ -213,11 +208,7 @@ describe("sor:policy reconcile (P6.1, P6.2)", () => {
 		await writeFile(file, "{ this is not json");
 		try {
 			const { pool, queries } = makePool();
-			const res = await sorPolicyReconcile(
-				{ pool, defs: DEFS },
-				"coder",
-				file,
-			);
+			const res = await sorPolicyReconcile({ pool, defs: DEFS }, "coder", file);
 			expect(res.ok).toBe(false);
 			if (!res.ok) expect(res.reason).toContain("invalid JSON");
 			expect(inserts(queries).length).toBe(0);
@@ -233,15 +224,14 @@ describe("sor:policy reconcile (P6.1, P6.2)", () => {
 		const file = join(dir, "bad-schema.json");
 		await writeFile(
 			file,
-			JSON.stringify({ ...capabilitySnapshot(DEFS.coder, "coder"), schemaVersion: 99 }),
+			JSON.stringify({
+				...capabilitySnapshot(DEFS.coder, "coder"),
+				schemaVersion: 99,
+			}),
 		);
 		try {
 			const { pool, queries } = makePool();
-			const res = await sorPolicyReconcile(
-				{ pool, defs: DEFS },
-				"coder",
-				file,
-			);
+			const res = await sorPolicyReconcile({ pool, defs: DEFS }, "coder", file);
 			expect(res.ok).toBe(false);
 			if (!res.ok) expect(res.reason).toContain("schemaVersion must be 1");
 			expect(inserts(queries).length).toBe(0);
@@ -264,11 +254,7 @@ describe("sor:policy reconcile (P6.1, P6.2)", () => {
 		);
 		try {
 			const { pool, queries } = makePool();
-			const res = await sorPolicyReconcile(
-				{ pool, defs: DEFS },
-				"coder",
-				file,
-			);
+			const res = await sorPolicyReconcile({ pool, defs: DEFS }, "coder", file);
 			expect(res.ok).toBe(false);
 			if (!res.ok) {
 				expect(res.reason).toContain("does not match role 'coder'");

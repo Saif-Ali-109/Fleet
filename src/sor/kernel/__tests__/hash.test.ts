@@ -24,7 +24,7 @@ function makeIdentity(
 }
 
 describe("sha256Hex (T7.1)", () => {
-	it("matches the locked vector for '{\"a\":\"b\"}'", () => {
+	it('matches the locked vector for \'{"a":"b"}\'', () => {
 		expect(sha256Hex('{"a":"b"}')).toBe(
 			"db4a7ecb114bc66c623a06c4ff6fe8daa2f49cc270ebbf7a1f81e22ab061c837",
 		);

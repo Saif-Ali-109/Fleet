@@ -20,6 +20,7 @@ import { plannerDef } from "./fleet/agents/planner.ts";
 import { prDef } from "./fleet/agents/pr.ts";
 import { reviewerDef } from "./fleet/agents/reviewer.ts";
 import { testerDef } from "./fleet/agents/tester.ts";
+import { seedRunContext } from "./fleet/contextSeed.ts";
 import { validatePolicyDocument } from "./fleet/policy.ts";
 import type { FleetAgentDef } from "./fleet/types.ts";
 import {
@@ -28,7 +29,6 @@ import {
 	geminiQuotaConfig,
 	geminiRateLimitWaitMs,
 } from "./gemini/quotaConfig.ts";
-import { seedRunContext } from "./fleet/contextSeed.ts";
 import { pruneOldRunDirs } from "./git/worktree.ts";
 import {
 	addIssueLabel,
@@ -1139,7 +1139,8 @@ export async function runSorPolicyCli(
 	if (sub === undefined) {
 		return {
 			ok: false,
-			reason: "sor:policy requires a subcommand: seed | reconcile <role> <file> | show <role>",
+			reason:
+				"sor:policy requires a subcommand: seed | reconcile <role> <file> | show <role>",
 		};
 	}
 	return {

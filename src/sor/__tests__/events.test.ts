@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEvent, VALID_TYPES, TOOL_INPUT_CAP, TOOL_OUTPUT_CAP } from "../events.ts";
 import type { SorEventType } from "../events.ts";
+import {
+	normalizeEvent,
+	TOOL_INPUT_CAP,
+	TOOL_OUTPUT_CAP,
+	VALID_TYPES,
+} from "../events.ts";
 
 describe("SorEventType union + VALID_TYPES (P2.1)", () => {
 	const newTypes: SorEventType[] = [
@@ -76,7 +81,13 @@ describe("normalizeEvent accepts new policy event types with locked shapes (P2.2
 	});
 
 	it("accepts policy_sync seeded with document", () => {
-		const doc = { schemaVersion: 1, meta: { subject_role: "coder" }, allowedTools: ["bash"], mcpAllow: [], toolRules: {} };
+		const doc = {
+			schemaVersion: 1,
+			meta: { subject_role: "coder" },
+			allowedTools: ["bash"],
+			mcpAllow: [],
+			toolRules: {},
+		};
 		const event = normalizeEvent({
 			...base,
 			event_type: "policy_sync",
@@ -194,7 +205,12 @@ describe("Truncation caps apply to policy events (20 000 chars)", () => {
 			...base,
 			event_type: "policy_decision",
 			tool_input: hugeInput,
-			payload: { decision: "ALLOW", action: "bash", result: "ok", reason: "test" },
+			payload: {
+				decision: "ALLOW",
+				action: "bash",
+				result: "ok",
+				reason: "test",
+			},
 		});
 		expect(typeof event.tool_input === "string").toBe(true);
 		expect((event.tool_input as string).length).toBe(TOOL_INPUT_CAP);
@@ -206,7 +222,12 @@ describe("Truncation caps apply to policy events (20 000 chars)", () => {
 			...base,
 			event_type: "policy_decision",
 			tool_output: hugeOutput,
-			payload: { decision: "ALLOW", action: "bash", result: "ok", reason: "test" },
+			payload: {
+				decision: "ALLOW",
+				action: "bash",
+				result: "ok",
+				reason: "test",
+			},
 		});
 		expect(typeof event.tool_output === "string").toBe(true);
 		expect((event.tool_output as string).length).toBe(TOOL_OUTPUT_CAP);

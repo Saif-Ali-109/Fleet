@@ -51,7 +51,11 @@ function chainingPool(): ChainingPoolResult {
 				? { text: args[0], values: args[1] as unknown[] | undefined }
 				: (args[0] as RecordedQuery);
 		captured.push(q);
-		if (q.text.startsWith("BEGIN") || q.text.startsWith("COMMIT") || q.text.startsWith("ROLLBACK")) {
+		if (
+			q.text.startsWith("BEGIN") ||
+			q.text.startsWith("COMMIT") ||
+			q.text.startsWith("ROLLBACK")
+		) {
 			return { rows: [] };
 		}
 		if (q.text.includes("FOR UPDATE")) {
@@ -100,9 +104,7 @@ function chainingPool(): ChainingPoolResult {
 		}
 		if (q.text.includes("FROM audit_events")) {
 			return {
-				rows: events
-					.slice()
-					.sort((a, b) => Number(a.seq) - Number(b.seq)),
+				rows: events.slice().sort((a, b) => Number(a.seq) - Number(b.seq)),
 			};
 		}
 		return { rows: [] };
@@ -329,7 +331,7 @@ describe("AT-9 — Cross-phase integrity", () => {
 			const prev = events[i - 1];
 			expect(cur).toBeDefined();
 			expect(prev).toBeDefined();
-			expect(Number(cur!.seq)).toBe(Number(prev!.seq) + 1);
+			expect(Number(cur?.seq)).toBe(Number(prev?.seq) + 1);
 		}
 		for (const e of events) {
 			expect(e.prev_hash).not.toBe(e.hash);

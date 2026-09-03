@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	appendAuditEvent,
-	ensureChain,
-	verifyChain,
-} from "../../db/audit.ts";
+import { appendAuditEvent, ensureChain, verifyChain } from "../../db/audit.ts";
 import { pool } from "../../db/client.ts";
 import type { SorEvent } from "../events.ts";
 import { GENESIS_HASH } from "../signer.ts";

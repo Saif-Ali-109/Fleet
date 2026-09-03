@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { PolicyDocument } from "../../sor/kernel/types.ts";
+import { canonicalJson } from "../../sor/signer.ts";
+import { coderDef } from "../agents/coder.ts";
 import {
 	canonicalPolicyHash,
 	capabilitySnapshot,
@@ -8,9 +11,6 @@ import {
 	sha256Hex,
 	validatePolicyDocument,
 } from "../policy.ts";
-import { canonicalJson } from "../../sor/signer.ts";
-import { coderDef } from "../agents/coder.ts";
-import type { PolicyDocument } from "../../sor/kernel/types.ts";
 
 const validDoc: PolicyDocument = {
 	schemaVersion: 1,
@@ -70,15 +70,14 @@ describe("validatePolicyDocument (P3.1)", () => {
 		expect(
 			validatePolicyDocument({ ...validDoc, allowedTools: "bash" }),
 		).toEqual({ ok: false, reason: "allowedTools must be a string array" });
-		expect(
-			validatePolicyDocument({ ...validDoc, mcpAllow: [1, 2] }),
-		).toEqual({ ok: false, reason: "mcpAllow must be a string array" });
+		expect(validatePolicyDocument({ ...validDoc, mcpAllow: [1, 2] })).toEqual({
+			ok: false,
+			reason: "mcpAllow must be a string array",
+		});
 	});
 
 	it("rejects malformed toolRules / matchers", () => {
-		expect(
-			validatePolicyDocument({ ...validDoc, toolRules: [] }),
-		).toEqual({
+		expect(validatePolicyDocument({ ...validDoc, toolRules: [] })).toEqual({
 			ok: false,
 			reason: "toolRules must be an object keyed by tool name",
 		});
@@ -133,9 +132,9 @@ describe("canonicalPolicyHash (P3.2)", () => {
 
 	it("differs on any field change", () => {
 		const base = canonicalPolicyHash(validDoc);
-		expect(canonicalPolicyHash({ ...validDoc, allowedTools: ["read"] })).not.toBe(
-			base,
-		);
+		expect(
+			canonicalPolicyHash({ ...validDoc, allowedTools: ["read"] }),
+		).not.toBe(base);
 		expect(
 			canonicalPolicyHash({
 				...validDoc,

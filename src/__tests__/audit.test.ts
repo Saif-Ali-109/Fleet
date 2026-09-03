@@ -160,7 +160,12 @@ describe("appendAuditEvent payload bind", () => {
 		// what verifyChain recomputes from row.key_id.
 		expect(insert?.values?.[11]).toBe("v1");
 		expect(insert?.values?.[10]).toBe(
-			signEvent(KEY, "prev-hash", { ...event, created_at: event.created_at }, "v1"),
+			signEvent(
+				KEY,
+				"prev-hash",
+				{ ...event, created_at: event.created_at },
+				"v1",
+			),
 		);
 	});
 });

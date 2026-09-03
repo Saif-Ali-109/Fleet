@@ -8,13 +8,13 @@ import {
 	type TelemetryKind,
 } from "../telemetry.ts";
 import type { ProviderName, Role } from "../types.ts";
+import type { RulePredicate } from "./policy.ts";
+import { evaluateToolCall } from "./policyEval.ts";
 import {
 	RATE_LIMIT_SWITCH_PREFIX,
 	RPD_EXHAUSTED,
 	rateLimitSwitchError,
 } from "./quotaSignals.ts";
-import { evaluateToolCall } from "./policyEval.ts";
-import type { RulePredicate } from "./policy.ts";
 import type { SorEmitSink } from "./sorEmit.ts";
 import type { buildRegistry, ToolImpl, WtCtx } from "./tools/registry.ts";
 import type { ToolName } from "./types.ts";
@@ -587,13 +587,16 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 								{
 									model,
 									schema_type:
-										((tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool)
-											?.function?.parameters as { type?: string })?.type ??
-										null,
+										(
+											(
+												tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool
+											)?.function?.parameters as { type?: string }
+										)?.type ?? null,
 									first_tool_schema:
 										tools[0] as OpenAI.Chat.Completions.ChatCompletionFunctionTool | null,
 									tool_count: tools.length,
-									tool_choice: "tool_choice" in reqOpts ? reqOpts.tool_choice : "UNSET",
+									tool_choice:
+										"tool_choice" in reqOpts ? reqOpts.tool_choice : "UNSET",
 								},
 								null,
 								2,
@@ -610,17 +613,18 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 							"[llm-debug] RESPONSE:",
 							JSON.stringify(
 								{
-									finish_reason: (
-										response as {
-											choices?: Array<{
-												finish_reason?: string | null;
-												message?: {
-													content?: string | null;
-													tool_calls?: unknown;
-												};
-											}>;
-										}
-									).choices?.[0]?.finish_reason ?? "UNSET",
+									finish_reason:
+										(
+											response as {
+												choices?: Array<{
+													finish_reason?: string | null;
+													message?: {
+														content?: string | null;
+														tool_calls?: unknown;
+													};
+												}>;
+											}
+										).choices?.[0]?.finish_reason ?? "UNSET",
 									has_tool_calls: Boolean(
 										(
 											response as {
@@ -630,11 +634,14 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 											}
 										).choices?.[0]?.message?.tool_calls,
 									),
-									message: (
-										response as {
-											choices?: Array<{ message?: { content?: string | null } }>;
-										}
-									).choices?.[0]?.message?.content ?? null,
+									message:
+										(
+											response as {
+												choices?: Array<{
+													message?: { content?: string | null };
+												}>;
+											}
+										).choices?.[0]?.message?.content ?? null,
 								},
 								null,
 								2,
@@ -805,8 +812,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 				const startedAt = Date.now();
 				const denied =
 					opts.policy &&
-					(opts.policy.mode === "sor" ||
-						opts.policy.mode === "fail-closed")
+					(opts.policy.mode === "sor" || opts.policy.mode === "fail-closed")
 						? (() => {
 								const d = evaluateToolCall(
 									name,
@@ -856,8 +862,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 					} catch (err) {
 						result = {
 							ok: false,
-							content:
-								err instanceof Error ? err.message : String(err),
+							content: err instanceof Error ? err.message : String(err),
 						};
 					}
 				}

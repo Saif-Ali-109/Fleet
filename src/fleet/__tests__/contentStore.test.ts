@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { upsertDocument, emitContentSyncNonFatal } from "../contentStore.ts";
-import type { ContentDoc, ContentChunk } from "../content.ts";
+import type { ContentChunk, ContentDoc } from "../content.ts";
+import { emitContentSyncNonFatal, upsertDocument } from "../contentStore.ts";
 
 const TEST_KEY = "test-signing-key-for-content-store";
 let savedKey: string | undefined;
@@ -109,7 +109,12 @@ function makeChunk(overrides: Partial<ContentChunk> = {}): ContentChunk {
 		text: "chunk text",
 		contentHash: "chunkhash123",
 		embedding: null,
-		ref: { sorType: "content", sourceId: "fleet|content|md:test.md", version: 1, hash: "abc123" },
+		ref: {
+			sorType: "content",
+			sourceId: "fleet|content|md:test.md",
+			version: 1,
+			hash: "abc123",
+		},
 		...overrides,
 	};
 }
@@ -255,7 +260,12 @@ describe("upsertDocument — content store write path", () => {
 	it("NON-FATAL: forced query reject on audit append ⇒ warns + continues, no throw", async () => {
 		const recorded: RecordedQuery[] = [];
 		// Force failure on the audit_events insert
-		const pool = recordingPool([[]], recorded, true, "INSERT INTO audit_events");
+		const pool = recordingPool(
+			[[]],
+			recorded,
+			true,
+			"INSERT INTO audit_events",
+		);
 
 		const doc = makeDoc({ version: 1 });
 		const chunks = [makeChunk()];
@@ -308,7 +318,12 @@ describe("emitContentSyncNonFatal — NON-FATAL helper", () => {
 	it("wraps appendAuditEvent in try/catch, warns on failure, never throws", async () => {
 		const recorded: RecordedQuery[] = [];
 		// Force failure on audit_events insert
-		const pool = recordingPool([[{ seq: "0", hash: "genesis" }]], recorded, true, "INSERT INTO audit_events");
+		const pool = recordingPool(
+			[[{ seq: "0", hash: "genesis" }]],
+			recorded,
+			true,
+			"INSERT INTO audit_events",
+		);
 
 		// Should not throw
 		await expect(

@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	runAgent,
-	type WireEvent,
-} from "../fleet/loop.ts";
+import { runAgent, type WireEvent } from "../fleet/loop.ts";
 import type { RulePredicate } from "../fleet/policy.ts";
 import {
 	buildRegistry,
@@ -77,7 +74,10 @@ type PolicyDecisionPayload = {
 	reason: string;
 };
 
-function spyExec(registry: Record<string, ToolImpl>, name: keyof typeof registry) {
+function spyExec(
+	registry: Record<string, ToolImpl>,
+	name: keyof typeof registry,
+) {
 	const exec = registry[name]?.exec;
 	return vi
 		.spyOn(registry[name] as ToolImpl, "exec")
@@ -268,7 +268,7 @@ describe("runAgent policy PEP (Step 8)", () => {
 			}),
 			resp({ role: "assistant", content: "compat ok" }),
 		]);
-		const { events, emit } = collect();
+		const { events: _events, emit } = collect();
 		const policyDecision = vi.fn((_p: PolicyDecisionPayload) => {});
 
 		const outcome = await runAgent({
@@ -362,9 +362,7 @@ describe("runAgent policy PEP (Step 8)", () => {
 			decisions.push(p),
 		);
 		const toolRules: Record<string, RulePredicate[]> = {
-			read: [
-				{ op: "deny", when: { path: "path", match: "^/etc/" } },
-			],
+			read: [{ op: "deny", when: { path: "path", match: "^/etc/" } }],
 		};
 
 		const outcome = await runAgent({
@@ -401,10 +399,7 @@ describe("runAgent policy PEP (Step 8)", () => {
 		const errSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			const registry = buildRegistry(defWith(["read"]));
-			const readExec = spyExec(
-				registry as Record<string, ToolImpl>,
-				"read",
-			);
+			const readExec = spyExec(registry as Record<string, ToolImpl>, "read");
 			const { client } = mockClient([
 				resp({
 					role: "assistant",
@@ -413,7 +408,7 @@ describe("runAgent policy PEP (Step 8)", () => {
 				}),
 				resp({ role: "assistant", content: "recovered" }),
 			]);
-			const { events, emit } = collect();
+			const { events: _events, emit } = collect();
 			const policyDecision = vi.fn(() => {
 				throw new Error("db unavailable");
 			});
@@ -453,7 +448,7 @@ describe("runAgent policy PEP (Step 8)", () => {
 			}),
 			resp({ role: "assistant", content: "done" }),
 		]);
-		const { events, emit } = collect();
+		const { events: _events, emit } = collect();
 		const policyDecision = vi.fn((_p: PolicyDecisionPayload) => {});
 
 		const outcome = await runAgent({

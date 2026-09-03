@@ -99,14 +99,22 @@ afterEach(async () => {
 describe("repairChainForPool", () => {
 	it("no-ops on an empty chain (F4.2)", async () => {
 		const report = await repairChainForPool(pool);
-		expect(report).toEqual({ total: 0, needsUpdate: 0, updated: 0, skipped: 0 });
+		expect(report).toEqual({
+			total: 0,
+			needsUpdate: 0,
+			updated: 0,
+			skipped: 0,
+		});
 	});
 
 	it("reports a fully valid chain with needsUpdate 0 (F4.2)", async () => {
 		await appendAuditEvent(pool, makeEvent({ payload: { status: "a" } }));
 		await appendAuditEvent(
 			pool,
-			makeEvent({ payload: { status: "b" }, created_at: "2026-08-29T10:00:01.000Z" }),
+			makeEvent({
+				payload: { status: "b" },
+				created_at: "2026-08-29T10:00:01.000Z",
+			}),
 		);
 
 		const report = await repairChainForPool(pool);

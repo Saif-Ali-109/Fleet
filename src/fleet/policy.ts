@@ -53,10 +53,7 @@ export function validatePolicyDocument(
 	}
 	for (const key of ["allowedTools", "mcpAllow"] as const) {
 		const arr = d[key];
-		if (
-			!Array.isArray(arr) ||
-			arr.some((el) => typeof el !== "string")
-		) {
+		if (!Array.isArray(arr) || arr.some((el) => typeof el !== "string")) {
 			return { ok: false, reason: `${key} must be a string array` };
 		}
 	}
@@ -108,10 +105,7 @@ export function validatePolicyDocument(
 				};
 			}
 			const matcher = when as Record<string, unknown>;
-			if (
-				typeof matcher.path !== "string" ||
-				matcher.path.length === 0
-			) {
+			if (typeof matcher.path !== "string" || matcher.path.length === 0) {
 				return {
 					ok: false,
 					reason: `toolRules[${tool}] matcher.path must be a non-empty string`,

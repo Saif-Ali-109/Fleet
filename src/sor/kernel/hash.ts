@@ -60,10 +60,12 @@ export function assertCanonicalHash(
 ): void {
 	if (!verifyCanonicalHash(record, body)) {
 		throw new Error(
-			`SoR hash mismatch for ${record.sorType}:${record.sourceId} v${record.version}; expected ${record.hash}, got ${computeCanonicalHash({
-				sorType: record.sorType,
-				body,
-			})}`,
+			`SoR hash mismatch for ${record.sorType}:${record.sourceId} v${record.version}; expected ${record.hash}, got ${computeCanonicalHash(
+				{
+					sorType: record.sorType,
+					body,
+				},
+			)}`,
 		);
 	}
 }

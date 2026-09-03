@@ -39,20 +39,30 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../contentRetrieval.ts", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../contentRetrieval.ts")>();
+	const actual =
+		await importOriginal<typeof import("../contentRetrieval.ts")>();
 	const delegate = (fn: typeof mocks.retrieveKnowledge, impl: unknown) =>
 		fn.mockImplementation(impl as never);
 	return {
 		...actual,
-		retrieveKnowledge: delegate(mocks.retrieveKnowledge, actual.retrieveKnowledge),
-		listSources: mocks.listSources.mockImplementation(actual.listSources as never),
-		getDocument: mocks.getDocument.mockImplementation(actual.getDocument as never),
-		emitContentAccessAggregate: mocks.emitContentAccessAggregate.mockImplementation(
-			actual.emitContentAccessAggregate as never,
+		retrieveKnowledge: delegate(
+			mocks.retrieveKnowledge,
+			actual.retrieveKnowledge,
 		),
+		listSources: mocks.listSources.mockImplementation(
+			actual.listSources as never,
+		),
+		getDocument: mocks.getDocument.mockImplementation(
+			actual.getDocument as never,
+		),
+		emitContentAccessAggregate:
+			mocks.emitContentAccessAggregate.mockImplementation(
+				actual.emitContentAccessAggregate as never,
+			),
 	};
 });
 
+import { planWorkerPolicy } from "../../runtime/worker/main.ts";
 // ----- Phase 2 P-I1 gating imports (regression) -----
 import { coderDef } from "../agents/coder.ts";
 import { reviewerDef } from "../agents/reviewer.ts";
@@ -73,11 +83,10 @@ import {
 } from "../policy.ts";
 import {
 	computeEffectiveTools,
-	evaluateToolCall,
 	type EffectiveToolSet,
+	evaluateToolCall,
 } from "../policyEval.ts";
-import { planWorkerPolicy } from "../../runtime/worker/main.ts";
-import type { FleetAgentDef, ToolName } from "../types.ts";
+import type { FleetAgentDef } from "../types.ts";
 
 // The content retrieval tools (decided names, plan-sor §G5 / contentTools.ts).
 const CONTENT_TOOLS = [
@@ -269,13 +278,15 @@ describe("AT-1 — provenance on every output (FR-4/12/15) + canonical-only (K3/
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
 			expect(result.items).toHaveLength(1);
-			expect(result.items[0]!.provenance.content_hash).toBe(DOC.hash);
-			expect(result.items[0]!.provenance.document).toBe("kb");
+			expect(result.items[0]?.provenance.content_hash).toBe(DOC.hash);
+			expect(result.items[0]?.provenance.document).toBe("kb");
 		}
 
 		// The SQL that enforces K3/C1 is literally present: canonical resolution via
 		// the JOIN and the status='active' filter (invalid → not served, §4.4).
-		const select = recorded.find((q) => q.text.includes("FROM content_chunks cc"));
+		const select = recorded.find((q) =>
+			q.text.includes("FROM content_chunks cc"),
+		);
 		expect(select).toBeDefined();
 		expect(select?.text).toContain("JOIN content_sor cs");
 		expect(select?.text).toContain("cc.doc_id = cs.source_id");
@@ -299,7 +310,9 @@ describe("AT-1 — provenance on every output (FR-4/12/15) + canonical-only (K3/
 		delete process.env.CONTENT_EMBED_RANK;
 
 		for (const recorded of [recordedFts, recordedVec]) {
-			const select = recorded.find((q) => q.text.includes("FROM content_chunks cc"));
+			const select = recorded.find((q) =>
+				q.text.includes("FROM content_chunks cc"),
+			);
 			expect(select).toBeDefined();
 			expect(select?.text).toContain("JOIN content_sor cs");
 			expect(select?.text).toContain("cs.status = 'active'");
@@ -365,7 +378,11 @@ describe("AT-2 — unavailable ≠ no-match (FR-14/C2)", () => {
 		const result: RetrievalResult = await retrieveKnowledge(pool, {
 			query: "abracadabra",
 		});
-		expect(result).toEqual({ ok: true, kind: "no-match", query: "abracadabra" });
+		expect(result).toEqual({
+			ok: true,
+			kind: "no-match",
+			query: "abracadabra",
+		});
 		// no-match is a SUCCESS (ok:true) — never 'unavailable'.
 		expect(result.ok).toBe(true);
 		expect("error" in result).toBe(false);
@@ -409,7 +426,9 @@ describe("AT-2 — MCP tool handler maps unavailable vs no-match to the C2 stanc
 			query: "rare phrase",
 		});
 
-		const result = await handleContentRetrieve({} as Pool, { query: "rare phrase" });
+		const result = await handleContentRetrieve({} as Pool, {
+			query: "rare phrase",
+		});
 
 		expect(result).toEqual({
 			kind: "no-match",

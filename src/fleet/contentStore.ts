@@ -2,7 +2,7 @@
 
 import type { Pool } from "pg";
 import { appendAuditEvent } from "../db/audit.ts";
-import type { ContentDoc, ContentChunk, SyncKind } from "./content.ts";
+import type { ContentChunk, ContentDoc, SyncKind } from "./content.ts";
 
 export interface ContentSyncPayload {
 	kind: SyncKind;
@@ -64,7 +64,7 @@ export async function upsertDocument(
 	);
 
 	if (existing.rows.length > 0) {
-		const existingHash = existing.rows[0]!.hash;
+		const existingHash = existing.rows[0]?.hash;
 		if (existingHash === doc.hash) {
 			// Unchanged — emit content_sync and return
 			await emitContentSyncNonFatal(pool, {
@@ -124,7 +124,8 @@ export async function upsertDocument(
 
 		await client.query("COMMIT");
 
-		const kind: "added" | "updated" = existing.rows.length > 0 ? "updated" : "added";
+		const kind: "added" | "updated" =
+			existing.rows.length > 0 ? "updated" : "added";
 		await emitContentSyncNonFatal(pool, {
 			kind,
 			status: doc.status,

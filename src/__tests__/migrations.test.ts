@@ -268,7 +268,9 @@ describe("migrations", () => {
 	it("TS VALID_TYPES is a subset of 013 UP CHECK (lockstep parity)", () => {
 		const up = readUp("013_sor_policy_events.sql");
 		// Extract the CHECK constraint's IN (...) list
-		const checkMatch = up.match(/CHECK\s*\(event_type\s+IN\s*\(([\s\S]*?)\)\s*\)/i);
+		const checkMatch = up.match(
+			/CHECK\s*\(event_type\s+IN\s*\(([\s\S]*?)\)\s*\)/i,
+		);
 		if (!checkMatch) throw new Error("013 UP missing event_type CHECK");
 		const checkList = checkMatch[1];
 		if (checkList === undefined)
@@ -307,10 +309,10 @@ describe("migrations", () => {
 	// ensurePolicyRegistry, tested at P5.2, not in SQL)
 	it("014 adds nullable policy_hash + policy_version NOT NULL DEFAULT 1, DOWN drops both", () => {
 		const up = readUp("014_agent_registry_policy.sql");
-		expect(up).toMatch(/ALTER TABLE agent_registry\s+ADD COLUMN policy_hash TEXT/);
 		expect(up).toMatch(
-			/ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 1/,
+			/ALTER TABLE agent_registry\s+ADD COLUMN policy_hash TEXT/,
 		);
+		expect(up).toMatch(/ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 1/);
 		// Backfill is NOT in SQL — the hash must be computed by ensurePolicyRegistry
 		expect(up).not.toMatch(/UPDATE\s+agent_registry/i);
 
@@ -320,7 +322,9 @@ describe("migrations", () => {
 		);
 		const downMatch = content.match(/--\s*DOWN:\s*\n([\s\S]*?)$/i);
 		const down = downMatch?.[1] ? downMatch[1].trim() : "";
-		expect(down).toMatch(/ALTER TABLE agent_registry\s+DROP COLUMN policy_version/);
+		expect(down).toMatch(
+			/ALTER TABLE agent_registry\s+DROP COLUMN policy_version/,
+		);
 		expect(down).toMatch(/DROP COLUMN policy_hash/);
 	});
 
@@ -348,7 +352,9 @@ describe("migrations", () => {
 		expect(up).toMatch(/content_hash\s+TEXT NOT NULL/);
 		expect(up).toMatch(/embedding\s+vector\(768\)/);
 		expect(up).toMatch(/ref\s+JSONB NOT NULL/);
-		expect(up).toMatch(/PRIMARY KEY\s*\(\s*doc_id\s*,\s*version\s*,\s*chunk_index\s*\)/);
+		expect(up).toMatch(
+			/PRIMARY KEY\s*\(\s*doc_id\s*,\s*version\s*,\s*chunk_index\s*\)/,
+		);
 
 		expect(up).toContain("content_chunks_doc_version_idx");
 		expect(up).toContain("content_chunks_text_fts_idx");
@@ -362,7 +368,9 @@ describe("migrations", () => {
 		const downMatch = content.match(/--\s*DOWN:\s*\n([\s\S]*?)$/i);
 		const down = downMatch?.[1] ? downMatch[1].trim() : "";
 		expect(down).toContain("DROP INDEX IF EXISTS content_chunks_text_fts_idx");
-		expect(down).toContain("DROP INDEX IF EXISTS content_chunks_doc_version_idx");
+		expect(down).toContain(
+			"DROP INDEX IF EXISTS content_chunks_doc_version_idx",
+		);
 		expect(down).toContain("DROP TABLE IF EXISTS content_chunks");
 		expect(down).toContain("DROP TABLE IF EXISTS content_sor");
 		expect(down).toContain("DROP EXTENSION IF EXISTS vector");
@@ -413,10 +421,7 @@ describe("migrations", () => {
 			.sort();
 		for (const file of files) {
 			const nnn = file.slice(0, 3);
-			const content = readFileSync(
-				path.join(MIGRATIONS_DIR, file),
-				"utf-8",
-			);
+			const content = readFileSync(path.join(MIGRATIONS_DIR, file), "utf-8");
 			const headerMatch = content.match(/^--\s*migrations\/(\d{3})_/m);
 			expect(headerMatch, `${file} has a migrations/NNN_ header`).toBeTruthy();
 			expect(headerMatch?.[1]).toBe(nnn);

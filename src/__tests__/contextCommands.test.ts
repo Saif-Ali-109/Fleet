@@ -21,9 +21,10 @@ type Responder = (
 	values?: unknown[],
 ) => { rows: unknown[] } | undefined;
 
-function makePool(
-	responder?: Responder,
-): { pool: Pool; queries: RecordedQuery[] } {
+function makePool(responder?: Responder): {
+	pool: Pool;
+	queries: RecordedQuery[];
+} {
 	const queries: RecordedQuery[] = [];
 	const respond = async (...args: unknown[]) => {
 		const text =
@@ -192,7 +193,11 @@ describe("sor:context seed-org", () => {
 
 	it("requires a file argument", async () => {
 		const { pool } = makePool();
-		const res = await runContextCli({ pool, argv: ["seed-org"], log: () => {} });
+		const res = await runContextCli({
+			pool,
+			argv: ["seed-org"],
+			log: () => {},
+		});
 		expect(res.ok).toBe(false);
 		if (!res.ok) expect(res.reason).toContain("requires <file>");
 	});
@@ -248,7 +253,11 @@ describe("sor:context show", () => {
 								category: "org-constraints",
 								version: 2,
 								hash: "x",
-								operational_state: { allowedGitHosts: [], pushPolicy: "allow", worktreeOwnership: "fleet" },
+								operational_state: {
+									allowedGitHosts: [],
+									pushPolicy: "allow",
+									worktreeOwnership: "fleet",
+								},
 								fresh_until: null,
 								stale_after: null,
 								status: "active",

@@ -10,10 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashAgentDef } from "../db/audit.ts";
-import {
-	encodePolicyDocument,
-	type PolicyDocument,
-} from "../fleet/policy.ts";
+import { encodePolicyDocument, type PolicyDocument } from "../fleet/policy.ts";
 import type { FleetAgentDef, ToolName } from "../fleet/types.ts";
 import {
 	parsePolicyEnv,
@@ -52,7 +49,9 @@ const INTERSECTION: PolicyDocument = {
 	toolRules: { read: [] },
 };
 
-function sorSnapshot(overrides?: Partial<WorkerPolicySnapshot>): WorkerPolicySnapshot {
+function sorSnapshot(
+	overrides?: Partial<WorkerPolicySnapshot>,
+): WorkerPolicySnapshot {
 	return {
 		mode: "sor",
 		policyVersion: 3,
@@ -227,16 +226,18 @@ describe("dry-run worker makes zero policy DB-appends with a configured DB (P4.7
 		stderr: string;
 	}
 
-	function forkDryRun(job: unknown, env: NodeJS.ProcessEnv): Promise<DryRunResult> {
+	function forkDryRun(
+		job: unknown,
+		env: NodeJS.ProcessEnv,
+	): Promise<DryRunResult> {
 		return new Promise((resolve) => {
 			const lines: WireLine[] = [];
 			let stderr = "";
 			let pending = "";
-			const child = spawn(
-				process.execPath,
-				["--import", "tsx", WORKER_ENTRY],
-				{ env, stdio: ["pipe", "pipe", "pipe"] },
-			);
+			const child = spawn(process.execPath, ["--import", "tsx", WORKER_ENTRY], {
+				env,
+				stdio: ["pipe", "pipe", "pipe"],
+			});
 			child.stdout.setEncoding("utf8");
 			child.stdout.on("data", (chunk: string) => {
 				pending += chunk;
@@ -307,7 +308,9 @@ describe("dry-run worker makes zero policy DB-appends with a configured DB (P4.7
 			]);
 			// No policy_state event, and no "[sor] policy_state/decision skipped"
 			// warning — i.e. zero policy DB-appends were even attempted.
-			expect(result.stderr).not.toMatch(/\[sor\].*(policy_state|policy_decision)/);
+			expect(result.stderr).not.toMatch(
+				/\[sor\].*(policy_state|policy_decision)/,
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -334,9 +337,9 @@ describe("live sor-mode worker wires the policyDecision callback (Step 7 ↔ Ste
 		return new Promise((resolve) => {
 			const server = createServer(
 				(req: IncomingMessage, res: ServerResponse) => {
-					let body = "";
+					let _body = "";
 					req.on("data", (chunk: Buffer) => {
-						body += chunk.toString("utf8");
+						_body += chunk.toString("utf8");
 					});
 					req.on("end", () => {
 						setTimeout(() => {
@@ -356,7 +359,10 @@ describe("live sor-mode worker wires the policyDecision callback (Step 7 ↔ Ste
 		});
 	}
 
-	function forkLive(job: unknown, env: NodeJS.ProcessEnv): {
+	function forkLive(
+		job: unknown,
+		env: NodeJS.ProcessEnv,
+	): {
 		codePromise: Promise<number | null>;
 		lines: WireLine[];
 		stderrPromise: Promise<string>;
@@ -368,11 +374,10 @@ describe("live sor-mode worker wires the policyDecision callback (Step 7 ↔ Ste
 			resolveErr = r;
 		});
 		let pending = "";
-		const child = spawn(
-			process.execPath,
-			["--import", "tsx", WORKER_ENTRY],
-			{ env, stdio: ["pipe", "pipe", "pipe"] },
-		);
+		const child = spawn(process.execPath, ["--import", "tsx", WORKER_ENTRY], {
+			env,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
 		child.stdout.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
 			pending += chunk;
@@ -497,7 +502,8 @@ describe("live sor-mode worker wires the policyDecision callback (Step 7 ↔ Ste
 			// Effective sor registry exposes read only; the stub's bash call is
 			// denied side-effectless (no bash impl exists, DENY before any exec).
 			const toolResults = lines.filter(
-				(l): l is WireLine & { name: string; ok: boolean } => l.t === "tool_result",
+				(l): l is WireLine & { name: string; ok: boolean } =>
+					l.t === "tool_result",
 			);
 			expect(toolResults.length).toBeGreaterThanOrEqual(1);
 			const denied = toolResults.find((tr) => tr.name === "bash");

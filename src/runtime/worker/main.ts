@@ -11,10 +11,7 @@ import { plannerDef } from "../../fleet/agents/planner.ts";
 import { prDef } from "../../fleet/agents/pr.ts";
 import { reviewerDef } from "../../fleet/agents/reviewer.ts";
 import { testerDef } from "../../fleet/agents/tester.ts";
-import {
-	runAgent,
-	type WireEvent,
-} from "../../fleet/loop.ts";
+import { runAgent, type WireEvent } from "../../fleet/loop.ts";
 import {
 	decodePolicyDocument,
 	type PolicyDocument,
@@ -31,12 +28,12 @@ import { buildRegistry, type WtCtx } from "../../fleet/tools/registry.ts";
 import type { FleetAgentDef, ToolName } from "../../fleet/types.ts";
 import { buildSystemPromptWithC2 } from "../../mcp/contentTools.ts";
 import { policyFor } from "../../models/modelPolicy.ts";
-import { RESERVED_NAMESPACE } from "../../sor/kernel/types.ts";
 import {
 	getClientForProvider,
 	getFleetProviders,
 	providersWithKeys,
 } from "../../providers/registry.ts";
+import { RESERVED_NAMESPACE } from "../../sor/kernel/types.ts";
 import type { RequestIdentity } from "../../telemetry.ts";
 import type { ProviderName, Role } from "../../types.ts";
 
@@ -196,7 +193,9 @@ export interface WorkerPolicySnapshot {
 export function parsePolicyEnv(env: NodeJS.ProcessEnv): WorkerPolicySnapshot {
 	const rawMode = env.SOR_POLICY_MODE;
 	const mode: PolicyMode =
-		rawMode === "sor" || rawMode === "fail-closed" || rawMode === "compatibility"
+		rawMode === "sor" ||
+		rawMode === "fail-closed" ||
+		rawMode === "compatibility"
 			? rawMode
 			: "compatibility";
 	const rawVersion = env.SOR_POLICY_VERSION;
@@ -255,7 +254,11 @@ export function planWorkerPolicy(
 		};
 	}
 	const doc = snapshot.mode === "sor" ? snapshot.document : null;
-	if (snapshot.mode === "fail-closed" || !doc || doc.meta.subject_role !== def.name) {
+	if (
+		snapshot.mode === "fail-closed" ||
+		!doc ||
+		doc.meta.subject_role !== def.name
+	) {
 		return {
 			mode: "fail-closed",
 			policyVersion: snapshot.policyVersion,

@@ -20,8 +20,8 @@ vi.mock("../contentRetrieval.ts", () => ({
 }));
 
 import {
-	CONTENT_TOOL_DEFS,
 	buildSystemPromptWithC2,
+	CONTENT_TOOL_DEFS,
 	handleContentGetDocument,
 	handleContentListSources,
 	handleContentRetrieve,
@@ -56,7 +56,9 @@ describe("tool registration shape", () => {
 	});
 
 	it("content.get_document requires source+document and is read-only-shaped", () => {
-		const def = CONTENT_TOOL_DEFS.find((d) => d.name === "content.get_document")!;
+		const def = CONTENT_TOOL_DEFS.find(
+			(d) => d.name === "content.get_document",
+		)!;
 		expect(def.inputSchema.required).toEqual(["source", "document"]);
 		const props = def.inputSchema.properties as Record<string, any>;
 		expect(props.source.type).toBe("string");
@@ -93,7 +95,11 @@ describe("content.retrieve handler", () => {
 			],
 		});
 
-		const result = await handleContentRetrieve(pool, { query: "question" }, { sessionId: "sess-1" });
+		const result = await handleContentRetrieve(
+			pool,
+			{ query: "question" },
+			{ sessionId: "sess-1" },
+		);
 
 		expect(result.kind).toBe("hit");
 		if (result.kind === "hit") {
@@ -115,7 +121,8 @@ describe("content.retrieve handler", () => {
 			query: "question",
 		});
 		expect(mocks.emitContentAccessAggregate).toHaveBeenCalledTimes(1);
-		const [emittedPool, params] = mocks.emitContentAccessAggregate.mock.calls[0]!;
+		const [emittedPool, params] =
+			mocks.emitContentAccessAggregate.mock.calls[0]!;
 		expect(emittedPool).toBe(pool);
 		expect(params).toMatchObject({
 			sessionId: "sess-1",
@@ -132,7 +139,11 @@ describe("content.retrieve handler", () => {
 			query: "something rare",
 		});
 
-		const result = await handleContentRetrieve(pool, { query: "something rare" }, { sessionId: "sess-2" });
+		const result = await handleContentRetrieve(
+			pool,
+			{ query: "something rare" },
+			{ sessionId: "sess-2" },
+		);
 
 		expect(result).toEqual({
 			kind: "no-match",
@@ -140,7 +151,11 @@ describe("content.retrieve handler", () => {
 		});
 		expect(mocks.emitContentAccessAggregate).toHaveBeenCalledWith(
 			pool,
-			expect.objectContaining({ mode: "percall", count: 0, sessionId: "sess-2" }),
+			expect.objectContaining({
+				mode: "percall",
+				count: 0,
+				sessionId: "sess-2",
+			}),
 		);
 	});
 
@@ -169,8 +184,16 @@ describe("content.retrieve handler", () => {
 	});
 
 	it("passes source and limit through when provided", async () => {
-		mocks.retrieveKnowledge.mockResolvedValue({ ok: true, kind: "no-match", query: "x" });
-		await handleContentRetrieve(pool, { query: "x", source: "fleet", limit: 3 });
+		mocks.retrieveKnowledge.mockResolvedValue({
+			ok: true,
+			kind: "no-match",
+			query: "x",
+		});
+		await handleContentRetrieve(pool, {
+			query: "x",
+			source: "fleet",
+			limit: 3,
+		});
 		expect(mocks.retrieveKnowledge).toHaveBeenCalledWith(pool, {
 			query: "x",
 			source: "fleet",
@@ -188,7 +211,9 @@ describe("content.list_sources handler", () => {
 		const result = await handleContentListSources(pool, {});
 
 		expect(result).toEqual({
-			sources: [{ source: "fleet", document: "guide", version: 2, status: "active" }],
+			sources: [
+				{ source: "fleet", document: "guide", version: 2, status: "active" },
+			],
 		});
 		expect(mocks.listSources).toHaveBeenCalledWith(pool);
 	});

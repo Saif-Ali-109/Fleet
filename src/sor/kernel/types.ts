@@ -46,10 +46,10 @@ export function isSorRecordIdentity(x: unknown): x is SorRecordIdentity {
 	}
 	const cand = x as Record<string, unknown>;
 	return (
-		(typeof cand.sorType === "string" &&
-			(cand.sorType === "content" ||
-				cand.sorType === "policy" ||
-				cand.sorType === "context")) &&
+		typeof cand.sorType === "string" &&
+		(cand.sorType === "content" ||
+			cand.sorType === "policy" ||
+			cand.sorType === "context") &&
 		typeof cand.sourceId === "string" &&
 		cand.namespace === RESERVED_NAMESPACE &&
 		typeof cand.version === "number" &&

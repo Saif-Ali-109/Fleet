@@ -1,25 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+	type AccessDomain,
+	type AccessPrincipal,
 	assertReadAllowed,
 	assertWriteAllowed,
 	checkAccess,
 	isAppendOnly,
-	type AccessDomain,
-	type AccessPrincipal,
 } from "../access.ts";
 
-const DOMAINS: AccessDomain[] = [
-	"content",
-	"policy",
-	"context",
-	"audit",
-];
-const PRINCIPALS: AccessPrincipal[] = [
-	"agent",
-	"manager",
-	"cli",
-	"service",
-];
+const DOMAINS: AccessDomain[] = ["content", "policy", "context", "audit"];
+const PRINCIPALS: AccessPrincipal[] = ["agent", "manager", "cli", "service"];
 
 describe("read grants (T9.1)", () => {
 	it("allows every read cell for all four domains", () => {

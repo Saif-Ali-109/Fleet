@@ -10,10 +10,9 @@ describe("AT suite manifest", () => {
 		const missing = AT_SUITE_INCLUDE.filter(
 			(f) => !existsSync(resolve(cwd, f)),
 		);
-		expect(
-			missing,
-			`Missing AT suite files: ${missing.join(", ")}`,
-		).toEqual([]);
+		expect(missing, `Missing AT suite files: ${missing.join(", ")}`).toEqual(
+			[],
+		);
 	});
 
 	it("no duplicate entries", () => {

@@ -1,23 +1,23 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	ensurePolicyRegistry,
-	hashAgentDef,
-	loadRolePolicy,
-	reconcileRolePolicy,
-} from "../audit.ts";
-import { canonicalPolicyHash, capabilitySnapshot } from "../../fleet/policy.ts";
 import { analyzerDef } from "../../fleet/agents/analyzer.ts";
 import { coderDef } from "../../fleet/agents/coder.ts";
 import { plannerDef } from "../../fleet/agents/planner.ts";
 import { prDef } from "../../fleet/agents/pr.ts";
 import { reviewerDef } from "../../fleet/agents/reviewer.ts";
 import { testerDef } from "../../fleet/agents/tester.ts";
-import { GENESIS_HASH } from "../../sor/signer.ts";
+import { canonicalPolicyHash, capabilitySnapshot } from "../../fleet/policy.ts";
 import type { FleetAgentDef } from "../../fleet/types.ts";
-import { RESERVED_NAMESPACE } from "../../sor/kernel/types.ts";
 import type { PolicyDocument } from "../../sor/kernel/types.ts";
+import { RESERVED_NAMESPACE } from "../../sor/kernel/types.ts";
+import { GENESIS_HASH } from "../../sor/signer.ts";
 import type { Role } from "../../types.ts";
+import {
+	ensurePolicyRegistry,
+	hashAgentDef,
+	loadRolePolicy,
+	reconcileRolePolicy,
+} from "../audit.ts";
 
 const DEFS: Record<Role, FleetAgentDef> = {
 	analyzer: analyzerDef,
@@ -47,9 +47,10 @@ interface RecordedQuery {
 	values?: unknown[];
 }
 
-function makePool(
-	responder?: RegistryResponder,
-): { pool: Pool; queries: RecordedQuery[] } {
+function makePool(responder?: RegistryResponder): {
+	pool: Pool;
+	queries: RecordedQuery[];
+} {
 	const queries: RecordedQuery[] = [];
 	const respond = async (...args: unknown[]) => {
 		const text =
@@ -215,7 +216,7 @@ describe("legacy 014 backfill (P5.2)", () => {
 		);
 		expect(syncs.length).toBe(5);
 		for (const sync of syncs) {
-			expect((sync.values?.[8] as Record<string, unknown>).kind).toBe("seeded");
+			expect((sync.values![8] as Record<string, unknown>).kind).toBe("seeded");
 		}
 		// the other five roles still seed
 		expect(

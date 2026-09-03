@@ -13,13 +13,13 @@ vi.mock("../../db/audit.ts", () => ({
 	appendAuditEvent: mockAppendAuditEvent,
 }));
 
+import type { SorEvent } from "../../sor/events.ts";
 import {
 	emitContentAccessAggregate,
 	getDocument,
 	listSources,
 	retrieveKnowledge,
 } from "../contentRetrieval.ts";
-import type { SorEvent } from "../../sor/events.ts";
 
 interface RecordedQuery {
 	text: string;
@@ -92,12 +92,15 @@ describe("retrieveKnowledge — FTS primary, provenance, unavailable≠no-match"
 			recorded,
 		);
 
-		const result = await retrieveKnowledge(pool, { query: "test query", limit: 5 });
+		const result = await retrieveKnowledge(pool, {
+			query: "test query",
+			limit: 5,
+		});
 
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
 			expect(result.items).toHaveLength(1);
-			expect(result.items[0]!.text).toBe("chunk text");
+			expect(result.items[0]?.text).toBe("chunk text");
 		}
 
 		const insert = recorded.find((q) =>
@@ -105,7 +108,9 @@ describe("retrieveKnowledge — FTS primary, provenance, unavailable≠no-match"
 		);
 		expect(insert).toBeDefined();
 		expect(insert?.text).toContain("plainto_tsquery('english', $1)");
-		expect(insert?.text).toContain("ts_rank_cd(to_tsvector('english', cc.text)");
+		expect(insert?.text).toContain(
+			"ts_rank_cd(to_tsvector('english', cc.text)",
+		);
 		expect(insert?.text).toContain("JOIN content_sor cs");
 		expect(insert?.text).toContain("cs.status = 'active'");
 	});
@@ -150,7 +155,11 @@ describe("retrieveKnowledge — FTS primary, provenance, unavailable≠no-match"
 
 		const result = await retrieveKnowledge(pool, { query: "nonexistent" });
 
-		expect(result).toEqual({ ok: true, kind: "no-match", query: "nonexistent" });
+		expect(result).toEqual({
+			ok: true,
+			kind: "no-match",
+			query: "nonexistent",
+		});
 	});
 
 	it("returns unavailable on DB error (ok=false, kind=unavailable)", async () => {
@@ -191,7 +200,7 @@ describe("retrieveKnowledge — FTS primary, provenance, unavailable≠no-match"
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
 			expect(result.items).toHaveLength(1);
-			expect(result.items[0]!.provenance.document).toBe("valid");
+			expect(result.items[0]?.provenance.document).toBe("valid");
 		}
 		// Verify the SQL includes the status filter
 		const insert = recorded.find((q) =>
@@ -255,7 +264,7 @@ describe("retrieveKnowledge — FTS primary, provenance, unavailable≠no-match"
 
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
-			expect(result.items[0]!.score).toBeGreaterThan(0);
+			expect(result.items[0]?.score).toBeGreaterThan(0);
 		}
 
 		const insert = recorded.find((q) =>
@@ -311,7 +320,12 @@ describe("listSources — distinct sources from content_sor", () => {
 			[
 				{ source: "fleet", document: "guide", version: "2", status: "active" },
 				{ source: "fleet", document: "api", version: "1", status: "active" },
-				{ source: "external", document: "spec", version: "3", status: "active" },
+				{
+					source: "external",
+					document: "spec",
+					version: "3",
+					status: "active",
+				},
 			],
 			recorded,
 		);
@@ -605,7 +619,9 @@ describe("emitContentAccessAggregate — NON-FATAL session aggregate event", () 
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(consoleWarn).toHaveBeenCalledWith(
-			expect.stringContaining("[contentRetrieval] content_access aggregate emit failed"),
+			expect.stringContaining(
+				"[contentRetrieval] content_access aggregate emit failed",
+			),
 		);
 
 		consoleWarn.mockRestore();

@@ -10,8 +10,8 @@ import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appendAuditEvent } from "../../db/audit.ts";
 import { buildToolEmission } from "../../fleet/sorEmit.ts";
-import { normalizeEvent } from "../events.ts";
 import type { SorEvent } from "../events.ts";
+import { normalizeEvent } from "../events.ts";
 import { GENESIS_HASH, signEvent } from "../signer.ts";
 
 const KEY = "test-signing-key";
@@ -97,7 +97,9 @@ function failingInsertPool(recorded: RecordedQuery[]): Pool {
 
 /** §12.2 / §21.2 locked policy_decision payload.
  *  Overrides spread at the top level (raw, pre-normalize). */
-function rawPolicyDecision(overrides?: Record<string, unknown>): Record<string, unknown> {
+function rawPolicyDecision(
+	overrides?: Record<string, unknown>,
+): Record<string, unknown> {
 	return {
 		run_id: "run-policy-1",
 		event_type: "policy_decision",
@@ -169,7 +171,12 @@ describe("policy_decision append via appendAuditEvent (P2.4)", () => {
 		expect(insert?.values?.[9]).toBe("prev-hash");
 		expect(insert?.values?.[11]).toBe("v1");
 		expect(insert?.values?.[10]).toBe(
-			signEvent(KEY, "prev-hash", { ...event, created_at: event.created_at }, "v1"),
+			signEvent(
+				KEY,
+				"prev-hash",
+				{ ...event, created_at: event.created_at },
+				"v1",
+			),
 		);
 	});
 
@@ -240,7 +247,7 @@ describe("policy_decision append via appendAuditEvent (P2.4)", () => {
 
 		const event = normalizeEvent(rawPolicyDecision());
 		// The PEP decided DENY before the (failed) audit append ever ran.
-		let decision: "ALLOW" | "DENY" = "DENY";
+		const decision: "ALLOW" | "DENY" = "DENY";
 		let loopContinued = false;
 
 		const appended = await appendPolicyDecisionNonFatal(pool, event);

@@ -4,16 +4,16 @@
 // Also exports buildSystemPromptWithC2 (append C2 directive to a worker systemPrompt).
 
 import type { Pool } from "pg";
+import { C2_GROUNDING_DIRECTIVE } from "../fleet/c2Directive.ts";
 import {
-	getDocument,
-	listSources,
-	retrieveKnowledge,
 	emitContentAccessAggregate,
 	type GetDocumentResult,
+	getDocument,
 	type ListSourcesResult,
+	listSources,
 	type RetrievalResult,
+	retrieveKnowledge,
 } from "../fleet/contentRetrieval.ts";
-import { C2_GROUNDING_DIRECTIVE } from "../fleet/c2Directive.ts";
 
 export interface ContentRetrieveArgs {
 	query: string;
@@ -34,7 +34,16 @@ export interface ContentToolContext {
 
 export interface ContentRetrieveHit {
 	kind: "hit";
-	items: { text: string; provenance: { source: string; document: string; section: string; version: number; content_hash: string } }[];
+	items: {
+		text: string;
+		provenance: {
+			source: string;
+			document: string;
+			section: string;
+			version: number;
+			content_hash: string;
+		};
+	}[];
 }
 
 export type ContentRetrieveToolResult =
@@ -43,7 +52,19 @@ export type ContentRetrieveToolResult =
 	| { kind: "unavailable"; message: string; error: string };
 
 export type ContentGetDocumentToolResult =
-	| { kind: "hit"; document: { text: string; provenance: { source: string; document: string; section: string; version: number; content_hash: string } } }
+	| {
+			kind: "hit";
+			document: {
+				text: string;
+				provenance: {
+					source: string;
+					document: string;
+					section: string;
+					version: number;
+					content_hash: string;
+				};
+			};
+	  }
 	| { kind: "not-found"; message: string }
 	| { kind: "unavailable"; message: string; error: string };
 
@@ -56,7 +77,8 @@ export interface ContentListSourcesToolResult {
 export const CONTENT_TOOL_DEFS = [
 	{
 		name: "content.retrieve",
-		description: "Retrieve authoritative Content SoR knowledge with mandatory provenance.",
+		description:
+			"Retrieve authoritative Content SoR knowledge with mandatory provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -69,7 +91,8 @@ export const CONTENT_TOOL_DEFS = [
 	},
 	{
 		name: "content.list_sources",
-		description: "List authoritative Content SoR sources and document versions.",
+		description:
+			"List authoritative Content SoR sources and document versions.",
 		inputSchema: {
 			type: "object",
 			properties: {},
@@ -78,7 +101,8 @@ export const CONTENT_TOOL_DEFS = [
 	},
 	{
 		name: "content.get_document",
-		description: "Get an authoritative Content SoR document with full provenance.",
+		description:
+			"Get an authoritative Content SoR document with full provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -113,22 +137,16 @@ function rejectUnknownArgs(
 	}
 }
 
-function reqString(
-	v: unknown,
-	key: string,
-	tool: string,
-): string {
+function reqString(v: unknown, key: string, tool: string): string {
 	if (typeof v !== "string" || v.length === 0) {
-		throw new Error(`Tool ${tool}: missing or invalid string argument '${key}'`);
+		throw new Error(
+			`Tool ${tool}: missing or invalid string argument '${key}'`,
+		);
 	}
 	return v;
 }
 
-function optString(
-	v: unknown,
-	key: string,
-	tool: string,
-): string | undefined {
+function optString(v: unknown, key: string, tool: string): string | undefined {
 	if (v === undefined) return undefined;
 	if (typeof v !== "string") {
 		throw new Error(`Tool ${tool}: invalid string argument '${key}'`);
@@ -136,11 +154,7 @@ function optString(
 	return v;
 }
 
-function optNumber(
-	v: unknown,
-	key: string,
-	tool: string,
-): number | undefined {
+function optNumber(v: unknown, key: string, tool: string): number | undefined {
 	if (v === undefined) return undefined;
 	if (typeof v !== "number" || Number.isNaN(v)) {
 		throw new Error(`Tool ${tool}: invalid number argument '${key}'`);

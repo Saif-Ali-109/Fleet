@@ -4,13 +4,13 @@
 
 import { readFile } from "node:fs/promises";
 import type { Pool } from "pg";
-import { putContext } from "../fleet/contextStore.ts";
+import type { ContextCategory } from "../fleet/context.ts";
 import {
 	getContext,
 	getOrgConstraints,
 	listContexts,
 } from "../fleet/contextRetrieval.ts";
-import type { ContextCategory } from "../fleet/context.ts";
+import { putContext } from "../fleet/contextStore.ts";
 
 export interface OrgConstraints {
 	allowedGitHosts: string[];
@@ -47,19 +47,19 @@ function validateOrgConstraints(raw: unknown): string | null {
 	}
 	const v = raw as Record<string, unknown>;
 	if (
-		!Object.prototype.hasOwnProperty.call(v, "allowedGitHosts") ||
+		!Object.hasOwn(v, "allowedGitHosts") ||
 		!isStringArray(v.allowedGitHosts)
 	) {
 		return "malformed org-constraints: allowedGitHosts must be a string[]";
 	}
 	if (
-		!Object.prototype.hasOwnProperty.call(v, "pushPolicy") ||
+		!Object.hasOwn(v, "pushPolicy") ||
 		(v.pushPolicy !== "allow" && v.pushPolicy !== "deny")
 	) {
-		return "malformed org-constraints: pushPolicy must be \"allow\" | \"deny\"";
+		return 'malformed org-constraints: pushPolicy must be "allow" | "deny"';
 	}
 	if (
-		!Object.prototype.hasOwnProperty.call(v, "worktreeOwnership") ||
+		!Object.hasOwn(v, "worktreeOwnership") ||
 		typeof v.worktreeOwnership !== "string"
 	) {
 		return "malformed org-constraints: worktreeOwnership must be a string";
@@ -67,7 +67,11 @@ function validateOrgConstraints(raw: unknown): string | null {
 	return null;
 }
 
-async function seedOrg(pool: Pool, file: string, log: (l: string) => void): Promise<ContextCliResult> {
+async function seedOrg(
+	pool: Pool,
+	file: string,
+	log: (l: string) => void,
+): Promise<ContextCliResult> {
 	let text: string;
 	try {
 		text = await readFile(file, "utf8");
@@ -111,7 +115,11 @@ async function seedOrg(pool: Pool, file: string, log: (l: string) => void): Prom
 	};
 }
 
-async function show(pool: Pool, sourceId: string | undefined, log: (l: string) => void): Promise<ContextCliResult> {
+async function show(
+	pool: Pool,
+	sourceId: string | undefined,
+	log: (l: string) => void,
+): Promise<ContextCliResult> {
 	const result =
 		sourceId === undefined
 			? await getOrgConstraints(pool)
@@ -133,8 +141,15 @@ async function show(pool: Pool, sourceId: string | undefined, log: (l: string) =
 	};
 }
 
-async function list(pool: Pool, category: ContextCategory | undefined, log: (l: string) => void): Promise<ContextCliResult> {
-	const result = await listContexts(pool, category === undefined ? undefined : { category });
+async function list(
+	pool: Pool,
+	category: ContextCategory | undefined,
+	log: (l: string) => void,
+): Promise<ContextCliResult> {
+	const result = await listContexts(
+		pool,
+		category === undefined ? undefined : { category },
+	);
 	if (!result.ok) {
 		return { ok: false, reason: result.error };
 	}
@@ -143,7 +158,9 @@ async function list(pool: Pool, category: ContextCategory | undefined, log: (l: 
 		return { ok: true, detail: "no context sources" };
 	}
 	for (const item of result.items) {
-		log(`${item.sourceId} | ${item.category} | ${item.version} | ${item.status}`);
+		log(
+			`${item.sourceId} | ${item.category} | ${item.version} | ${item.status}`,
+		);
 	}
 	return {
 		ok: true,
@@ -213,7 +230,7 @@ async function main(): Promise<void> {
 
 const isEntry =
 	process.argv[1] &&
-	import.meta.url === new URL("file://" + process.argv[1]).href;
+	import.meta.url === new URL(`file://${process.argv[1]}`).href;
 
 if (isEntry) {
 	main();

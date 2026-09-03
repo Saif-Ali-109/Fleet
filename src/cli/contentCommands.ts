@@ -362,7 +362,7 @@ async function main(): Promise<void> {
 
 const isEntry =
 	process.argv[1] &&
-	import.meta.url === new URL("file://" + process.argv[1]).href;
+	import.meta.url === new URL(`file://${process.argv[1]}`).href;
 
 if (isEntry) {
 	main();

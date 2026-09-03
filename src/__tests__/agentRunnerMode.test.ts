@@ -4,17 +4,17 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
-	policyForkEnv,
-	resolvePolicyMode,
 	isSorPolicyConfigured,
 	type PolicyModeResolution,
+	policyForkEnv,
+	resolvePolicyMode,
 } from "../agentRunner.ts";
+import type { LoadedRolePolicy } from "../db/audit.ts";
 import {
 	canonicalPolicyHash,
 	emptyPolicy,
 	type PolicyDocument,
 } from "../fleet/policy.ts";
-import type { LoadedRolePolicy } from "../db/audit.ts";
 import type { Role } from "../types.ts";
 
 const ROLE: Role = "coder";
@@ -31,9 +31,7 @@ function validLoaded(doc: PolicyDocument, version = 3): LoadedRolePolicy {
 	};
 }
 
-function docWith(
-	overrides: Partial<PolicyDocument> = {},
-): PolicyDocument {
+function docWith(overrides: Partial<PolicyDocument> = {}): PolicyDocument {
 	return {
 		schemaVersion: 1,
 		meta: { subject_role: ROLE },
@@ -77,7 +75,10 @@ describe("resolvePolicyMode (P5.6)", () => {
 
 	it("(branch 3) configured + reachable + zero rows ⇒ declared compatibility, never fail-closed", async () => {
 		const load = vi.fn(
-			async (): Promise<LoadedRolePolicy> => ({ status: "absent", policy: null }),
+			async (): Promise<LoadedRolePolicy> => ({
+				status: "absent",
+				policy: null,
+			}),
 		);
 		const res = await resolvePolicyMode({
 			role: ROLE,
@@ -164,9 +165,7 @@ describe("resolvePolicyMode (P5.6)", () => {
 
 describe("policyForkEnv (snapshot injection, spec §9.7)", () => {
 	it("compatibility ⇒ no SOR_POLICY_* env at all", () => {
-		expect(
-			policyForkEnv({ mode: "compatibility", absent: true }),
-		).toEqual({});
+		expect(policyForkEnv({ mode: "compatibility", absent: true })).toEqual({});
 		expect(policyForkEnv({ mode: "compatibility" })).toEqual({});
 	});
 

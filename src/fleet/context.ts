@@ -1,4 +1,4 @@
-import { sha256Hex, canonicalizeText } from "../sor/kernel/hash.ts";
+import { canonicalizeText, sha256Hex } from "../sor/kernel/hash.ts";
 import { freshnessOf } from "../sor/kernel/provenance.ts";
 
 export type ContextCategory = "run" | "org-constraints";
@@ -17,7 +17,15 @@ export interface ContextDoc {
 }
 
 export type ContextReadResult =
-	| { ok: true; item: { state: unknown; fresh: boolean; staleAfter: string; version: number } }
+	| {
+			ok: true;
+			item: {
+				state: unknown;
+				fresh: boolean;
+				staleAfter: string;
+				version: number;
+			};
+	  }
 	| { ok: false; kind: "not-found" | "unavailable"; error?: string };
 
 const BASE_TTL_HOURS = 24;
@@ -40,7 +48,10 @@ export function baseTtlMs(env?: NodeJS.ProcessEnv): number {
 	return hours * MS_PER_HOUR;
 }
 
-export function ttlForCategory(category: ContextCategory, env?: NodeJS.ProcessEnv): number {
+export function ttlForCategory(
+	category: ContextCategory,
+	env?: NodeJS.ProcessEnv,
+): number {
 	const baseMs = baseTtlMs(env);
 	const hours = parsePositiveNumber(env?.[CATEGORY_ENV_KEYS[category]]);
 	return hours === undefined ? baseMs : hours * MS_PER_HOUR;

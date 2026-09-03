@@ -6,16 +6,16 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../../types.ts";
-import { computeContextHash } from "../context.ts";
 import type {
+	ContextCategory,
 	ContextDoc,
 	ContextReadResult,
-	ContextCategory,
 } from "../context.ts";
-import { putContext } from "../contextStore.ts";
-import type { PutContextInput, PutContextResult } from "../contextStore.ts";
+import { computeContextHash } from "../context.ts";
 import { getContext } from "../contextRetrieval.ts";
 import { seedRunContext } from "../contextSeed.ts";
+import type { PutContextInput, PutContextResult } from "../contextStore.ts";
+import { putContext } from "../contextStore.ts";
 
 const TEST_KEY = "test-signing-key-for-context-acceptance";
 let savedKey: string | undefined;
@@ -137,7 +137,10 @@ describe("AT-7 — FR-17: agents never write", () => {
 			state: { status: "provisioning" },
 			actor: "agent",
 		});
-		expect(result).toEqual({ ok: false, reason: "agents cannot write context" });
+		expect(result).toEqual({
+			ok: false,
+			reason: "agents cannot write context",
+		});
 		expect(recorded).toHaveLength(0);
 	});
 
@@ -152,8 +155,12 @@ describe("AT-7 — FR-17: agents never write", () => {
 			now: "2024-01-01T00:00:00.000Z",
 		});
 		expect(result).toEqual({ ok: true, kind: "added", version: 1 });
-		expect(recorded.some((q) => q.text.includes("INSERT INTO context_sor"))).toBe(true);
-		expect(recorded.some((q) => q.text.includes("INSERT INTO audit_events"))).toBe(true);
+		expect(
+			recorded.some((q) => q.text.includes("INSERT INTO context_sor")),
+		).toBe(true);
+		expect(
+			recorded.some((q) => q.text.includes("INSERT INTO audit_events")),
+		).toBe(true);
 	});
 });
 
@@ -244,10 +251,7 @@ describe("AT-7 — FR-19: context_update carries prevVersion", () => {
 
 	it("update write emits context_update with prevVersion = prior version", async () => {
 		const recorded: RecordedQuery[] = [];
-		const pool = recordingPool(
-			[[{ version: 2, hash: "old-hash" }]],
-			recorded,
-		);
+		const pool = recordingPool([[{ version: 2, hash: "old-hash" }]], recorded);
 		await putContext(pool, {
 			sourceId: "fleet|run|run-abc-123",
 			category: "run",
@@ -320,7 +324,10 @@ describe("C6 — run-scoped seed wiring seam (seedRunContext)", () => {
 			q.text.includes("INSERT INTO context_sor"),
 		);
 		expect(insertSor).toBeDefined();
-		const state = JSON.parse(insertSor?.values?.[5] as string) as Record<string, unknown>;
+		const state = JSON.parse(insertSor?.values?.[5] as string) as Record<
+			string,
+			unknown
+		>;
 		expect(state.runId).toBe("run-abc-123");
 		expect(state.repoUrl).toBe("https://github.com/org/repo.git");
 		expect(state.branch).toBe("fix-issue-7");

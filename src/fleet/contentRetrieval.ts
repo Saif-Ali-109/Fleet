@@ -51,21 +51,29 @@ function isVectorRankEnabled(): boolean {
 	return process.env.CONTENT_EMBED_RANK === "true";
 }
 
-function buildFtsQuery(query: string): string {
+function buildFtsQuery(_query: string): string {
 	// plainto_tsquery for deterministic lexical matching
 	return `plainto_tsquery('english', $1)`;
 }
 
 export async function retrieveKnowledge(
 	pool: Pool,
-	params: { query: string; source?: string; limit?: number; queryEmbedding?: number[] },
+	params: {
+		query: string;
+		source?: string;
+		limit?: number;
+		queryEmbedding?: number[];
+	},
 ): Promise<RetrievalResult> {
 	const { query, source, limit = 10, queryEmbedding } = params;
 
 	try {
 		// Build the FTS query
 		const ftsQuery = buildFtsQuery(query);
-		const useVector = isVectorRankEnabled() && queryEmbedding !== undefined && queryEmbedding.length > 0;
+		const useVector =
+			isVectorRankEnabled() &&
+			queryEmbedding !== undefined &&
+			queryEmbedding.length > 0;
 
 		let sql: string;
 		const values: unknown[] = [query];
@@ -204,7 +212,7 @@ export async function getDocument(
 		const values: unknown[] = [source, document];
 
 		if (version !== undefined) {
-			sql += " AND cs.version = $" + (values.length + 1);
+			sql += ` AND cs.version = $${values.length + 1}`;
 			values.push(version);
 		} else {
 			// Latest active version
@@ -212,7 +220,7 @@ export async function getDocument(
 		}
 
 		if (section !== undefined) {
-			sql += " AND cc.section = $" + (values.length + 1);
+			sql += ` AND cc.section = $${values.length + 1}`;
 			values.push(section);
 		}
 

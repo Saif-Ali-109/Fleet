@@ -51,7 +51,9 @@ function recordingPool(
 	} as unknown as Pool;
 }
 
-function activeRow(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+function activeRow(
+	overrides: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
 	return {
 		source_id: "run:abc123",
 		category: "run",
@@ -106,7 +108,10 @@ describe("getContext — retrieval with freshness and status/version filters", (
 	});
 
 	it("no fresh_until stamp: treated as stale with staleAfter from category TTL", async () => {
-		const pool = recordingPool([activeRow({ fresh_until: undefined, stale_after: undefined })], recorded);
+		const pool = recordingPool(
+			[activeRow({ fresh_until: undefined, stale_after: undefined })],
+			recorded,
+		);
 		const res = await getContext(pool, { category: "run" });
 
 		expect(res.ok).toBe(true);
@@ -126,7 +131,10 @@ describe("getContext — retrieval with freshness and status/version filters", (
 	});
 
 	it("unavailable: DB error maps to unavailable (distinct from not-found)", async () => {
-		const pool = recordingPool([], recorded, { shouldFail: true, failMessage: "boom" });
+		const pool = recordingPool([], recorded, {
+			shouldFail: true,
+			failMessage: "boom",
+		});
 		const res = await getContext(pool, { category: "run" });
 
 		expect(res.ok).toBe(false);
@@ -136,14 +144,19 @@ describe("getContext — retrieval with freshness and status/version filters", (
 	});
 
 	it("version lookup: specific version requested, status filter not enforced", async () => {
-		const pool = recordingPool([activeRow({ version: 2, status: "superseded" })], recorded);
+		const pool = recordingPool(
+			[activeRow({ version: 2, status: "superseded" })],
+			recorded,
+		);
 		const res = await getContext(pool, { category: "run", version: 2 });
 
 		expect(res.ok).toBe(true);
 		if (!res.ok) return;
 		expect(res.item.version).toBe(2);
 		// version specified ⇒ no status='active' filter in the query
-		expect(recorded.some((q) => /status\s*=\s*'active'/i.test(q.text))).toBe(false);
+		expect(recorded.some((q) => /status\s*=\s*'active'/i.test(q.text))).toBe(
+			false,
+		);
 	});
 
 	it("latest lookup filters by status='active'", async () => {
@@ -151,7 +164,9 @@ describe("getContext — retrieval with freshness and status/version filters", (
 		const res = await getContext(pool, { category: "run" });
 
 		expect(res.ok).toBe(true);
-		expect(recorded.some((q) => /status\s*=\s*'active'/i.test(q.text))).toBe(true);
+		expect(recorded.some((q) => /status\s*=\s*'active'/i.test(q.text))).toBe(
+			true,
+		);
 	});
 });
 
@@ -166,7 +181,12 @@ describe("listContexts — distinct latest per sourceId", () => {
 		const pool = recordingPool(
 			[
 				{ source_id: "a", category: "run", version: 2, status: "active" },
-				{ source_id: "b", category: "org-constraints", version: 1, status: "active" },
+				{
+					source_id: "b",
+					category: "org-constraints",
+					version: 1,
+					status: "active",
+				},
 			],
 			recorded,
 		);
@@ -175,8 +195,18 @@ describe("listContexts — distinct latest per sourceId", () => {
 		expect(res.ok).toBe(true);
 		if (!res.ok) return;
 		expect(res.items).toHaveLength(2);
-		expect(res.items[0]).toEqual({ sourceId: "a", category: "run", version: 2, status: "active" });
-		expect(res.items[1]).toEqual({ sourceId: "b", category: "org-constraints", version: 1, status: "active" });
+		expect(res.items[0]).toEqual({
+			sourceId: "a",
+			category: "run",
+			version: 2,
+			status: "active",
+		});
+		expect(res.items[1]).toEqual({
+			sourceId: "b",
+			category: "org-constraints",
+			version: 1,
+			status: "active",
+		});
 		expect(onlySelects(recorded)).toBe(true);
 	});
 
@@ -189,7 +219,10 @@ describe("listContexts — distinct latest per sourceId", () => {
 	});
 
 	it("unavailable: DB error returns unavailable", async () => {
-		const pool = recordingPool([], recorded, { shouldFail: true, failMessage: "nope" });
+		const pool = recordingPool([], recorded, {
+			shouldFail: true,
+			failMessage: "nope",
+		});
 		const res = await listContexts(pool);
 
 		expect(res.ok).toBe(false);

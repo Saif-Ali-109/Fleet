@@ -40,7 +40,7 @@ describe("parseRateLimitSwitch", () => {
 		expect(parseRateLimitSwitch("")).toBeUndefined();
 		expect(parseRateLimitSwitch("GEMINI_RATE_LIMIT_SWITCH")).toBeUndefined();
 		expect(
-			parseRateLimitSwitch("x" + rateLimitSwitchError("rpm", 1).message),
+			parseRateLimitSwitch(`x${rateLimitSwitchError("rpm", 1).message}`),
 		).toBeUndefined();
 	});
 

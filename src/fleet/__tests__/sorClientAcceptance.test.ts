@@ -19,9 +19,8 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RulePredicate } from "../../sor/kernel/types.ts";
-
-import { buildSorClient, type SorClient } from "../sorClient.ts";
 import type { EffectiveToolSet } from "../policyEval.ts";
+import { buildSorClient, type SorClient } from "../sorClient.ts";
 
 interface RecordedQuery {
 	text: string;
@@ -58,7 +57,10 @@ function recordingPool(
 	];
 	const fail = (text: string): boolean => {
 		if (options.shouldFail) return true;
-		if (options.failOnQuery !== undefined && text.includes(options.failOnQuery)) {
+		if (
+			options.failOnQuery !== undefined &&
+			text.includes(options.failOnQuery)
+		) {
 			return true;
 		}
 		return false;
@@ -138,7 +140,9 @@ afterEach(() => {
 	else process.env.SOR_KEY_ID = savedKeyId;
 });
 
-const hitRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+const hitRow = (
+	overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
 	text: "grounded chunk",
 	section: "Section One",
 	chunk_index: 0,
@@ -183,7 +187,9 @@ describe("AT — unified surface through ONE client (§13)", () => {
 		expect(typeof client.evaluatePolicy).toBe("function");
 		expect(typeof client.recordProvenance).toBe("function");
 
-		const knowledge = await client.retrieveKnowledge(pool, { query: "how do I" });
+		const knowledge = await client.retrieveKnowledge(pool, {
+			query: "how do I",
+		});
 		expect(knowledge.ok).toBe(true);
 		if (knowledge.ok && knowledge.kind === "hit") {
 			expect(knowledge.items[0]!.provenance.content_hash).toBe("dochash123");
@@ -202,15 +208,26 @@ describe("AT — unified surface through ONE client (§13)", () => {
 			effective: { allowedTools: [], mcpAllow: [] },
 			rules: {},
 		});
-		expect(decision).toEqual({ allowed: false, decision: "DENY", reason: "unknown tool: unknown-tool" });
+		expect(decision).toEqual({
+			allowed: false,
+			decision: "DENY",
+			reason: "unknown tool: unknown-tool",
+		});
 
 		await client.recordProvenance(pool, {
 			topic: "content-access",
-			payload: { sessionId: "sess-1", mode: "aggregate", count: 1, topSources: ["fleet"] },
+			payload: {
+				sessionId: "sess-1",
+				mode: "aggregate",
+				count: 1,
+				topSources: ["fleet"],
+			},
 		});
 		await new Promise((r) => setTimeout(r, 10));
 
-		const accessEvent = auditEvents.find((e) => e.event_type === "content_access");
+		const accessEvent = auditEvents.find(
+			(e) => e.event_type === "content_access",
+		);
 		expect(accessEvent).toBeDefined();
 	});
 });
@@ -220,11 +237,13 @@ describe("AT — knowledge semantics preserved (§13 grounding, FR-14)", () => {
 		const recorded: RecordedQuery[] = [];
 		const pool = recordingPool(recorded, auditEvents, { rows: [hitRow()] });
 
-		const result = await buildSorClient(pool).retrieveKnowledge(pool, { query: "x" });
+		const result = await buildSorClient(pool).retrieveKnowledge(pool, {
+			query: "x",
+		});
 
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
-			expect(result.items[0]!.provenance).toEqual({
+			expect(result.items[0]?.provenance).toEqual({
 				source: "fleet",
 				document: "guide",
 				section: "Section One",
@@ -238,16 +257,22 @@ describe("AT — knowledge semantics preserved (§13 grounding, FR-14)", () => {
 		const recorded: RecordedQuery[] = [];
 		const pool = recordingPool(recorded, auditEvents, { rows: [] });
 
-		const result = await buildSorClient(pool).retrieveKnowledge(pool, { query: "nope" });
+		const result = await buildSorClient(pool).retrieveKnowledge(pool, {
+			query: "nope",
+		});
 
 		expect(result).toEqual({ ok: true, kind: "no-match", query: "nope" });
 	});
 
 	it("DB failure is unavailable, distinct from no-match", async () => {
 		const recorded: RecordedQuery[] = [];
-		const pool = recordingPool(recorded, auditEvents, { failOnQuery: "content_chunks" });
+		const pool = recordingPool(recorded, auditEvents, {
+			failOnQuery: "content_chunks",
+		});
 
-		const result = await buildSorClient(pool).retrieveKnowledge(pool, { query: "x" });
+		const result = await buildSorClient(pool).retrieveKnowledge(pool, {
+			query: "x",
+		});
 
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
@@ -271,7 +296,9 @@ describe("AT — context semantics preserved (§13 context, FR-18)", () => {
 		const recorded: RecordedQuery[] = [];
 		const pool = recordingPool(recorded, auditEvents, { rows: [freshRow()] });
 
-		const res = await buildSorClient(pool).retrieveContext(pool, { category: "run" });
+		const res = await buildSorClient(pool).retrieveContext(pool, {
+			category: "run",
+		});
 
 		expect(res.ok).toBe(true);
 		if (res.ok) {
@@ -284,9 +311,13 @@ describe("AT — context semantics preserved (§13 context, FR-18)", () => {
 
 	it("past-TTL row → fresh:false (non-authoritative)", async () => {
 		const recorded: RecordedQuery[] = [];
-		const pool = recordingPool(recorded, auditEvents, { rows: [freshRow(true)] });
+		const pool = recordingPool(recorded, auditEvents, {
+			rows: [freshRow(true)],
+		});
 
-		const res = await buildSorClient(pool).retrieveContext(pool, { category: "run" });
+		const res = await buildSorClient(pool).retrieveContext(pool, {
+			category: "run",
+		});
 
 		expect(res.ok).toBe(true);
 		if (res.ok) {
@@ -299,7 +330,9 @@ describe("AT — context semantics preserved (§13 context, FR-18)", () => {
 		const recorded: RecordedQuery[] = [];
 		const pool = recordingPool(recorded, auditEvents, { rows: [] });
 
-		const res = await buildSorClient(pool).retrieveContext(pool, { category: "run" });
+		const res = await buildSorClient(pool).retrieveContext(pool, {
+			category: "run",
+		});
 
 		expect(res.ok).toBe(false);
 		if (!res.ok) {
@@ -309,9 +342,13 @@ describe("AT — context semantics preserved (§13 context, FR-18)", () => {
 
 	it("DB failure → unavailable", async () => {
 		const recorded: RecordedQuery[] = [];
-		const pool = recordingPool(recorded, auditEvents, { failOnQuery: "context_sor" });
+		const pool = recordingPool(recorded, auditEvents, {
+			failOnQuery: "context_sor",
+		});
 
-		const res = await buildSorClient(pool).retrieveContext(pool, { category: "run" });
+		const res = await buildSorClient(pool).retrieveContext(pool, {
+			category: "run",
+		});
 
 		expect(res.ok).toBe(false);
 		if (!res.ok) {
@@ -322,9 +359,13 @@ describe("AT — context semantics preserved (§13 context, FR-18)", () => {
 
 	it("context value is returned with freshness, never conflated across kinds", async () => {
 		const recorded: RecordedQuery[] = [];
-		const pool = recordingPool(recorded, auditEvents, { rows: [freshRow(true)] });
+		const pool = recordingPool(recorded, auditEvents, {
+			rows: [freshRow(true)],
+		});
 
-		const res = await buildSorClient(pool).retrieveContext(pool, { category: "run" });
+		const res = await buildSorClient(pool).retrieveContext(pool, {
+			category: "run",
+		});
 
 		if (res.ok) {
 			expect(res.item).toHaveProperty("state");
@@ -348,19 +389,27 @@ describe("AT — policy semantics preserved (§13 acting, fail-closed)", () => {
 
 	it("granted + rule-clean → ALLOW", () => {
 		const recorded: RecordedQuery[] = [];
-		const decision = buildSorClient(recordingPool(recorded, auditEvents)).evaluatePolicy({
+		const decision = buildSorClient(
+			recordingPool(recorded, auditEvents),
+		).evaluatePolicy({
 			toolName: "tool-a",
 			input: {},
 			effective,
 			rules: {},
 		});
 
-		expect(decision).toEqual({ allowed: true, decision: "ALLOW", reason: "allowed" });
+		expect(decision).toEqual({
+			allowed: true,
+			decision: "ALLOW",
+			reason: "allowed",
+		});
 	});
 
 	it("unknown tool → DENY (fail-closed)", () => {
 		const recorded: RecordedQuery[] = [];
-		const decision = buildSorClient(recordingPool(recorded, auditEvents)).evaluatePolicy({
+		const decision = buildSorClient(
+			recordingPool(recorded, auditEvents),
+		).evaluatePolicy({
 			toolName: "tool-unknown",
 			input: {},
 			effective,
@@ -376,11 +425,17 @@ describe("AT — policy semantics preserved (§13 acting, fail-closed)", () => {
 		const recorded: RecordedQuery[] = [];
 		const rules: Record<string, RulePredicate[]> = {
 			"tool-a": [
-				{ op: "deny", when: { path: "action", oneOf: ["delete"] }, reason: "no deletes" },
+				{
+					op: "deny",
+					when: { path: "action", oneOf: ["delete"] },
+					reason: "no deletes",
+				},
 			],
 		};
 
-		const decision = buildSorClient(recordingPool(recorded, auditEvents)).evaluatePolicy({
+		const decision = buildSorClient(
+			recordingPool(recorded, auditEvents),
+		).evaluatePolicy({
 			toolName: "tool-a",
 			input: { action: "delete" },
 			effective,
@@ -396,11 +451,17 @@ describe("AT — policy semantics preserved (§13 acting, fail-closed)", () => {
 		const recorded: RecordedQuery[] = [];
 		const rules: Record<string, RulePredicate[]> = {
 			"tool-b": [
-				{ op: "require", when: { path: "approved", oneOf: [true] }, reason: "approval required" },
+				{
+					op: "require",
+					when: { path: "approved", oneOf: [true] },
+					reason: "approval required",
+				},
 			],
 		};
 
-		const decision = buildSorClient(recordingPool(recorded, auditEvents)).evaluatePolicy({
+		const decision = buildSorClient(
+			recordingPool(recorded, auditEvents),
+		).evaluatePolicy({
 			toolName: "tool-b",
 			input: { approved: false },
 			effective,
@@ -477,7 +538,12 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 
 		await buildSorClient(pool).recordProvenance(pool, {
 			topic: "content-sync",
-			payload: { kind: "added", status: "active", sourceId: "doc:1", version: 2 },
+			payload: {
+				kind: "added",
+				status: "active",
+				sourceId: "doc:1",
+				version: 2,
+			},
 		});
 
 		const event = auditEvents.find((e) => e.event_type === "content_sync");
@@ -499,7 +565,12 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 
 		await buildSorClient(pool).recordProvenance(pool, {
 			topic: "context-update",
-			payload: { sourceId: "run:abc", version: 3, hash: "hash123", prevVersion: 2 },
+			payload: {
+				sourceId: "run:abc",
+				version: 3,
+				hash: "hash123",
+				prevVersion: 2,
+			},
 		});
 
 		const event = auditEvents.find((e) => e.event_type === "context_update");
@@ -563,7 +634,12 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 		await expect(
 			client.recordProvenance(pool, {
 				topic: "content-sync",
-				payload: { kind: "added", status: "active", sourceId: "doc:1", version: 1 },
+				payload: {
+					kind: "added",
+					status: "active",
+					sourceId: "doc:1",
+					version: 1,
+				},
 			}),
 		).resolves.toBeUndefined();
 		await expect(
@@ -586,7 +662,12 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 		).resolves.toBeUndefined();
 		await client.recordProvenance(pool, {
 			topic: "content-access",
-			payload: { sessionId: "s1", mode: "aggregate", count: 1, topSources: ["fleet"] },
+			payload: {
+				sessionId: "s1",
+				mode: "aggregate",
+				count: 1,
+				topSources: ["fleet"],
+			},
 		});
 		await new Promise((r) => setTimeout(r, 10));
 
@@ -612,11 +693,13 @@ describe("AT — cross-domain composition (no regressions)", () => {
 		const client = buildSorClient(pool);
 
 		// 1. Retrieve knowledge to ground the agent.
-		const knowledge = await client.retrieveKnowledge(pool, { query: "how do I deploy" });
+		const knowledge = await client.retrieveKnowledge(pool, {
+			query: "how do I deploy",
+		});
 		expect(knowledge.ok).toBe(true);
 		let knowledgeShape: unknown;
 		if (knowledge.ok && knowledge.kind === "hit") {
-			knowledgeShape = knowledge.items[0]!.provenance;
+			knowledgeShape = knowledge.items[0]?.provenance;
 			expect(knowledgeShape).toEqual({
 				source: "fleet",
 				document: "guide",
@@ -639,9 +722,11 @@ describe("AT — cross-domain composition (no regressions)", () => {
 			},
 		});
 		await new Promise((r) => setTimeout(r, 10));
-		const accessEvent = auditEvents.find((e) => e.event_type === "content_access");
+		const accessEvent = auditEvents.find(
+			(e) => e.event_type === "content_access",
+		);
 		expect(accessEvent).toBeDefined();
-		expect(accessEvent!.payload.sessionId).toBe("sess-final");
+		expect(accessEvent?.payload.sessionId).toBe("sess-final");
 
 		// 3. Evaluate whether the agent may act on it (fail-closed on unknown tool).
 		const policy = client.evaluatePolicy({

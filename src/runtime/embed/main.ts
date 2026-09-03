@@ -1,4 +1,10 @@
-import { getClientForProvider, getProviderDef, getFleetProviders, providersWithKeys, type ProviderName } from "../../providers/registry.ts";
+import {
+	getClientForProvider,
+	getFleetProviders,
+	getProviderDef,
+	type ProviderName,
+	providersWithKeys,
+} from "../../providers/registry.ts";
 
 interface EmbedJob {
 	type: "embed";
@@ -33,7 +39,10 @@ function getBatchSize(): number {
 	return parsed;
 }
 
-function resolveProviderModel(jobProvider?: string, jobModel?: string): { provider: ProviderName; model: string } | null {
+function resolveProviderModel(
+	jobProvider?: string,
+	jobModel?: string,
+): { provider: ProviderName; model: string } | null {
 	let provider: ProviderName;
 	if (jobProvider) {
 		const def = getProviderDef(jobProvider as ProviderName);
@@ -43,15 +52,20 @@ function resolveProviderModel(jobProvider?: string, jobModel?: string): { provid
 		// Standard: prefer Gemini (text-embedding-004, 768-dim) when no explicit provider.
 		const candidates = providersWithKeys(getFleetProviders());
 		if (candidates.length === 0) return null;
-		provider = (candidates.find((p) => p === "gemini") ?? candidates[0]) as ProviderName;
+		provider = (candidates.find((p) => p === "gemini") ??
+			candidates[0]) as ProviderName;
 	}
 
 	const model = jobModel ?? "text-embedding-004";
 	return { provider, model };
 }
 
-async function embedWithRetry(client: ReturnType<typeof getClientForProvider>, texts: string[], model: string): Promise<number[][] | null> {
-	let lastError: Error | undefined;
+async function embedWithRetry(
+	client: ReturnType<typeof getClientForProvider>,
+	texts: string[],
+	model: string,
+): Promise<number[][] | null> {
+	let _lastError: Error | undefined;
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 		try {
 			const response = await client.embeddings.create({
@@ -60,9 +74,11 @@ async function embedWithRetry(client: ReturnType<typeof getClientForProvider>, t
 			});
 			return response.data.map((d) => d.embedding);
 		} catch (err) {
-			lastError = err instanceof Error ? err : new Error(String(err));
+			_lastError = err instanceof Error ? err : new Error(String(err));
 			if (attempt < MAX_RETRIES) {
-				await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * (attempt + 1)));
+				await new Promise((r) =>
+					setTimeout(r, RETRY_BACKOFF_MS * (attempt + 1)),
+				);
 			}
 		}
 	}
@@ -72,7 +88,11 @@ async function embedWithRetry(client: ReturnType<typeof getClientForProvider>, t
 async function processEmbedJob(job: EmbedJob): Promise<EmbedResult> {
 	const resolved = resolveProviderModel(job.provider, job.model);
 	if (!resolved) {
-		return { type: "embed_result", vectors: null, error: "no provider configured or provider has no key" };
+		return {
+			type: "embed_result",
+			vectors: null,
+			error: "no provider configured or provider has no key",
+		};
 	}
 
 	const { provider, model } = resolved;
@@ -85,7 +105,11 @@ async function processEmbedJob(job: EmbedJob): Promise<EmbedResult> {
 		const batch = job.texts.slice(i, i + batchSize);
 		const vectors = await embedWithRetry(client, batch, model);
 		if (vectors === null) {
-			return { type: "embed_result", vectors: null, error: `embedding failed for provider ${provider}, model ${model}` };
+			return {
+				type: "embed_result",
+				vectors: null,
+				error: `embedding failed for provider ${provider}, model ${model}`,
+			};
 		}
 		// Fail closed on a non-768-dim vector: column is vector(768); a mismatched
 		// dimension is a write failure (locked standard, decision D2/decision-log #39).
@@ -149,11 +173,15 @@ async function main(): Promise<void> {
 	});
 }
 
-const isEntry = process.argv[1] && import.meta.url === new URL("file://" + process.argv[1]).href;
+const isEntry =
+	process.argv[1] &&
+	import.meta.url === new URL(`file://${process.argv[1]}`).href;
 
 if (isEntry) {
 	main().catch((err) => {
-		console.error(`[embed] fatal: ${err instanceof Error ? err.message : String(err)}`);
+		console.error(
+			`[embed] fatal: ${err instanceof Error ? err.message : String(err)}`,
+		);
 		process.exit(1);
 	});
 }

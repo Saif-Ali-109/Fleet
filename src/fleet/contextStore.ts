@@ -4,8 +4,8 @@
 
 import type { Pool } from "pg";
 import { appendAuditEvent } from "../db/audit.ts";
-import { computeContextHash, ttlForCategory } from "./context.ts";
 import type { ContextCategory } from "./context.ts";
+import { computeContextHash, ttlForCategory } from "./context.ts";
 
 export interface ContextUpdatePayload {
 	sourceId: string;

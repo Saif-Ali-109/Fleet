@@ -15,18 +15,18 @@ vi.mock("../../db/audit.ts", async (importOriginal) => {
 	};
 });
 
+import type { SorEvent } from "../../sor/events.ts";
+import type { RulePredicate } from "../../sor/kernel/types.ts";
+import type { EffectiveToolSet } from "../policyEval.ts";
 import {
-	retrieveKnowledge,
-	retrieveContext,
-	evaluatePolicy,
-	recordProvenance,
 	buildSorClient,
+	evaluatePolicy,
 	type ProvenanceRecord,
+	recordProvenance,
+	retrieveContext,
+	retrieveKnowledge,
 	type SorClient,
 } from "../sorClient.ts";
-import type { SorEvent } from "../../sor/events.ts";
-import type { EffectiveToolSet } from "../policyEval.ts";
-import type { RulePredicate } from "../../sor/kernel/types.ts";
 
 interface RecordedQuery {
 	text: string;
@@ -119,7 +119,7 @@ describe("retrieveKnowledge — delegates to contentRetrieval, unions preserved"
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
 			expect(result.items).toHaveLength(1);
-			expect(result.items[0]!.provenance).toEqual({
+			expect(result.items[0]?.provenance).toEqual({
 				source: "fleet",
 				document: "guide",
 				section: "Section One",
@@ -135,7 +135,11 @@ describe("retrieveKnowledge — delegates to contentRetrieval, unions preserved"
 
 		const result = await retrieveKnowledge(pool, { query: "nonexistent" });
 
-		expect(result).toEqual({ ok: true, kind: "no-match", query: "nonexistent" });
+		expect(result).toEqual({
+			ok: true,
+			kind: "no-match",
+			query: "nonexistent",
+		});
 	});
 
 	it("unavailable on DB failure → error preserved", async () => {
@@ -307,7 +311,11 @@ describe("evaluatePolicy — pure, no pool", () => {
 			rules: {},
 		});
 
-		expect(result).toEqual({ allowed: true, decision: "ALLOW", reason: "allowed" });
+		expect(result).toEqual({
+			allowed: true,
+			decision: "ALLOW",
+			reason: "allowed",
+		});
 	});
 
 	it("DENY on unknown tool (fail-closed)", () => {
@@ -326,7 +334,11 @@ describe("evaluatePolicy — pure, no pool", () => {
 	it("DENY via deny rule matcher", () => {
 		const rules: Record<string, RulePredicate[]> = {
 			"tool-a": [
-				{ op: "deny", when: { path: "action", oneOf: ["delete"] }, reason: "no deletes" },
+				{
+					op: "deny",
+					when: { path: "action", oneOf: ["delete"] },
+					reason: "no deletes",
+				},
 			],
 		};
 
@@ -373,7 +385,11 @@ describe("evaluatePolicy — pure, no pool", () => {
 			rules: {},
 		});
 
-		expect(result).toEqual({ allowed: true, decision: "ALLOW", reason: "allowed" });
+		expect(result).toEqual({
+			allowed: true,
+			decision: "ALLOW",
+			reason: "allowed",
+		});
 	});
 });
 
@@ -395,7 +411,7 @@ describe("recordProvenance — dispatches to correct emitters, NON-FATAL", () =>
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(mockAppendAuditEvent).toHaveBeenCalledTimes(1);
-		const event = mockAppendAuditEvent.mock.calls[0]![1] as SorEvent;
+		const event = mockAppendAuditEvent.mock.calls[0]?.[1] as SorEvent;
 		expect(event.event_type).toBe("content_access");
 		expect(event.actor).toBe("manager");
 		expect(event.payload).toMatchObject({
@@ -419,11 +435,16 @@ describe("recordProvenance — dispatches to correct emitters, NON-FATAL", () =>
 
 		await recordProvenance(pool, {
 			topic: "content-sync",
-			payload: { kind: "added", status: "active", sourceId: "doc:1", version: 2 },
+			payload: {
+				kind: "added",
+				status: "active",
+				sourceId: "doc:1",
+				version: 2,
+			},
 		});
 
 		expect(mockAppendAuditEvent).toHaveBeenCalledTimes(1);
-		const event = mockAppendAuditEvent.mock.calls[0]![1] as SorEvent;
+		const event = mockAppendAuditEvent.mock.calls[0]?.[1] as SorEvent;
 		expect(event.event_type).toBe("content_sync");
 		expect(event.payload).toMatchObject({
 			sorType: "content",
@@ -451,7 +472,7 @@ describe("recordProvenance — dispatches to correct emitters, NON-FATAL", () =>
 		});
 
 		expect(mockAppendAuditEvent).toHaveBeenCalledTimes(1);
-		const event = mockAppendAuditEvent.mock.calls[0]![1] as SorEvent;
+		const event = mockAppendAuditEvent.mock.calls[0]?.[1] as SorEvent;
 		expect(event.event_type).toBe("context_update");
 		expect(event.payload).toMatchObject({
 			sorType: "context",
@@ -503,7 +524,12 @@ describe("recordProvenance — dispatches to correct emitters, NON-FATAL", () =>
 
 		await recordProvenance(pool, {
 			topic: "content-sync",
-			payload: { kind: "unchanged", status: "active", sourceId: "doc:1", version: 1 },
+			payload: {
+				kind: "unchanged",
+				status: "active",
+				sourceId: "doc:1",
+				version: 1,
+			},
 		});
 
 		expect(consoleWarn).toHaveBeenCalledWith(
@@ -550,7 +576,7 @@ describe("buildSorClient — ergonomic object surface", () => {
 
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
-			expect(result.items[0]!.provenance.content_hash).toBe("h");
+			expect(result.items[0]?.provenance.content_hash).toBe("h");
 		}
 	});
 
@@ -577,11 +603,16 @@ describe("buildSorClient — ergonomic object surface", () => {
 
 		await client.recordProvenance(pool, {
 			topic: "content-sync",
-			payload: { kind: "added", status: "active", sourceId: "doc:1", version: 1 },
+			payload: {
+				kind: "added",
+				status: "active",
+				sourceId: "doc:1",
+				version: 1,
+			},
 		});
 
 		expect(mockAppendAuditEvent).toHaveBeenCalledTimes(1);
-		const event = mockAppendAuditEvent.mock.calls[0]![1] as SorEvent;
+		const event = mockAppendAuditEvent.mock.calls[0]?.[1] as SorEvent;
 		expect(event.event_type).toBe("content_sync");
 	});
 });

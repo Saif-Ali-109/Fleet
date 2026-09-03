@@ -2,7 +2,11 @@
 // Pure DB reads; no model calls. Used by MCP tools and CLI. Reads emit no audit events.
 
 import type { Pool } from "pg";
-import { contextFreshness, type ContextCategory, type ContextReadResult } from "./context.ts";
+import {
+	type ContextCategory,
+	type ContextReadResult,
+	contextFreshness,
+} from "./context.ts";
 
 export interface ContextSourceRow {
 	source_id: string;
@@ -18,16 +22,22 @@ export interface ContextSourceRow {
 
 export interface ListContextsResult {
 	ok: true;
-	items: { sourceId: string; category: ContextCategory; version: number; status: string }[];
+	items: {
+		sourceId: string;
+		category: ContextCategory;
+		version: number;
+		status: string;
+	}[];
 }
 
 export type ListContextsResponse =
 	| ListContextsResult
 	| { ok: false; kind: "unavailable"; error: string };
 
-export function resolveFreshness(
-	row: ContextSourceRow,
-): { fresh: boolean; staleAfter: string } {
+export function resolveFreshness(row: ContextSourceRow): {
+	fresh: boolean;
+	staleAfter: string;
+} {
 	// Prefer explicit stamps; treat the stamp as authoritative when present.
 	const stamp = row.fresh_until ?? row.stale_after;
 	if (stamp) {
@@ -36,7 +46,10 @@ export function resolveFreshness(
 		return { fresh: ts > Date.now(), staleAfter };
 	}
 	// No stamp: non-authoritative (fresh: false), staleAfter falls back to the category TTL.
-	const fallback = contextFreshness({ updatedAt: row.created_at, category: row.category });
+	const fallback = contextFreshness({
+		updatedAt: row.created_at,
+		category: row.category,
+	});
 	return { fresh: false, staleAfter: fallback.staleAfter };
 }
 
@@ -139,6 +152,8 @@ export async function listContexts(
 	}
 }
 
-export async function getOrgConstraints(pool: Pool): Promise<ContextReadResult> {
+export async function getOrgConstraints(
+	pool: Pool,
+): Promise<ContextReadResult> {
 	return getContext(pool, { category: "org-constraints" });
 }

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fork } from "node:child_process";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolve, dirname } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EMBED_ENTRY = resolve(__dirname, "../main.ts");
@@ -25,7 +25,9 @@ interface EmbedResult {
 	error?: string;
 }
 
-function spawnEmbedWorker(env: Record<string, string> = {}): ReturnType<typeof fork> {
+function spawnEmbedWorker(
+	env: Record<string, string> = {},
+): ReturnType<typeof fork> {
 	const child = fork(EMBED_ENTRY, {
 		execPath: process.execPath,
 		execArgv: [...process.execArgv, "--import", "tsx"],
@@ -60,7 +62,11 @@ async function waitForReady(child: ReturnType<typeof fork>): Promise<void> {
 		}, 5000);
 
 		function handler(message: unknown) {
-			if (message && typeof message === "object" && (message as Record<string, unknown>).type === "ready") {
+			if (
+				message &&
+				typeof message === "object" &&
+				(message as Record<string, unknown>).type === "ready"
+			) {
 				clearTimeout(timeout);
 				child.off("message", handler);
 				resolve();
@@ -71,7 +77,10 @@ async function waitForReady(child: ReturnType<typeof fork>): Promise<void> {
 	});
 }
 
-function sendJob(child: ReturnType<typeof fork>, job: Job): Promise<EmbedResult> {
+function sendJob(
+	child: ReturnType<typeof fork>,
+	job: Job,
+): Promise<EmbedResult> {
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => {
 			child.off("message", handler);
@@ -79,7 +88,11 @@ function sendJob(child: ReturnType<typeof fork>, job: Job): Promise<EmbedResult>
 		}, 20000);
 
 		function handler(message: unknown) {
-			if (message && typeof message === "object" && (message as Record<string, unknown>).type === "embed_result") {
+			if (
+				message &&
+				typeof message === "object" &&
+				(message as Record<string, unknown>).type === "embed_result"
+			) {
 				clearTimeout(timeout);
 				child.off("message", handler);
 				resolve(message as EmbedResult);

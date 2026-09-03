@@ -45,9 +45,7 @@ describe("modelDefaults", () => {
 		expect(modelDefaults.gemini.coder).toBe("gemini-3.5-flash-lite");
 		expect(modelDefaults.gemini.tester).toBe("gemini-3.5-flash-lite");
 		expect(modelDefaults.gemini.pr).toBe("gemini-3.5-flash-lite");
-		expect(modelDefaults.openrouter.coder).toBe(
-			"google/gemini-3.5-flash-lite",
-		);
+		expect(modelDefaults.openrouter.coder).toBe("google/gemini-3.5-flash-lite");
 		expect(modelDefaults.openrouter.tester).toBe(
 			"google/gemini-3.5-flash-lite",
 		);

@@ -1,5 +1,5 @@
-import baseConfig from "./vitest.config.ts";
 import { AT_SUITE_INCLUDE } from "./src/sor/atSuiteFiles.ts";
+import baseConfig from "./vitest.config.ts";
 
 // mergeConfig concatenates test.include arrays, which would keep the base
 // globs and run the full suite. Instead inherit the base object wholesale and

@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { canonicalizeText, sha256Hex } from "../../sor/kernel/hash.ts";
 import {
 	baseTtlMs,
+	type ContextDoc,
+	type ContextReadResult,
 	computeContextHash,
 	contextFreshness,
 	ttlForCategory,
-	type ContextCategory,
-	type ContextDoc,
-	type ContextReadResult,
 } from "../context.ts";
-import { sha256Hex, canonicalizeText } from "../../sor/kernel/hash.ts";
 
 const BASE_HOURS = 24;
 const MS_PER_HOUR = 3600_000;
@@ -23,9 +22,15 @@ describe("baseTtlMs", () => {
 	});
 
 	it("falls back to default when env is invalid (<=0)", () => {
-		expect(baseTtlMs({ CONTEXT_TTL_HOURS: "0" })).toBe(BASE_HOURS * MS_PER_HOUR);
-		expect(baseTtlMs({ CONTEXT_TTL_HOURS: "-5" })).toBe(BASE_HOURS * MS_PER_HOUR);
-		expect(baseTtlMs({ CONTEXT_TTL_HOURS: "abc" })).toBe(BASE_HOURS * MS_PER_HOUR);
+		expect(baseTtlMs({ CONTEXT_TTL_HOURS: "0" })).toBe(
+			BASE_HOURS * MS_PER_HOUR,
+		);
+		expect(baseTtlMs({ CONTEXT_TTL_HOURS: "-5" })).toBe(
+			BASE_HOURS * MS_PER_HOUR,
+		);
+		expect(baseTtlMs({ CONTEXT_TTL_HOURS: "abc" })).toBe(
+			BASE_HOURS * MS_PER_HOUR,
+		);
 	});
 });
 
@@ -36,13 +41,15 @@ describe("ttlForCategory", () => {
 	});
 
 	it("honors per-category override (run)", () => {
-		expect(ttlForCategory("run", { CONTEXT_TTL_RUN_HOURS: "2" })).toBe(2 * MS_PER_HOUR);
+		expect(ttlForCategory("run", { CONTEXT_TTL_RUN_HOURS: "2" })).toBe(
+			2 * MS_PER_HOUR,
+		);
 	});
 
 	it("honors per-category override (org-constraints)", () => {
-		expect(ttlForCategory("org-constraints", { CONTEXT_TTL_ORG_HOURS: "48" })).toBe(
-			48 * MS_PER_HOUR,
-		);
+		expect(
+			ttlForCategory("org-constraints", { CONTEXT_TTL_ORG_HOURS: "48" }),
+		).toBe(48 * MS_PER_HOUR);
 	});
 
 	it("falls back to base when per-category env is invalid", () => {
@@ -152,7 +159,10 @@ describe("contextFreshness", () => {
 		expect(run2h.fresh).toBe(true);
 
 		// org with default 24h TTL: still fresh at ~1h elapsed
-		const orgDefault = contextFreshness({ updatedAt, category: "org-constraints" });
+		const orgDefault = contextFreshness({
+			updatedAt,
+			category: "org-constraints",
+		});
 		expect(orgDefault.fresh).toBe(true);
 	});
 });
@@ -193,7 +203,12 @@ describe("ContextDoc / ContextReadResult type fixtures", () => {
 	it("ContextReadResult ok variant", () => {
 		const result: ContextReadResult = {
 			ok: true,
-			item: { state: { x: 1 }, fresh: true, staleAfter: "2026-08-29T24:00:00.000Z", version: 1 },
+			item: {
+				state: { x: 1 },
+				fresh: true,
+				staleAfter: "2026-08-29T24:00:00.000Z",
+				version: 1,
+			},
 		};
 		expect(result.ok).toBe(true);
 		if (result.ok) {

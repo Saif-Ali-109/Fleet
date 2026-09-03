@@ -12,19 +12,20 @@
 // and the top-level `if (isEntry)` guard (line 689–705) never fires under
 // vitest, so no listeners, DB reads, or side-effects are triggered.
 
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import type { Pool } from "pg";
-
-import { C2_GROUNDING_DIRECTIVE } from "../c2Directive.ts";
-import { buildSystemPromptWithC2, handleContentRetrieve } from "../../mcp/contentTools.ts";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+	buildSystemPromptWithC2,
+	handleContentRetrieve,
+} from "../../mcp/contentTools.ts";
 import { buildWorkerSystemPrompt } from "../../runtime/worker/main.ts";
-
 import { analyzerDef } from "../agents/analyzer.ts";
 import { coderDef } from "../agents/coder.ts";
 import { plannerDef } from "../agents/planner.ts";
+import { prDef } from "../agents/pr.ts";
 import { reviewerDef } from "../agents/reviewer.ts";
 import { testerDef } from "../agents/tester.ts";
-import { prDef } from "../agents/pr.ts";
+import { C2_GROUNDING_DIRECTIVE } from "../c2Directive.ts";
 
 import { buildSorClient } from "../sorClient.ts";
 
@@ -59,7 +60,8 @@ function recordingPool(
 ): Pool {
 	const fail = (text: string): boolean => {
 		if (options.shouldFail) return true;
-		if (options.failOnQuery !== undefined && text.includes(options.failOnQuery)) return true;
+		if (options.failOnQuery !== undefined && text.includes(options.failOnQuery))
+			return true;
 		return false;
 	};
 	const readRows = (text: string): Record<string, unknown>[] => {
@@ -153,7 +155,9 @@ const PROVENANCE_TUPLE_FIELDS = [
 	"content_hash",
 ] as const;
 
-function hitRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function hitRow(
+	overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
 	return {
 		text: "grounded chunk",
 		section: "Section One",
@@ -281,14 +285,18 @@ describe("AT-10 — prompt-injected non-SOR knowledge never acquires provenance"
 		const pool = recordingPool(recorded, auditEvents, { rows: [hitRow()] });
 		const client = buildSorClient(pool);
 
-		const result = await client.retrieveKnowledge(pool, { query: "deployment speed" });
+		const result = await client.retrieveKnowledge(pool, {
+			query: "deployment speed",
+		});
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
 			const item = result.items[0]!;
 			// Provenance tuple must have all required fields
 			for (const field of PROVENANCE_TUPLE_FIELDS) {
 				expect(item.provenance).toHaveProperty(field);
-				expect(typeof (item.provenance as Record<string, unknown>)[field]).not.toBe("undefined");
+				expect(
+					typeof (item.provenance as Record<string, unknown>)[field],
+				).not.toBe("undefined");
 			}
 			// The injected claim text does NOT appear as a retrieved item
 			expect(item.text).not.toBe(INJECTED_CLAIM);
@@ -301,7 +309,9 @@ describe("AT-10 — prompt-injected non-SOR knowledge never acquires provenance"
 		const client = buildSorClient(pool);
 
 		// The service returns a genuine no-match, NOT unavailable.
-		const result = await client.retrieveKnowledge(pool, { query: "deployment speed" });
+		const result = await client.retrieveKnowledge(pool, {
+			query: "deployment speed",
+		});
 		expect(result.ok).toBe(true);
 		if (result.ok) {
 			expect(result.kind).toBe("no-match");
@@ -309,7 +319,9 @@ describe("AT-10 — prompt-injected non-SOR knowledge never acquires provenance"
 
 		// The real content.retrieve handler maps no-match to the C2-required
 		// "no authoritative content found" stance (NOT a fabricated answer).
-		const toolResult = await handleContentRetrieve(pool, { query: "deployment speed" });
+		const toolResult = await handleContentRetrieve(pool, {
+			query: "deployment speed",
+		});
 		expect(toolResult.kind).toBe("no-match");
 		if (toolResult.kind === "no-match") {
 			expect(toolResult.message).toContain("no authoritative content found");
@@ -324,7 +336,9 @@ describe("AT-10 — prompt-injected non-SOR knowledge never acquires provenance"
 		// The injected model-memory claim is foreign to the Content SoR: a
 		// query against it yields a genuine no-match, so NO text — least of all
 		// the injected claim — can be returned with a provenance tuple.
-		const result = await client.retrieveKnowledge(pool, { query: "deployment speed" });
+		const result = await client.retrieveKnowledge(pool, {
+			query: "deployment speed",
+		});
 		expect(result.ok).toBe(true);
 		if (result.ok) {
 			expect(result.kind).toBe("no-match");
@@ -333,7 +347,9 @@ describe("AT-10 — prompt-injected non-SOR knowledge never acquires provenance"
 		// Even a hit only ever returns DB-sourced items. The injected claim is
 		// not in the DB, so it can never appear as a provenance-bearing item.
 		const hitPool = recordingPool([], auditEvents, { rows: [hitRow()] });
-		const hit = await client.retrieveKnowledge(hitPool, { query: "deployment speed" });
+		const hit = await client.retrieveKnowledge(hitPool, {
+			query: "deployment speed",
+		});
 		if (hit.ok && hit.kind === "hit") {
 			for (const item of hit.items) {
 				expect(item.text).not.toEqual(INJECTED_CLAIM);
@@ -365,7 +381,9 @@ describe("AT-10 — Content+Context+Policy thread as independent domains, not me
 		const client = buildSorClient(pool);
 
 		// 1. Content: retrieve knowledge — returns records with provenance
-		const knowledge = await client.retrieveKnowledge(pool, { query: "how do I deploy" });
+		const knowledge = await client.retrieveKnowledge(pool, {
+			query: "how do I deploy",
+		});
 		expect(knowledge.ok).toBe(true);
 		if (knowledge.ok && knowledge.kind === "hit") {
 			const item = knowledge.items[0]!;

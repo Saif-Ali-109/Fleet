@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
 	assertContentProvenance,
+	type ContentProvenance,
+	type ContextProvenance,
 	contentProvenanceOf,
 	freshnessOf,
 	sourceRefOf,
-	type ContentProvenance,
-	type ContextProvenance,
 } from "../provenance.ts";
 import { RESERVED_NAMESPACE, type SorRecordIdentity } from "../types.ts";
 
@@ -79,12 +79,21 @@ describe("assertContentProvenance (T8.2)", () => {
 
 	it("accepts an uppercase-hex contentHash", () => {
 		expect(() =>
-			assertContentProvenance({ ...valid, contentHash: "c".toUpperCase().repeat(64) }),
+			assertContentProvenance({
+				...valid,
+				contentHash: "c".toUpperCase().repeat(64),
+			}),
 		).not.toThrow();
 	});
 
 	it("throws on a missing field", () => {
-		for (const key of ["source", "document", "section", "version", "contentHash"]) {
+		for (const key of [
+			"source",
+			"document",
+			"section",
+			"version",
+			"contentHash",
+		]) {
 			const { [key as keyof ContentProvenance]: _omit, ...rest } = valid;
 			expect(() =>
 				assertContentProvenance(rest as unknown as ContentProvenance),
@@ -138,7 +147,9 @@ describe("freshnessOf (T8.3)", () => {
 
 	it("returns fresh: false at the exact stale point (now == staleAfter)", () => {
 		const staleAfter = new Date(Date.parse(updatedAt) + ttlMs).toISOString();
-		expect(freshnessOf({ updatedAt, ttlMs, now: staleAfter }).fresh).toBe(false);
+		expect(freshnessOf({ updatedAt, ttlMs, now: staleAfter }).fresh).toBe(
+			false,
+		);
 	});
 
 	it("returns fresh: false beyond the stale point", () => {
@@ -155,9 +166,7 @@ describe("freshnessOf (T8.3)", () => {
 	});
 
 	it("throws on an invalid updatedAt", () => {
-		expect(() =>
-			freshnessOf({ updatedAt: "not-a-date", ttlMs }),
-		).toThrow();
+		expect(() => freshnessOf({ updatedAt: "not-a-date", ttlMs })).toThrow();
 	});
 });
 

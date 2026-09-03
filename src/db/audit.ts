@@ -4,9 +4,6 @@
 // it is the identifier shared by hooks, agentRunner, and orchestrator.
 
 import type { Pool } from "pg";
-import type { SorEvent, SorEventType } from "../sor/events.ts";
-import { getCurrentKey, getCurrentKeyId, getKey } from "../sor/keyRegistry.ts";
-import { GENESIS_HASH, canonicalJson, signEvent } from "../sor/signer.ts";
 import {
 	canonicalPolicyHash,
 	capabilitySnapshot,
@@ -14,11 +11,14 @@ import {
 	sha256Hex,
 	validatePolicyDocument,
 } from "../fleet/policy.ts";
-import {
-	RESERVED_NAMESPACE,
-	type PolicyDocument,
-} from "../sor/kernel/types.ts";
 import type { FleetAgentDef } from "../fleet/types.ts";
+import type { SorEvent, SorEventType } from "../sor/events.ts";
+import {
+	type PolicyDocument,
+	RESERVED_NAMESPACE,
+} from "../sor/kernel/types.ts";
+import { getCurrentKey, getCurrentKeyId, getKey } from "../sor/keyRegistry.ts";
+import { canonicalJson, GENESIS_HASH, signEvent } from "../sor/signer.ts";
 import type { Role } from "../types.ts";
 
 export interface AgentRegistryRow {
@@ -287,9 +287,7 @@ export async function ensurePolicyRegistry(
 			// at first boot, reconcile the metadata snapshot, before any drift check.
 			const rules = row.rules;
 			const doc: PolicyDocument =
-				rules !== null &&
-				typeof rules === "object" &&
-				!Array.isArray(rules)
+				rules !== null && typeof rules === "object" && !Array.isArray(rules)
 					? (rules as unknown as PolicyDocument)
 					: emptyPolicy(role);
 			const policyHash = canonicalPolicyHash(doc);

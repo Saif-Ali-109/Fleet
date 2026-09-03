@@ -15,8 +15,12 @@
 
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildContentDoc, type ContentChunk, type ContentDoc } from "../content.ts";
-import { retrieveKnowledge, getDocument } from "../contentRetrieval.ts";
+import {
+	buildContentDoc,
+	type ContentChunk,
+	type ContentDoc,
+} from "../content.ts";
+import { getDocument, retrieveKnowledge } from "../contentRetrieval.ts";
 import { upsertDocument } from "../contentStore.ts";
 
 const TEST_KEY = "at8-test-signing-key";
@@ -273,7 +277,9 @@ describe("AT-8 — derived index cannot be authoritative without a resolvable re
 			});
 		}
 
-		const select = recorded.find((q) => q.text.includes("FROM content_chunks cc"));
+		const select = recorded.find((q) =>
+			q.text.includes("FROM content_chunks cc"),
+		);
 		expect(select).toBeDefined();
 		expect(select?.text).toContain("JOIN content_sor cs");
 		expect(select?.text).toContain("cc.doc_id = cs.source_id");
@@ -285,7 +291,11 @@ describe("AT-8 — derived index cannot be authoritative without a resolvable re
 		const doc = DOC;
 		const chunks = [chunkFor(doc), chunkFor(doc, "Details")];
 
-		const result = await upsertDocument(recordingPool([], recorded), doc, chunks);
+		const result = await upsertDocument(
+			recordingPool([], recorded),
+			doc,
+			chunks,
+		);
 		expect(result).toEqual({ kind: "added", version: DOC.version });
 
 		// The write path is transactional: BEGIN ... INSERT content_sor ...
@@ -321,7 +331,9 @@ describe("AT-8 — derived index cannot be authoritative without a resolvable re
 
 		// COMMIT seals the transaction.
 		const commitIdx = txStatements.indexOf("COMMIT");
-		expect(commitIdx).toBeGreaterThan(chunkInsertIdxs[chunkInsertIdxs.length - 1]!);
+		expect(commitIdx).toBeGreaterThan(
+			chunkInsertIdxs[chunkInsertIdxs.length - 1]!,
+		);
 
 		// No orphan is produced by the write path: content_sor and content_chunks
 		// are written atomically in a single transaction. A derived row created

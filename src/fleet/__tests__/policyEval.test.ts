@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { PolicyDocument } from "../../sor/kernel/types.ts";
+import { coderDef } from "../agents/coder.ts";
+import { capabilitySnapshot, emptyPolicy } from "../policy.ts";
 import {
 	computeEffectiveTools,
+	type EffectiveToolSet,
 	evaluateMatcher,
 	evaluateToolCall,
-	type EffectiveToolSet,
 } from "../policyEval.ts";
-import { emptyPolicy, capabilitySnapshot } from "../policy.ts";
-import { coderDef } from "../agents/coder.ts";
-import type { PolicyDocument } from "../../sor/kernel/types.ts";
 
 const granted: EffectiveToolSet = {
 	allowedTools: ["read", "grep", "bash"],
@@ -33,7 +33,9 @@ describe("evaluateToolCall (P3.4, FR-6/FR-11)", () => {
 
 	it("deny predicate matching ⇒ DENY", () => {
 		const rules = {
-			bash: [{ op: "deny" as const, when: { path: "command", match: "^git push" } }],
+			bash: [
+				{ op: "deny" as const, when: { path: "command", match: "^git push" } },
+			],
 		};
 		const denied = evaluateToolCall(
 			"bash",
@@ -50,7 +52,11 @@ describe("evaluateToolCall (P3.4, FR-6/FR-11)", () => {
 			granted,
 			rules,
 		);
-		expect(allowed).toEqual({ allowed: true, decision: "ALLOW", reason: "allowed" });
+		expect(allowed).toEqual({
+			allowed: true,
+			decision: "ALLOW",
+			reason: "allowed",
+		});
 	});
 
 	it("require predicate failing ⇒ DENY", () => {
@@ -59,12 +65,23 @@ describe("evaluateToolCall (P3.4, FR-6/FR-11)", () => {
 				{ op: "require" as const, when: { path: "cwd", oneOf: ["/worktree"] } },
 			],
 		};
-		const denied = evaluateToolCall("bash", { command: "ls", cwd: "/tmp" }, granted, rules);
+		const denied = evaluateToolCall(
+			"bash",
+			{ command: "ls", cwd: "/tmp" },
+			granted,
+			rules,
+		);
 		expect(denied.allowed).toBe(false);
 		expect(denied.decision).toBe("DENY");
 		expect(denied.reason).toContain("require");
-		expect(evaluateToolCall("bash", { command: "ls", cwd: "/worktree" }, granted, rules))
-			.toEqual({ allowed: true, decision: "ALLOW", reason: "allowed" });
+		expect(
+			evaluateToolCall(
+				"bash",
+				{ command: "ls", cwd: "/worktree" },
+				granted,
+				rules,
+			),
+		).toEqual({ allowed: true, decision: "ALLOW", reason: "allowed" });
 	});
 
 	it("multiple predicates ALL satisfied ⇒ ALLOW; single violation ⇒ DENY", () => {
@@ -75,10 +92,20 @@ describe("evaluateToolCall (P3.4, FR-6/FR-11)", () => {
 			],
 		};
 		expect(
-			evaluateToolCall("bash", { command: "ls", cwd: "/worktree" }, granted, rules),
+			evaluateToolCall(
+				"bash",
+				{ command: "ls", cwd: "/worktree" },
+				granted,
+				rules,
+			),
 		).toEqual({ allowed: true, decision: "ALLOW", reason: "allowed" });
 		expect(
-			evaluateToolCall("bash", { command: "rm -rf /", cwd: "/worktree" }, granted, rules),
+			evaluateToolCall(
+				"bash",
+				{ command: "rm -rf /", cwd: "/worktree" },
+				granted,
+				rules,
+			),
 		).toMatchObject({ allowed: false, decision: "DENY" });
 		expect(
 			evaluateToolCall("bash", { command: "ls", cwd: "/etc" }, granted, rules),
@@ -94,9 +121,9 @@ describe("evaluateToolCall (P3.4, FR-6/FR-11)", () => {
 		expect(effective.allowedTools).toEqual([]);
 		expect(effective.mcpAllow).toEqual([]);
 		for (const tool of coderDef.tools) {
-			expect(evaluateToolCall(tool, {}, effective, emptyDoc.toolRules).allowed).toBe(
-				false,
-			);
+			expect(
+				evaluateToolCall(tool, {}, effective, emptyDoc.toolRules).allowed,
+			).toBe(false);
 		}
 	});
 
@@ -135,11 +162,17 @@ describe("computeEffectiveTools (P-I1 ceiling ∩ grant)", () => {
 describe("evaluateMatcher", () => {
 	it("oneOf / notOneOf / match semantics", () => {
 		const input = { a: { b: "hello" }, n: 3 };
-		expect(evaluateMatcher({ path: "a.b", oneOf: ["hi", "hello"] }, input)).toBe(true);
+		expect(
+			evaluateMatcher({ path: "a.b", oneOf: ["hi", "hello"] }, input),
+		).toBe(true);
 		expect(evaluateMatcher({ path: "a.b", oneOf: ["hi"] }, input)).toBe(false);
-		expect(evaluateMatcher({ path: "a.b", notOneOf: ["bye"] }, input)).toBe(true);
+		expect(evaluateMatcher({ path: "a.b", notOneOf: ["bye"] }, input)).toBe(
+			true,
+		);
 		expect(evaluateMatcher({ path: "n", notOneOf: [3] }, input)).toBe(false);
-		expect(evaluateMatcher({ path: "a.b", match: "^hel+o$" }, input)).toBe(true);
+		expect(evaluateMatcher({ path: "a.b", match: "^hel+o$" }, input)).toBe(
+			true,
+		);
 		expect(evaluateMatcher({ path: "missing", match: "x" }, input)).toBe(false);
 	});
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	isSorRecordIdentity,
-	RESERVED_NAMESPACE,
 	type Namespace,
+	RESERVED_NAMESPACE,
 	type SorRecord,
 	type SorRecordIdentity,
 	type SourceProvenance,
@@ -90,9 +90,9 @@ describe("isSorRecordIdentity guard (T6.2)", () => {
 	});
 
 	it("rejects a wrong namespace", () => {
-		expect(
-			isSorRecordIdentity({ ...makeIdentity(), namespace: "acme" }),
-		).toBe(false);
+		expect(isSorRecordIdentity({ ...makeIdentity(), namespace: "acme" })).toBe(
+			false,
+		);
 	});
 
 	it("rejects a missing or non-string hash", () => {
@@ -103,15 +103,15 @@ describe("isSorRecordIdentity guard (T6.2)", () => {
 	});
 
 	it("rejects an unknown sorType", () => {
-		expect(
-			isSorRecordIdentity({ ...makeIdentity(), sorType: "bogus" }),
-		).toBe(false);
+		expect(isSorRecordIdentity({ ...makeIdentity(), sorType: "bogus" })).toBe(
+			false,
+		);
 	});
 
 	it("rejects a missing or non-number version", () => {
-		expect(
-			isSorRecordIdentity({ ...makeIdentity(), version: undefined }),
-		).toBe(false);
+		expect(isSorRecordIdentity({ ...makeIdentity(), version: undefined })).toBe(
+			false,
+		);
 		expect(isSorRecordIdentity({ ...makeIdentity(), version: "8" })).toBe(
 			false,
 		);

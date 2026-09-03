@@ -13,7 +13,10 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { appendAuditEvent, emitPolicySync } from "../../db/audit.ts";
-import { canonicalPolicyHash, type PolicyDocument } from "../../fleet/policy.ts";
+import {
+	canonicalPolicyHash,
+	type PolicyDocument,
+} from "../../fleet/policy.ts";
 import { RESERVED_NAMESPACE } from "../../sor/kernel/types.ts";
 
 interface RecordedQuery {
@@ -210,7 +213,10 @@ describe("P7.4 AT-6: forensic reread from policy_state → policy_sync", () => {
 		expect(claim?.policyHash).toBe(h2);
 
 		// Forensic reconstruction of the claimed version.
-		const rebuilt = reconstructPolicyDocument(rows, claim?.policyVersion as number);
+		const rebuilt = reconstructPolicyDocument(
+			rows,
+			claim?.policyVersion as number,
+		);
 		expect(rebuilt).toEqual(v2);
 		expect(canonicalPolicyHash(rebuilt as PolicyDocument)).toBe(h2);
 		// The chain-stored sync hash also agrees with the rebuilt document.

@@ -14,8 +14,8 @@ import { fileURLToPath } from "node:url";
 import {
 	appendAuditEvent,
 	ensureChain,
-	loadRolePolicy,
 	type LoadedRolePolicy,
+	loadRolePolicy,
 } from "./db/audit.ts";
 import { pool } from "./db/client.ts";
 import { canonicalPolicyHash, emptyPolicy } from "./fleet/policy.ts";

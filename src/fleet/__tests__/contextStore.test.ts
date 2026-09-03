@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { putContext, emitContextUpdateNonFatal } from "../contextStore.ts";
+import { emitContextUpdateNonFatal, putContext } from "../contextStore.ts";
 
 const TEST_KEY = "test-signing-key-for-context-store";
 let savedKey: string | undefined;
@@ -135,10 +135,7 @@ describe("putContext — context store controlled write path", () => {
 	it("updated: hash changed ⇒ bumps to prev+1, inserts new row, emits context_update with prevVersion", async () => {
 		const recorded: RecordedQuery[] = [];
 		// Prior row v2 with a different hash
-		const pool = recordingPool(
-			[[{ version: 2, hash: "old-hash" }]],
-			recorded,
-		);
+		const pool = recordingPool([[{ version: 2, hash: "old-hash" }]], recorded);
 
 		const result = await putContext(pool, {
 			sourceId: "fleet|context|run-1",
@@ -169,10 +166,7 @@ describe("putContext — context store controlled write path", () => {
 		const recorded: RecordedQuery[] = [];
 		const state = { mode: "active" };
 		const priorHash = (await import("../context.ts")).computeContextHash(state);
-		const pool = recordingPool(
-			[[{ version: 2, hash: priorHash }]],
-			recorded,
-		);
+		const pool = recordingPool([[{ version: 2, hash: priorHash }]], recorded);
 
 		const result = await putContext(pool, {
 			sourceId: "fleet|context|run-1",
@@ -222,7 +216,12 @@ describe("putContext — context store controlled write path", () => {
 		const recorded: RecordedQuery[] = [];
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		// Force failure on audit_events insert only
-		const pool = recordingPool([[]], recorded, true, "INSERT INTO audit_events");
+		const pool = recordingPool(
+			[[]],
+			recorded,
+			true,
+			"INSERT INTO audit_events",
+		);
 
 		// Should not throw
 		const result = await putContext(pool, {

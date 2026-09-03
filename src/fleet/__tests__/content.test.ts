@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canonicalizeText, sha256Hex } from "../../sor/kernel/hash.ts";
 import {
 	buildContentDoc,
 	chunkSection,
@@ -8,10 +9,9 @@ import {
 	splitSections,
 	syncOutcome,
 } from "../content.ts";
-import { sha256Hex, canonicalizeText } from "../../sor/kernel/hash.ts";
 
 describe("sha256Hex + canonicalizeText locked vectors (mirroring hash.test.ts)", () => {
-	it("sha256Hex('{\"a\":\"b\"}') matches locked vector", () => {
+	it('sha256Hex(\'{"a":"b"}\') matches locked vector', () => {
 		expect(sha256Hex('{"a":"b"}')).toBe(
 			"db4a7ecb114bc66c623a06c4ff6fe8daa2f49cc270ebbf7a1f81e22ab061c837",
 		);
@@ -78,10 +78,10 @@ content after`;
 
 		const sections = splitSections(text);
 		expect(sections).toHaveLength(2);
-		expect(sections[0]!.heading).toBe("root");
-		expect(sections[0]!.content).toBe("Root content before heading.\n");
-		expect(sections[1]!.heading).toBe("Section A");
-		expect(sections[1]!.content).toContain("## fake heading inside fence");
+		expect(sections[0]?.heading).toBe("root");
+		expect(sections[0]?.content).toBe("Root content before heading.\n");
+		expect(sections[1]?.heading).toBe("Section A");
+		expect(sections[1]?.content).toContain("## fake heading inside fence");
 	});
 
 	it("handles tilde fences too", () => {
@@ -95,14 +95,14 @@ real content`;
 
 		const sections = splitSections(text);
 		expect(sections).toHaveLength(2);
-		expect(sections[1]!.content).toContain("### fake");
+		expect(sections[1]?.content).toContain("### fake");
 	});
 
 	it("empty document produces root section", () => {
 		const sections = splitSections("");
 		expect(sections).toHaveLength(1);
-		expect(sections[0]!.heading).toBe("root");
-		expect(sections[0]!.content).toBe("");
+		expect(sections[0]?.heading).toBe("root");
+		expect(sections[0]?.content).toBe("");
 	});
 });
 
@@ -117,11 +117,12 @@ describe("chunkSection — cap/overlap respected, sentence/paragraph breaks", ()
 			expect(c.section).toBe("test");
 		}
 		// Check overlap: end of chunk 0 should overlap with start of chunk 1
-		expect(chunks[0]!.text.slice(-200)).toBe(chunks[1]!.text.slice(0, 200));
+		expect(chunks[0]?.text.slice(-200)).toBe(chunks[1]?.text.slice(0, 200));
 	});
 
 	it("prefers sentence breaks (.\n\n) within overlap window", () => {
-		const text = "Sentence one.\n\nSentence two.\n\nSentence three.\n\nSentence four.";
+		const text =
+			"Sentence one.\n\nSentence two.\n\nSentence three.\n\nSentence four.";
 		// Force a break point
 		const chunks = chunkSection("sec", text.repeat(100), 0);
 		expect(chunks.length).toBeGreaterThan(0);
@@ -142,22 +143,34 @@ describe("chunkSection — cap/overlap respected, sentence/paragraph breaks", ()
 	it("chunkIndex sequential per document", () => {
 		const text = "x".repeat(5000);
 		const chunks = chunkSection("sec", text, 5);
-		expect(chunks[0]!.chunkIndex).toBe(5);
-		expect(chunks[1]!.chunkIndex).toBe(6);
+		expect(chunks[0]?.chunkIndex).toBe(5);
+		expect(chunks[1]?.chunkIndex).toBe(6);
 	});
 });
 
 describe("parseMarkdownSource — full document parse", () => {
 	it("sourceId is stable per path", () => {
-		const { doc } = parseMarkdownSource("docs/guide.md", "# Title\n\nContent", "/root");
+		const { doc } = parseMarkdownSource(
+			"docs/guide.md",
+			"# Title\n\nContent",
+			"/root",
+		);
 		expect(doc.sourceId).toBe("fleet|content|md:docs/guide.md");
 	});
 
 	it("title from first ATX H1; falls back to document name", () => {
-		const { doc: d1 } = parseMarkdownSource("guide.md", "# My Title\n\nBody", "/root");
+		const { doc: d1 } = parseMarkdownSource(
+			"guide.md",
+			"# My Title\n\nBody",
+			"/root",
+		);
 		expect(d1.metadata.title).toBe("My Title");
 
-		const { doc: d2 } = parseMarkdownSource("guide.md", "No heading\n\nBody", "/root");
+		const { doc: d2 } = parseMarkdownSource(
+			"guide.md",
+			"No heading\n\nBody",
+			"/root",
+		);
 		expect(d2.metadata.title).toBeUndefined();
 		expect(d2.metadata.document).toBe("guide");
 	});
@@ -186,8 +199,8 @@ Final section content.`;
 		expect(doc.metadata.document).toBe("doc");
 
 		// root section
-		expect(chunks[0]!.section).toBe("root");
-		expect(chunks[0]!.chunkIndex).toBe(0);
+		expect(chunks[0]?.section).toBe("root");
+		expect(chunks[0]?.chunkIndex).toBe(0);
 		// Section One
 		const sec1 = chunks.find((c) => c.section === "Section One");
 		expect(sec1).toBeDefined();
@@ -224,7 +237,7 @@ After fence`;
 		const { chunks } = parseMarkdownSource("test.md", text, "/root");
 		const secChunk = chunks.find((c) => c.section === "Section");
 		expect(secChunk).toBeDefined();
-		expect(secChunk!.text).toContain("## not a heading");
+		expect(secChunk?.text).toContain("## not a heading");
 	});
 
 	it("doc.hash computed from canonical content via kernel hash.ts", () => {

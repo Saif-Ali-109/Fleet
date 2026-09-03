@@ -1,28 +1,28 @@
 import type { Pool } from "pg";
+import type { PolicySyncEvent } from "../db/audit.ts";
+import { emitPolicySync } from "../db/audit.ts";
 import type { RulePredicate } from "../sor/kernel/types.ts";
-import {
-	emitContentAccessAggregate,
-	retrieveKnowledge as _retrieveKnowledge,
-} from "./contentRetrieval.ts";
 import type {
 	ContentAccessAggregateParams,
 	RetrievalResult,
 } from "./contentRetrieval.ts";
-import { emitContentSyncNonFatal } from "./contentStore.ts";
+import {
+	retrieveKnowledge as _retrieveKnowledge,
+	emitContentAccessAggregate,
+} from "./contentRetrieval.ts";
 import type { ContentSyncPayload } from "./contentStore.ts";
-import { getContext as _getContext } from "./contextRetrieval.ts";
+import { emitContentSyncNonFatal } from "./contentStore.ts";
 import type { ContextCategory, ContextReadResult } from "./context.ts";
-import { emitContextUpdateNonFatal } from "./contextStore.ts";
+import { getContext as _getContext } from "./contextRetrieval.ts";
 import type { ContextUpdatePayload } from "./contextStore.ts";
+import { emitContextUpdateNonFatal } from "./contextStore.ts";
 import {
 	evaluateToolCall as _evaluateToolCall,
 	type EffectiveToolSet,
 	type PolicyDecision,
 } from "./policyEval.ts";
-import { emitPolicySync } from "../db/audit.ts";
-import type { PolicySyncEvent } from "../db/audit.ts";
 
-export type { PolicyDecision, EffectiveToolSet };
+export type { EffectiveToolSet, PolicyDecision };
 
 export interface SorRetrieveKnowledgeParams {
 	query: string;
@@ -64,8 +64,15 @@ export async function retrieveContext(
 	return _getContext(pool, params);
 }
 
-export function evaluatePolicy(params: SorEvaluatePolicyParams): PolicyDecision {
-	return _evaluateToolCall(params.toolName, params.input, params.effective, params.rules);
+export function evaluatePolicy(
+	params: SorEvaluatePolicyParams,
+): PolicyDecision {
+	return _evaluateToolCall(
+		params.toolName,
+		params.input,
+		params.effective,
+		params.rules,
+	);
 }
 
 export async function recordProvenance(
@@ -95,8 +102,14 @@ export async function recordProvenance(
 }
 
 export interface SorClient {
-	retrieveKnowledge(pool: Pool, params: SorRetrieveKnowledgeParams): Promise<RetrievalResult>;
-	retrieveContext(pool: Pool, params: SorRetrieveContextParams): Promise<ContextReadResult>;
+	retrieveKnowledge(
+		pool: Pool,
+		params: SorRetrieveKnowledgeParams,
+	): Promise<RetrievalResult>;
+	retrieveContext(
+		pool: Pool,
+		params: SorRetrieveContextParams,
+	): Promise<ContextReadResult>;
 	evaluatePolicy(params: SorEvaluatePolicyParams): PolicyDecision;
 	recordProvenance(pool: Pool, record: ProvenanceRecord): Promise<void>;
 }

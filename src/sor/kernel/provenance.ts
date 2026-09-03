@@ -47,7 +47,10 @@ export function assertContentProvenance(p: ContentProvenance): void {
 	if (typeof p.version !== "number") {
 		throw new Error("content provenance requires a numeric version");
 	}
-	if (typeof p.contentHash !== "string" || !/^[0-9a-f]+$/i.test(p.contentHash)) {
+	if (
+		typeof p.contentHash !== "string" ||
+		!/^[0-9a-f]+$/i.test(p.contentHash)
+	) {
 		throw new Error("content provenance requires a hex contentHash");
 	}
 }
@@ -66,7 +69,11 @@ export function freshnessOf(input: {
 	const staleAfter = new Date(staleAfterMs).toISOString();
 	// strict: now == staleAfter ⇒ fresh: false
 	const fresh = nowMs < staleAfterMs;
-	return { state: { updatedAt: input.updatedAt, ttlMs: input.ttlMs }, fresh, staleAfter };
+	return {
+		state: { updatedAt: input.updatedAt, ttlMs: input.ttlMs },
+		fresh,
+		staleAfter,
+	};
 }
 
 export function sourceRefOf(identity: SorRecordIdentity): SourceRef {

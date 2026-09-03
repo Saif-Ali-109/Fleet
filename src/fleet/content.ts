@@ -1,6 +1,6 @@
 // Fleet Content SoR — parse, chunking, provenance, idempotent sync (pure functions, no I/O).
 
-import { sha256Hex, canonicalizeText } from "../sor/kernel/hash.ts";
+import { canonicalizeText, sha256Hex } from "../sor/kernel/hash.ts";
 
 export interface ContentDoc {
 	sorType: "content";
@@ -10,8 +10,17 @@ export interface ContentDoc {
 	hash: string;
 	status: "active" | "invalid" | "superseded";
 	canonicalContent: string;
-	metadata: { title?: string; source: string; document: string; license?: string };
-	provenance: { externalRef?: string; acquiredAt?: string; sourceHash?: string };
+	metadata: {
+		title?: string;
+		source: string;
+		document: string;
+		license?: string;
+	};
+	provenance: {
+		externalRef?: string;
+		acquiredAt?: string;
+		sourceHash?: string;
+	};
 }
 
 export interface ContentChunk {
@@ -35,7 +44,9 @@ export interface SyncOutcome {
 const CHUNK_CAP = 4000;
 const CHUNK_OVERLAP = 200;
 
-export function splitSections(text: string): Array<{ heading: string; content: string }> {
+export function splitSections(
+	text: string,
+): Array<{ heading: string; content: string }> {
 	const lines = text.split("\n");
 	const sections: Array<{ heading: string; content: string }> = [];
 	let currentHeading = "root";
@@ -235,7 +246,13 @@ export function provenanceOf(
 	source: string,
 	document: string,
 	section: string,
-): { source: string; document: string; section: string; version: number; content_hash: string } {
+): {
+	source: string;
+	document: string;
+	section: string;
+	version: number;
+	content_hash: string;
+} {
 	return {
 		source,
 		document,
