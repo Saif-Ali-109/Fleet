@@ -913,7 +913,7 @@ async function runSingleIssueFromQueue(
 				owner,
 				repo,
 				num,
-				`Started managed run \`${runId}\` (provider: ${provider}).`,
+				`Fleet started run \`${runId}\` (provider: ${provider}).`,
 			);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);

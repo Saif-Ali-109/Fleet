@@ -135,8 +135,8 @@ export async function fetchIssue(
 }
 
 /** Issue lifecycle labels (0.1) — managed runs mark issues started / done via labels. */
-export const ISSUE_LABEL_IN_PROGRESS = "multi-orch/in-progress";
-export const ISSUE_LABEL_DONE = "multi-orch/done";
+export const ISSUE_LABEL_IN_PROGRESS = "fleet/in-progress";
+export const ISSUE_LABEL_DONE = "fleet/done";
 
 /** Split an `owner/name` slug (or any accepted repo URL) into its owner/repo parts. */
 export function splitRepoSlug(repoUrlOrSlug: string): {

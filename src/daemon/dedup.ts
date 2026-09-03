@@ -24,7 +24,7 @@ export interface ShouldSkipIssueOpts {
  *
  * Decision tree (any true → skip):
  *  1. An OPEN PR exists on the fix branch.
- *  2. The issue carries the `multi-orch/done` label — the robust cross-machine
+ *  2. The issue carries the `fleet/done` label — the robust cross-machine
  *     truth. Unlike the DB `LIMIT 1` lookup it can't be masked by a newer
  *     failed/aborted run, and it doesn't lag behind writes on another machine.
  *  3. A completed `run_outcomes` row exists (best-effort secondary).
@@ -33,7 +33,7 @@ export interface ShouldSkipIssueOpts {
  * failure (auth/rate-limit/network), so a gh outage surfaces here instead of
  * being misread as "no PR". The DB fallback is only reached on a genuine empty
  * result. `hasIssueLabel` remains non-fatal (returns false on any gh failure)
- * so a label-check hiccup never blocks a re-run. The `multi-orch/in-progress`
+ * so a label-check hiccup never blocks a re-run. The `fleet/in-progress`
  * label intentionally does NOT block (crash-safety): a dead orchestrator may
  * leave one behind and the daemon must be able to re-run.
  */

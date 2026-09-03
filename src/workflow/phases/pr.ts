@@ -54,7 +54,7 @@ export async function runPrPhase(opts: PrPhaseOpts): Promise<PrPhaseResult> {
 		`Push the branch to origin, then open a PR against ${wt.baseBranch} with \`gh pr create --repo ${ctx.issue.repo}\`.`,
 		`PR title: Fix #${ctx.issue.number}: ${ctx.issue.title}`,
 		`PR body must start with: Closes #${ctx.issue.number}`,
-		`Managed run: ${ctx.runId}.`,
+		`Fleet run: ${ctx.runId}.`,
 		"",
 		await readContributionGuidance(ctx.worktreeDir),
 	].join("\n");
@@ -100,7 +100,7 @@ export async function runPrPhase(opts: PrPhaseOpts): Promise<PrPhaseResult> {
 						head: ctx.branch,
 						base: wt.baseBranch,
 						title: `Fix #${ctx.issue.number}: ${ctx.issue.title}`,
-						body: `Closes #${ctx.issue.number}\n\nManaged run ${ctx.runId}.`,
+						body: `Closes #${ctx.issue.number}\n\nFleet run ${ctx.runId}.`,
 					});
 					prUrl = fallback.url || extractPrUrl(fallback.raw);
 				} catch (e) {
