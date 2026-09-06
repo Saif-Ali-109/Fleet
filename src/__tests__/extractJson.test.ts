@@ -99,6 +99,39 @@ describe("extractJson", () => {
 		});
 	});
 
+	it("strips inline # comments outside strings", () => {
+		const text = `{"suspectFiles": ["fizzbuzz.py"],  # Based on typical structure
+  "affectedSymbols": ["main"],  # Placeholder
+  "confidence": "medium"}`;
+		const result = extractJson<{ suspectFiles: string[]; confidence: string }>(
+			text,
+		);
+		expect(result).toEqual({
+			suspectFiles: ["fizzbuzz.py"],
+			affectedSymbols: ["main"],
+			confidence: "medium",
+		});
+	});
+
+	it("strips // comments after values", () => {
+		const text = `{"rootCause": "null pointer", // explains it
+  "summary": "fix the crash"}`;
+		const result = extractJson<{ rootCause: string; summary: string }>(text);
+		expect(result).toEqual({
+			rootCause: "null pointer",
+			summary: "fix the crash",
+		});
+	});
+
+	it("does not strip # or // inside string values", () => {
+		const text = `{"url": "https://example.com/x#y", "color": "#fff"}`;
+		const result = extractJson<{ url: string; color: string }>(text);
+		expect(result).toEqual({
+			url: "https://example.com/x#y",
+			color: "#fff",
+		});
+	});
+
 	describe("truncation handling (some providers cap output tokens)", () => {
 		it("salvages an unclosed object by appending closing braces", () => {
 			// A completed inner value, missing only the final closing brace.

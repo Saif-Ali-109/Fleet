@@ -7,7 +7,7 @@ import {
 import { db, pool } from "../db/client.ts";
 
 const server = new Server(
-	{ name: "multi-orch-mcp", version: "1.0.0" },
+	{ name: "fleet-mcp", version: "1.0.0" },
 	{ capabilities: { tools: {} } },
 );
 

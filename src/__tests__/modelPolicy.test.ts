@@ -30,27 +30,27 @@ describe("modelPolicy (v2 override store: {provider:{role:id}})", () => {
 	beforeEach(() => resetModelOverrides());
 
 	describe("policyFor defaults per provider/role (SPEC §5 tier table)", () => {
-		it("defaults gemini strong roles to gemini-2.5-pro", () => {
+		it("defaults gemini strong roles to gemini-3.7-flash", () => {
 			for (const role of STRONG_ROLES) {
-				expect(policyFor(role, "gemini").model).toBe("gemini-2.5-pro");
+				expect(policyFor(role, "gemini").model).toBe("gemini-3.7-flash");
 			}
 		});
 
-		it("defaults gemini cheap roles to gemini-2.5-flash", () => {
+		it("defaults gemini cheap roles to gemini-3.5-flash-lite", () => {
 			for (const role of CHEAP_ROLES) {
-				expect(policyFor(role, "gemini").model).toBe("gemini-2.5-flash");
+				expect(policyFor(role, "gemini").model).toBe("gemini-3.5-flash-lite");
 			}
 		});
 
 		it("defaults openrouter to the google/* mirror ids verbatim (no double prefix)", () => {
 			for (const role of STRONG_ROLES) {
 				expect(policyFor(role, "openrouter").model).toBe(
-					"google/gemini-2.5-pro",
+					"google/gemini-3.7-flash",
 				);
 			}
 			for (const role of CHEAP_ROLES) {
 				expect(policyFor(role, "openrouter").model).toBe(
-					"google/gemini-2.5-flash",
+					"google/gemini-3.5-flash-lite",
 				);
 			}
 		});
@@ -195,7 +195,7 @@ describe("modelPolicy (v2 override store: {provider:{role:id}})", () => {
 			expect(policyFor("analyzer", "gemini").fallbacks).toEqual(["a", "c"]);
 			expect(
 				JSON.stringify(policyFor("analyzer", "gemini").fallbacks),
-			).not.toContain("gemini-2.5-pro");
+			).not.toContain("gemini-3.7-flash");
 		});
 
 		it("openrouter still gets the implicit tier-default fallback when overridden", () => {

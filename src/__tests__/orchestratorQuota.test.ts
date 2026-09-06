@@ -253,12 +253,12 @@ describe("orchestrator quota event handling", () => {
 		// The boot gate (correctly) demands a fully configured Gemini chain for
 		// real runs; stub the role vars so the quota-handling tests reach workers.
 		for (const [k, v] of [
-			["ANALYZER_MODEL_GEMINI", "gemini-2.5-pro"],
-			["PLANNER_MODEL_GEMINI", "gemini-2.5-pro"],
-			["REVIEWER_MODEL_GEMINI", "gemini-2.5-pro"],
-			["CODER_MODEL_GEMINI", "gemini-2.5-flash"],
-			["TESTER_MODEL_GEMINI", "gemini-2.5-flash"],
-			["PR_MODEL_GEMINI", "gemini-2.5-flash"],
+			["ANALYZER_MODEL_GEMINI", "gemini-3.7-flash"],
+			["PLANNER_MODEL_GEMINI", "gemini-3.7-flash"],
+			["REVIEWER_MODEL_GEMINI", "gemini-3.7-flash"],
+			["CODER_MODEL_GEMINI", "gemini-3.5-flash-lite"],
+			["TESTER_MODEL_GEMINI", "gemini-3.5-flash-lite"],
+			["PR_MODEL_GEMINI", "gemini-3.5-flash-lite"],
 		] as const) {
 			prevEnv[k] = process.env[k];
 			process.env[k] = v;

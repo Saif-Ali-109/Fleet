@@ -73,7 +73,7 @@ describe("issue lifecycle gh helpers", () => {
 			"--repo",
 			"owner/repo",
 			"--add-label",
-			"multi-orch/in-progress",
+			"fleet/in-progress",
 		]);
 	});
 
@@ -87,7 +87,7 @@ describe("issue lifecycle gh helpers", () => {
 			"--repo",
 			"owner/repo",
 			"--remove-label",
-			"multi-orch/done",
+			"fleet/done",
 		]);
 	});
 
@@ -97,7 +97,7 @@ describe("issue lifecycle gh helpers", () => {
 			"owner",
 			"repo",
 			42,
-			"Started managed run `run-1` (backend: opencode).",
+			"Fleet started run `run-1` (backend: opencode).",
 		);
 		const call = ghCalls()[0];
 		expect(call?.file).toBe("gh");
@@ -108,7 +108,7 @@ describe("issue lifecycle gh helpers", () => {
 			"--repo",
 			"owner/repo",
 			"--body",
-			"Started managed run `run-1` (backend: opencode).",
+			"Fleet started run `run-1` (backend: opencode).",
 		]);
 	});
 
@@ -122,7 +122,7 @@ describe("issue lifecycle gh helpers", () => {
 		expect(ghCalls()[0]?.args).toEqual([
 			"label",
 			"create",
-			"multi-orch/in-progress",
+			"fleet/in-progress",
 			"--repo",
 			"owner/repo",
 			"--force",
@@ -130,7 +130,7 @@ describe("issue lifecycle gh helpers", () => {
 		expect(ghCalls()[1]?.args).toEqual([
 			"label",
 			"create",
-			"multi-orch/done",
+			"fleet/done",
 			"--repo",
 			"owner/repo",
 			"--force",
@@ -140,7 +140,7 @@ describe("issue lifecycle gh helpers", () => {
 	it("hasIssueLabel reports true when the label is present", async () => {
 		resolveWith(
 			JSON.stringify({
-				labels: [{ name: "multi-orch/in-progress" }, { name: "bug" }],
+				labels: [{ name: "fleet/in-progress" }, { name: "bug" }],
 			}),
 		);
 		await expect(
@@ -183,7 +183,7 @@ describe("non-fatal behavior", () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			await expect(
-				commentOnIssue("owner", "repo", 42, "Managed run `x` failed."),
+				commentOnIssue("owner", "repo", 42, "Fleet run `x` failed."),
 			).resolves.toBeUndefined();
 			expect(warn).toHaveBeenCalled();
 		} finally {

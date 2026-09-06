@@ -1,10 +1,22 @@
-// CLI entry for `npm run sor:repair` — re-signs rows matching current key_id in audit_events,
-// rebuilding the hash chain for those rows in place (partial repair by key_id).
+// Re-sign rows matching the current key_id in audit_events, rebuilding the
+// hash chain for those rows in place (partial repair by key_id). The thin CLI
+// wrapper lives in repairCli.ts (owns pool + process.exit) so this module
+// stays importable for unit tests against an injected pool.
 
-import { pool } from "../db/client.ts";
+import type { Pool } from "pg";
 import type { SorEvent, SorEventType } from "./events.ts";
 import { getCurrentKeyId, getKey } from "./keyRegistry.ts";
 import { GENESIS_HASH, signEvent } from "./signer.ts";
+
+export interface RepairReport {
+	total: number;
+	needsUpdate: number;
+	updated: number;
+	skipped: number;
+	/** First/last seq among rows that need updating (CLI report fodder). */
+	firstSeq?: number;
+	lastSeq?: number;
+}
 
 interface AuditEventRow {
 	run_id: string | null;
@@ -36,22 +48,34 @@ function eventFromRow(row: AuditEventRow): SorEvent {
 	};
 }
 
-function requireCurrentKey(): string {
-	const keyId = getCurrentKeyId();
-	const key = getKey(keyId);
-	if (!key) {
+function resolveSigningKey(keyId: string, key?: string): string {
+	const signingKey = key ?? getKey(keyId);
+	if (!signingKey) {
 		throw new Error(
 			`SOR_KEY_${keyId.toUpperCase().replace(/[^A-Z0-9]/g, "_")} is not set. ` +
 				"Set it in .env or export it before repairing the audit chain.",
 		);
 	}
-	return key;
+	return signingKey;
 }
 
-let code: number;
-try {
-	const currentKeyId = getCurrentKeyId();
-	const currentKey = requireCurrentKey();
+/** Re-sign rows matching `keyId` (default: the current key id) in audit_events,
+ *  rebuilding the hash chain for those rows in place. `key` may be injected for
+ *  tests; otherwise it is resolved from the environment. Returns a repair report;
+ *  callers decide how to surface it (the CLI prints it).
+ *
+ *  When updates are needed, they run in a single transaction that takes an
+ *  ACCESS EXCLUSIVE lock on audit_events and temporarily DISABLEs migration
+ *  011's append-only trigger — the ONLY code path allowed to rewrite the chain.
+ *  The trigger is re-enabled in a `finally` before COMMIT, and a ROLLBACK on
+ *  error reverts the DISABLE, so the invariant is never left suspended. */
+export async function repairChainForPool(
+	pool: Pool,
+	keyId?: string,
+	key?: string,
+): Promise<RepairReport> {
+	const currentKeyId = keyId ?? getCurrentKeyId();
+	const signingKey = resolveSigningKey(currentKeyId, key);
 
 	const result = await pool.query<AuditEventRow>(
 		`SELECT run_id, seq, event_type, actor, backend, tool_name,
@@ -63,100 +87,89 @@ try {
 	);
 	const rows = result.rows;
 
-	if (rows.length === 0) {
-		console.log(
-			`no audit events found for key_id="${currentKeyId}" — nothing to repair`,
-		);
-		code = 0;
-	} else {
-		interface Update {
-			seq: number;
-			prevHash: string;
-			hash: string;
-		}
-
-		const updates: Update[] = [];
-		let prevHash = GENESIS_HASH;
-
-		for (const row of rows) {
-			// Verify the row's key_id matches current (should be true due to WHERE clause, but double-check)
-			if (row.key_id !== currentKeyId) {
-				console.warn(
-					`skipping seq ${row.seq}: key_id mismatch (expected ${currentKeyId}, got ${row.key_id})`,
-				);
-				prevHash = row.hash; // Still advance the hash chain with the existing hash
-				continue;
-			}
-
-			const event = eventFromRow(row);
-			const correctHash = signEvent(currentKey, prevHash, event, currentKeyId);
-			if (row.prev_hash !== prevHash || row.hash !== correctHash) {
-				updates.push({ seq: Number(row.seq), prevHash, hash: correctHash });
-			}
-			prevHash = correctHash;
-		}
-
-		const total = rows.length;
-		const needsUpdate = updates.length;
-		const alreadyCorrect = total - needsUpdate;
-
-		console.log(`chain repair report for key_id="${currentKeyId}"`);
-		console.log("---------------------");
-		console.log("total rows scanned:", total);
-		console.log("rows already correct:", alreadyCorrect);
-		console.log("rows needing update:", needsUpdate);
-		if (needsUpdate > 0) {
-			const first = updates[0];
-			const last = updates[updates.length - 1];
-			if (first && last) {
-				console.log("first seq to update:", first.seq);
-				console.log("last seq to update:", last.seq);
-			}
-		}
-
-		if (needsUpdate === 0) {
-			console.log("chain is already valid — no changes made");
-			code = 0;
-		} else {
-			console.log("\napplying updates in a single transaction...");
-
-			const client = await pool.connect();
-			try {
-				await client.query("BEGIN");
-				await client.query("LOCK TABLE audit_events IN ACCESS EXCLUSIVE MODE");
-
-				for (const u of updates) {
-					await client.query(
-						"UPDATE audit_events SET prev_hash = $1, hash = $2 WHERE seq = $3",
-						[u.prevHash, u.hash, u.seq],
-					);
-				}
-
-				const last = updates[updates.length - 1];
-				if (last) {
-					await client.query(
-						"UPDATE sor_chain SET seq = $1, hash = $2, key_id = $3, updated_at = now() WHERE id = 1",
-						[last.seq, last.hash, currentKeyId],
-					);
-				}
-
-				await client.query("COMMIT");
-				console.log("repair committed successfully");
-				code = 0;
-			} catch (err) {
-				await client.query("ROLLBACK");
-				throw err;
-			} finally {
-				client.release();
-			}
-		}
+	interface Update {
+		seq: number;
+		prevHash: string;
+		hash: string;
 	}
-} catch (err: unknown) {
-	console.error(
-		"[sor] repair failed:",
-		err instanceof Error ? err.message : String(err),
-	);
-	code = 1;
+
+	const updates: Update[] = [];
+	let skipped = 0;
+	let prevHash = GENESIS_HASH;
+
+	for (const row of rows) {
+		// Verify the row's key_id matches the target (should be true due to the
+		// WHERE clause, but double-check)
+		if (row.key_id !== currentKeyId) {
+			skipped++;
+			prevHash = row.hash; // Still advance the hash chain with the existing hash
+			continue;
+		}
+
+		const event = eventFromRow(row);
+		const correctHash = signEvent(signingKey, prevHash, event, currentKeyId);
+		if (row.prev_hash !== prevHash || row.hash !== correctHash) {
+			updates.push({ seq: Number(row.seq), prevHash, hash: correctHash });
+		}
+		prevHash = correctHash;
+	}
+
+	if (updates.length === 0) {
+		return { total: rows.length, needsUpdate: 0, updated: 0, skipped };
+	}
+
+	const client = await pool.connect();
+	try {
+		await client.query("BEGIN");
+		await client.query("LOCK TABLE audit_events IN ACCESS EXCLUSIVE MODE");
+		// migration 011 blocks UPDATE/DELETE on audit_events via an append-only
+		// trigger. Repair is the ONLY path allowed to rewrite the chain, so
+		// disable that one named trigger inside this ACCESS EXCLUSIVE
+		// transaction. The ENABLE below always runs before COMMIT; a ROLLBACK on
+		// error reverts the DISABLE too.
+		await client.query(
+			"ALTER TABLE audit_events DISABLE TRIGGER audit_events_append_only_trigger",
+		);
+
+		try {
+			for (const u of updates) {
+				await client.query(
+					"UPDATE audit_events SET prev_hash = $1, hash = $2 WHERE seq = $3",
+					[u.prevHash, u.hash, u.seq],
+				);
+			}
+
+			const last = updates[updates.length - 1];
+			if (last) {
+				// sor_chain has no append-only trigger, so no DISABLE/ENABLE is
+				// needed around this UPDATE.
+				await client.query(
+					"UPDATE sor_chain SET seq = $1, hash = $2, key_id = $3, updated_at = now() WHERE id = 1",
+					[last.seq, last.hash, currentKeyId],
+				);
+			}
+		} finally {
+			await client.query(
+				"ALTER TABLE audit_events ENABLE TRIGGER audit_events_append_only_trigger",
+			);
+		}
+
+		await client.query("COMMIT");
+	} catch (err) {
+		await client.query("ROLLBACK");
+		throw err;
+	} finally {
+		client.release();
+	}
+
+	const first = updates[0];
+	const last = updates[updates.length - 1];
+	return {
+		total: rows.length,
+		needsUpdate: updates.length,
+		updated: updates.length,
+		skipped,
+		firstSeq: first?.seq,
+		lastSeq: last?.seq,
+	};
 }
-await pool.end();
-process.exit(code);

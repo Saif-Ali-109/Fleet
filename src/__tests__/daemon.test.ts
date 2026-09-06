@@ -139,18 +139,18 @@ describe("shouldSkipIssue", () => {
 		).resolves.toBe(true);
 	});
 
-	it("skips when the multi-orch/done label is present", async () => {
-		routeGh({ openPr: false, labels: ["multi-orch/done"] });
+	it("skips when the fleet/done label is present", async () => {
+		routeGh({ openPr: false, labels: ["fleet/done"] });
 		await expect(shouldSkipIssue(base)).resolves.toBe(true);
 	});
 
 	it("skips on the done label even when other labels are present", async () => {
-		routeGh({ openPr: false, labels: ["bug", "multi-orch/done", "priority"] });
+		routeGh({ openPr: false, labels: ["bug", "fleet/done", "priority"] });
 		await expect(shouldSkipIssue(base)).resolves.toBe(true);
 	});
 
 	it("does NOT skip on the in-progress label alone (crash-safety)", async () => {
-		routeGh({ openPr: false, labels: ["multi-orch/in-progress"] });
+		routeGh({ openPr: false, labels: ["fleet/in-progress"] });
 		await expect(shouldSkipIssue(base)).resolves.toBe(false);
 	});
 
@@ -200,7 +200,7 @@ describe("shouldSkipIssue", () => {
 				completedRun: false,
 			}),
 		).resolves.toBe(true);
-		routeGh({ openPr: false, labels: ["multi-orch/done"] });
+		routeGh({ openPr: false, labels: ["fleet/done"] });
 		await expect(
 			shouldSkipIssue({
 				repoUrlOrSlug: "OWNER/repo",

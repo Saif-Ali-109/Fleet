@@ -23,30 +23,20 @@ describe("Gemini quota configuration", () => {
 	});
 
 	it("ships the Gemini free-tier model defaults", () => {
-		expect(GEMINI_QUOTA_DEFAULTS["gemini-2.5-pro"]).toEqual({
-			rpm: 5,
+		expect(GEMINI_QUOTA_DEFAULTS["gemini-3.7-flash"]).toEqual({
+			rpm: 3,
 			tpm: 250_000,
-			rpd: 100,
+			rpd: 18,
 		});
-		expect(GEMINI_QUOTA_DEFAULTS["gemini-2.5-flash"]).toEqual({
-			rpm: 10,
+		expect(GEMINI_QUOTA_DEFAULTS["gemini-3.6-flash"]).toEqual({
+			rpm: 3,
 			tpm: 250_000,
-			rpd: 250,
-		});
-		expect(GEMINI_QUOTA_DEFAULTS["gemini-3-flash-preview"]).toEqual({
-			rpm: 5,
-			tpm: 250_000,
-			rpd: 20,
+			rpd: 18,
 		});
 		expect(GEMINI_QUOTA_DEFAULTS["gemini-3.5-flash"]).toEqual({
-			rpm: 5,
+			rpm: 3,
 			tpm: 250_000,
-			rpd: 20,
-		});
-		expect(GEMINI_QUOTA_DEFAULTS["gemini-2.5-flash-lite"]).toEqual({
-			rpm: 15,
-			tpm: 250_000,
-			rpd: 1_000,
+			rpd: 18,
 		});
 		expect(GEMINI_QUOTA_DEFAULTS["gemini-3.5-flash-lite"]).toEqual({
 			rpm: 15,
@@ -63,9 +53,9 @@ describe("Gemini quota configuration", () => {
 	it("keeps configured model ids exact", () => {
 		expect(Object.keys(GEMINI_QUOTA_DEFAULTS)).toEqual(
 			expect.arrayContaining([
-				"gemini-3-flash-preview",
+				"gemini-3.7-flash",
+				"gemini-3.6-flash",
 				"gemini-3.5-flash",
-				"gemini-2.5-flash-lite",
 				"gemini-3.5-flash-lite",
 				"gemini-3.1-flash-lite",
 			]),

@@ -71,8 +71,8 @@ vi.mock("../workflow/coder.ts", () => ({
 }));
 vi.mock("../workflow/tester.ts", () => ({ runTester: vi.fn() }));
 vi.mock("../github/gh.ts", () => ({
-	ISSUE_LABEL_DONE: "multi-orch/done",
-	ISSUE_LABEL_IN_PROGRESS: "multi-orch/in-progress",
+	ISSUE_LABEL_DONE: "fleet/done",
+	ISSUE_LABEL_IN_PROGRESS: "fleet/in-progress",
 	addIssueLabel: vi.fn(async () => undefined),
 	commentOnIssue: vi.fn(async () => undefined),
 	createPr: vi.fn(),
@@ -178,7 +178,7 @@ describe("graceful shutdown → failed finalize", () => {
 		);
 		const failureComment = vi.mocked(commentOnIssue).mock
 			.calls[0]?.[3] as string;
-		expect(failureComment).toContain("Managed run `");
+		expect(failureComment).toContain("Fleet run `");
 		expect(failureComment).toContain("failed: aborted by user");
 		expect(addIssueLabel).not.toHaveBeenCalledWith(
 			"Saif-Ali-109",
