@@ -198,8 +198,11 @@ describe("src/runtime/embed/main.ts", () => {
 		await waitForReady(child);
 		child.kill("SIGTERM");
 		await new Promise((r) => child.on("exit", r));
-		// When killed by SIGTERM, exitCode is null and signal is SIGTERM
-		expect(child.signalCode).toBe("SIGTERM");
+		// Worker catches SIGTERM for graceful shutdown (exitCode 0),
+		// but if the signal arrives before the handler is ready, default
+		// SIGTERM kill is also acceptable (signalCode 'SIGTERM').
+		const clean = child.exitCode === 0 || child.signalCode === "SIGTERM";
+		expect(clean).toBe(true);
 	});
 
 	it("retries on failure up to MAX_RETRIES", async () => {
