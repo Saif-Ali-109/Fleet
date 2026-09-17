@@ -227,8 +227,7 @@ export async function setupWorktree(
 	// fixer operates on the exact tree that failed (which may not be the
 	// default branch). Falls back to the clone's HEAD.
 	const baseBranch =
-		baseRef ??
-		(await git(["rev-parse", "--abbrev-ref", "HEAD"], repoDir));
+		baseRef ?? (await git(["rev-parse", "--abbrev-ref", "HEAD"], repoDir));
 
 	// Fresh branch off the base, checked out in a linked worktree.
 	await git(
