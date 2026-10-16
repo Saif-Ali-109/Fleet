@@ -522,14 +522,28 @@ export async function runWorker(
 					];
 
 	if (workerDbId) {
+		const terminalStatus = walk.ok ? "success" : "failed";
 		try {
-			await updateWorkerStatus(
-				workerDbId,
-				walk.ok ? "success" : "failed",
-				tracePath,
+			await updateWorkerStatus(workerDbId, terminalStatus, tracePath);
+		} catch (err) {
+			// Non-fatal to the run, but NOT silent. A failed terminal write leaves
+			// the row in `pending`, where countActiveTotal() keeps counting it
+			// against max_concurrent_workers indefinitely. Swallowing this made the
+			// leak rate unmeasurable, so surface it with enough context to correlate
+			// the orphaned row without logging task text, model output, or trace
+			// contents.
+			const message = err instanceof Error ? err.message : String(err);
+			console.warn(
+				JSON.stringify({
+					event: "worker_status_write_failed",
+					role,
+					worker_id: workerDbId,
+					run_ref: ctx.runId,
+					attempted_status: terminalStatus,
+					walk_ok: walk.ok,
+					error: message.slice(0, 300),
+				}),
 			);
-		} catch {
-			/* non-fatal */
 		}
 	}
 
