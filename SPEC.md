@@ -598,6 +598,55 @@ H4+H5+H9 in parallel; H6 after H5; H7+H8 after H4; H10+H11 after H8.
       verify RunSummary + artifacts + SOR events. 2026-08-27: passes in < 2s,
       sor:verify green.
 
+### Security & dependency hygiene (S1–S7)
+
+Origin: third-party scanner (M8ven) reported GHSA-6qxp-vccf-f47h
+(CVE-2026-104850, High) against `@modelcontextprotocol/sdk@1.30.0`, audited
+2026-10-16 against commit `1910e19`. **Audit verdict: not exploitable.** Fleet's
+MCP surface is stdio-only in both server and client roles and contains no OAuth
+client; the advisory's own "Not affected" list names *stdio clients* and
+*servers built with the SDK*. Rationale recorded in `SECURITY.md` §3.
+
+Do NOT record the SDK bump below as a security fix — it is dependency hygiene for
+an unreachable code path. Keep the "not applicable" finding and the version bump
+as two separate facts.
+
+- [x] S0. Audit + triage (read-only, no repo change) — 2026-10-16: import graph,
+      call sites, advisory text and installed SDK entry points all confirm the
+      OAuth path is unreachable. Full write-up in `SECURITY.md`; remediation plan
+      in `~/.opencode/plan/m8ven-advisory-and-deps.md`.
+- [x] S1. `SECURITY.md` — 2026-10-16: threat model, trust boundaries, stdio-only
+      MCP posture, GHSA-6qxp-vccf-f47h non-applicability, dep posture, and an
+      explicit "not a security finding" list.
+- [ ] S2. Production lockfile refresh — target `npm update fast-uri proxy-addr
+      hono ip-address qs`. Clears 5 of 6 prod advisories (incl. `proxy-addr`,
+      critical) with **no** code change; all 5 sit inside existing semver ranges.
+      Acceptance: `npm audit --omit=dev` drops those five; typecheck + tests + dry
+      green. NOTE: a blanket `npm update` may also float the SDK — prefer
+      targeted for diff readability.
+- [ ] S3. MCP SDK floor `^1.30.0` → `^1.32.1` in `package.json`. Floors above the
+      patched `1.31.0` so a clean install cannot regress. Safe: 1.31.0's upgrade
+      notes are OAuth-only and Fleet uses no OAuth. Changelog wording:
+      "dependency updated to a patched release", NOT "security fix". This bump
+      clears **only** the SDK advisory — it does not clear the S2 transitive set
+      (1.32.1 declares identical dep ranges to 1.30.0).
+- [ ] S4. MCP tool annotations on all 12 tools; priority `create_pr` →
+      `destructiveHint: true` (only irreversible external side effect). Metadata
+      only — authorization stays code-enforced. Update the 3 MCP test files if
+      they assert tool-def shape.
+- [ ] S5. **Prompt-injection threat model** — the real high-consequence path and
+      the one item the S0 audit deliberately excluded. Scope: untrusted issue/PR
+      text → model → `bash` (`shell: true`) / `create_pr` / git. Deliverable is
+      a written threat model first. Any mitigation touching per-role tool gating
+      or bash worktree cwd-locking is an `AGENTS.md` "Never weaken" boundary →
+      owner sign-off required.
+- [ ] S6. `LICENSE` + `package.json` `"license"` field. Owner decision: MIT vs
+      Apache-2.0. Legal/metadata only, **not** security.
+- [ ] S7. Dev-toolchain refresh — `vitest` → 5.x, `gray-matter`. Clears
+      `tinypool` (prototype pollution → RCE) and `vitest` (path traversal /
+      arbitrary file read) plus 7 more dev-only advisories. Semver-major; isolate
+      in its own commit.
+
 ## 18. Quality hardening (post-migration)
 
 Items from codebase analysis rated below A/A-. Each tracked in PLAN.md

@@ -56,6 +56,7 @@ Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/
 - New agent roles or new providers beyond gemini/openrouter/ollama.
 - Changes to SOR event shapes or hash-chain logic (`sor:verify` contract).
 - Schema migrations; new runtime dependencies.
+- Any MCP transport other than stdio, or any MCP OAuth (`authProvider`, `withOAuth()`, `auth()`, `fetchToken()`). Fleet's stdio-only, no-OAuth surface is what makes MCP OAuth advisories inapplicable — see `SECURITY.md` §3. Adding either voids that exemption and requires a fresh audit.
 
 ### Never
 - Add model calls to manager code (`orchestrator.ts` et al).
