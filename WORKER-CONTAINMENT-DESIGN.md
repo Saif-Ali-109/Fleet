@@ -91,7 +91,16 @@ Without the sentinel, the manager cannot kill its own children once it has exite
 **Supported platform (production target)**:
 
 - Linux only. `prctl(PR_SET_PDEATHSIG)` does not exist on macOS or Windows.
-- Kernel version: Linux `>= 5.3` (earlier: `cgroup.kill` missing, systemd scope fallback only).
+- Kernel version: Linux `5.14` or newer is required before a system may
+  claim enforced containment. Explicit history:
+  - cgroup v2 unified hierarchy: common only after earlier (often 5.2+)
+    distros; this document treats 5.3 as the *weakest* lens simply to
+    describe the base cgroup behavior.
+  - `cgroup.kill` (the reliable, kernel-owned bulk cgroup kill of every
+    task member) was introduced in Linux **5.14** and is the interface
+    that makes externally enforced termination available. Earlier kernels
+    cannot support enforced containment through this mechanism and are limited
+    to report-only behavior plus process-group pdeath where available.
 - Cgroup mode: unified cgroup v2 control hierarchy mounted at `/sys/fs/cgroup`.
 - Delegation: manager must run in a sub-cgroup that exposes `{cpuset,cpu,memory,pids}` and allows nested cgroup creation. On systems without delegation (for example some systemd or outer-namespace boundaries):
   - `cgroup.controllers` can't be written by the manager;
@@ -116,6 +125,67 @@ Without the sentinel, the manager cannot kill its own children once it has exite
 - The manager does not use advisory-lock availability to compensate for missing containment.
 
 ### 2A.5 Evidence and accounting constraints
+
+### 2A.6 Sentinel lifecycle, authority, and failure behavior
+
+- **Sentinel placement.** The sentinel is an independent process whose launch
+  is governed by the deployment unit / init system, not by the manager. Its
+  runtime directory, cgroup-scopes file (`worker-scopes.json`), readiness
+  file, and optional log directory are owned by the sentinel before the
+  manager ever starts. The manager treats the sentinel as a prerequisite:
+  if the sentinel is absent or unhealthy during manager startup, the manager
+  must escalate its own containment mode honestly and report `degraded`.
+
+- **Independent supervision (non-manager parenting).**
+  - When systemd or an equivalent init framework is present: the sentinel is
+    started as a separate unit, and the manager unit records a `Upholds=`
+    / `Requires=` ordering so that if the sentinel unit stops, the manager
+    unit is stopped by reporting it down. Manager death does not necessarily
+    stop the sentinel: the sentinel still may perform cleanup after the
+    manager exits as needed.
+  - In environments without systemd units: the sentinel is required to be
+    launched by host orchestration and placed with `start` status. The design
+    (and verification checklist) is the authority for deployment rather than
+    generic parent-child behavior.
+  - The manager is *not* the sentinel's parent. If the sentinel is abnormally
+  killed, the manager journals a declaration that automatic containment is
+  absent and enters `degraded` report-only mode. This is the exact failure
+  case we refuse to paper over.
+
+- **Sentinel restart policy**
+  - The sentinel should be a real PID-1-resistant process that reissues its
+    startup handshake to current workers if restarted mid-workload.
+  - When the sentinel is down for more than `containmentOfflineThreshold`
+    (suggest 30 s and configurable), the manager must stop accepting new
+    workers, transition running leases to a reporting-only termination
+    path (which is actually no action other than explicit reporting), and
+    continue to report a degraded mode via existing console/TUI channels.
+
+- **Permissions for sentinel termination of a worker**
+  - The sentinel does its best with cgroup writes, but it must also enforce
+    its own actor identity (for example, via a specific group / OIDC
+    JWT). The manager does not rely on UID equivalence between itself and
+    the sentinel except as a coarse check. The systemd service definition
+    may establish this; for non-systemd hosts, a documentation appendix
+    explains how to configure the authorization.
+- **False promise prevention**
+  - When the sentinel is unhealthy or absent, the manager:
+    - logs the exact containment posture in each startup and worker launch;
+    - records `containment` state in worker startup reports within existing
+      reporting channels;
+    - avoids claiming external termination occurred even when a worker
+      happens to die naturally (ambiguous case).
+  - Only when the sentinel is *healthy at the `kill` event* and the cgroup
+    write claims success may a report of external-enforced termination be
+    expressed in safe terms.
+  - A test that would have to verify false containment must assert the
+    sentinel was not called when unavailable. The ground-truth changes
+    only if the sentinel read-back confirms no member PIDs exist.
+- **Manager recovery / lock failover**: when a manager disappears and a new
+  manager acquires the advisory lock, the new manager must *not* invoke
+  cleanup locally unless the sentinel itself (or host evidence) agrees with
+  the deprecation review. By default all control remains delegated.
+
 
 - Containment evidence (post-cleanup state) is reported through arbitrary inspector tooling / manual audit only; no new SOR event can be introduced without separate approval.
 - Accounting must not be affected by termination actions: only successful terminal `updateWorkerStatus` modifies accounting. Cgroup kill without resulting DB evidence records the orphan locally and does not mutate or automatically retry accounts.
@@ -294,7 +364,30 @@ treated as expected baselines today, not as failures of the design.
 
 These are evidence contracts, not implementation behavior.
 
-### 7.3 Baseline bug hunt
+### 7.3 Tests actually executed (in-repository witnesses)
+
+- `ownershipLifecycleIntegration.test.ts::first_case` — executed, green:
+  process exit 2 and no long-worker survivors after connection loss.
+- `ownershipLifecycleIntegration.test.ts::second_case` — executed, green:
+  manager `SIGKILL` leaves a worker alive with surrogate shape.
+- `managerOwnership.test.ts::SIGKILL crash releases the lock` — executed, green:
+  lock frees, must not be read as worker liveness proof.
+
+### 7.4 Tests specified but not yet executed against production (controlled contracts)
+
+- `control.ignored_sigterm_survives_current_strategy`
+- `control.descendant_escape_current_strategy`
+- `control.blocked_worker_wakes_at_deadline`
+- `control.process_group_escape_cgroup_fallback`
+- `control.cgroup_budget_exhausted`
+- `control.sentinel_manager_lost`
+- `control.degraded_cap_mode`
+
+These remain designed proofs only until implementation candidates exist.
+They may be driven by harness utilities that replicate a manager-free
+process growth matrix with systemd and OOM knobs.
+
+### 7.5 Baseline bug hunt
 
 Observed/factor-finding capture the containment gap. The current `killActiveWorkers()` fixed that fact.
 
