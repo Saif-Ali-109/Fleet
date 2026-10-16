@@ -149,18 +149,51 @@ in isolation.
 2. Set `started_at` on the first transition out of `pending`, so `created_at`
    (hire) and `started_at` (actually running) are distinguishable.
 
-### 3.2 Safe reconciliation — no age-only heuristics
+### 3.2 Safe reconciliation — ownership gates it, ages do not
 
-Under Option A, at startup, *before* the first `hireWorker`, the set of active
-rows is provably orphaned by this manager: no worker this process created can
-exist yet, and no other manager can be running. Reconciliation retires them by
-`role_id`, with an explicit reason (`orphaned_at_startup`), and emits a SOR event.
+**Corrected by empirically verified subprocess-lifecycle evidence.** The earlier
+"Option A ⇒ rows provably orphaned" argument (§3.2 v1) was wrong: ownership
+makes the *lock* exclusive but it does not make the *children* die. Observed
+directly: a manager forked with the default `fork()` options carries neither
+`detached: true` nor a worker-side self-timeout; `WORKER_TIMEOUT_MS` is enforced
+only by the manager. When the manager is SIGKILLed, those children reparent as
+`Sl` processes, keep ticking, and never time out themselves — a killed
+manager's worker was subsequently observed progressing past its prior tick
+count (ticks 4→10). Consequently:
 
-Where ownership **cannot** be established, do **not** sweep on age alone. Age is
-advisory only. This is the specific mistake the S2/S3 investigation already
-corrected once, where a plausible `run_id IS NULL` guard turned out to match
-every row in the table. Reconciliation must be gated on proven ownership, and
-absent that, it should report orphans rather than retire them.
+  * A new startup's "active rows" are not provably stale: the prior manager
+    may simply have died, with its children still live and still writing.
+  * Therefore **startup reconciliation may not retire on age alone**, and it may
+    not retire rows merely because the advisory lock is now free.
+  * Rows no longer qualify as "orphaned" just by association with a dead
+    manager pid — only *graceful* manager termination (session tearing down its
+    lock and workers normally, attested by the lock-release observing pid
+    disconnect) can precede a sweep.
+
+What reconciliation may do instead, safely:
+
+  * **Report, then allow auto-retire only on attested graceful exit.** The
+    ownership layer can already prove exclusivity and liveness (lock held by
+    *this* process). A sweep is permissible only when there is prior written
+    evidence (e.g. the previous manager's explicit finalise/teardown) that the
+    workers did not outlive it; otherwise the sweep reports orphans for human
+    triage.
+  * **Per-fork lifetime bound.** Until workers fork with `detached: false` and
+    a worker-side self-termination, the unbounded-orphan window is a
+    prerequisite gap, not an S8-level design decision. Propose: child exits on
+    WriteError of parent pipe / a held timeout inside the worker — independent
+    of manager survival.
+  * **Kill + re-hire remains gated.** Reconciliation must not surprise a
+    genuinely-running live worker belonging to this host; safe only once the
+    ownership + lifetime-bound prerequisites are demonstrated.
+
+What changed structurally with stages 1–3 (so the report is now useful even
+when we only report): each active row now carries its real `run_outcomes`
+UUID and a true `started_at`, and `started_at` distinguishes "hired" from
+"actually spawned". `status` now legitimately transitions
+`pending → running → success/failed`, which makes a stranded `running` row
+clearly identifiable without SOR help. `retireWorker` stays dead code until
+the above prerequisites are satisfied.
 
 ### 3.3 The leak paths
 
