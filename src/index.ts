@@ -57,6 +57,10 @@ import type { PolicyDocument } from "./sor/kernel/types.ts";
 import type { DashboardState } from "./tui/dashboard.ts";
 import type { Issue, Role, RunContext } from "./types.ts";
 import { PROVIDER_NAMES, type ProviderName } from "./types.ts";
+import {
+	acquireManagerOwnership,
+	type ManagerOwnership,
+} from "./workforce/ownership.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -233,6 +237,15 @@ export const shutdownController = createShutdownController({
 		wakeScan();
 	},
 });
+
+/** Release manager ownership during graceful shutdown (user requirement 6).
+ * Set by main() once the lock is acquired; idempotent and safe when unset. */
+let releaseOwnershipOnShutdown: (() => Promise<void>) | undefined;
+export const setOwnershipReleaser = (fn?: () => Promise<void>): void => {
+	releaseOwnershipOnShutdown = fn;
+};
+export const getOwnershipReleaser = (): (() => Promise<void>) | undefined =>
+	releaseOwnershipOnShutdown;
 
 /** Test-only seam (mirrors FLEET_WORKER_ENTRY): never set by production code;
  * keeps vitest workers from registering real signal handlers on import. */
@@ -496,6 +509,11 @@ async function runSingleIssue(args: {
 
 	process.exitCode =
 		summary.status === "completed" ? 0 : summary.status === "aborted" ? 2 : 1;
+
+	// Release manager ownership before exiting a completed run (graceful path).
+	const releaser = getOwnershipReleaser();
+	if (releaser) await releaser();
+
 	shutdownController.concludeAfterFinalize();
 }
 
@@ -947,6 +965,11 @@ async function runSingleIssueFromQueue(
 	}
 
 	shutdownController.concludeAfterFinalize();
+
+	// Release manager ownership before runQueue returns.
+	const releaser = getOwnershipReleaser();
+	if (releaser) await releaser();
+
 	return { status: s.status, prUrl: s.prUrl, failure: s.failure };
 }
 
@@ -1258,6 +1281,53 @@ async function main(): Promise<void> {
 		assertGeminiModelChainConfiguration(undefined, geminiQuotaConfig());
 	}
 	bootSOR(mode);
+
+	// Manager ownership gate (S8 stage 1): strictly BEFORE any run mode boots
+	// — `await`-blocking, not fire-and-forget — so a second manager fails closed
+	// before hiring workers, before reconciliation, before the dashboard, and
+	// before `bootSOR` records its boot wakeup.
+	//
+	// Fails closed when the lock is held (requirement 5) and terminates the
+	// process on unexpected loss (requirement 7). A dedicated connection is used
+	// for the lock; the shared pool is untouched. Dry runs are gated too: they
+	// write DB rows (e.g. bootSOR), so two concurrent instances would still
+	// collide.
+	let ownership: ManagerOwnership | undefined;
+	if (!process.env.DATABASE_URL) {
+		console.error(
+			"[ownership] DATABASE_URL is not set: manager ownership cannot be acquired. Refusing to start.",
+		);
+		process.exit(1);
+	}
+	try {
+		ownership = await acquireManagerOwnership({
+			connectionString: process.env.DATABASE_URL ?? "",
+		});
+	} catch (err) {
+		console.error(`[ownership] ${(err as Error).message}`);
+		process.exit(1);
+	}
+
+	// Ownership loss latches: stop scheduling and terminate (user requirement 7).
+	// Graceful release happens via the shutdown path below so the lock departs
+	// cleanly on SIGINT/SIGTERM.
+	ownership.onLoss((loss) => {
+		console.error(
+			JSON.stringify({
+				event: "manager_ownership_lost",
+				reason: loss.reason,
+				error: loss.error,
+			}),
+		);
+		// Stop in-flight workers, then exit nonzero. process.exit runs no further
+		// handlers, which is the intent here: no further hiring, no further work.
+		void killActiveWorkers();
+		process.exit(2);
+	});
+
+	// Graceful shutdown releases the lock (msg 6). Wire AFTER loss-latch wiring
+	// so release() announces "released" without tripping the terminate path.
+	setOwnershipReleaser(() => ownership.release());
 
 	if (repo === undefined && issueNumber === undefined) {
 		if (noWeb) {
