@@ -49,6 +49,78 @@ Corollary: a `killActiveWorkers()` call merely tells a worker to begin exiting. 
 
 ---
 
+## 2A. Refinement: independent enforcement when the manager receives SIGKILL
+
+### 2A.1 Mechanism responsible for terminating worker and descendant processes
+
+The only mechanism that survives a SIGKILL of the manager is an **independent containment sentinel supervising Linux cgroup v2 scopes**. Manager-based signal delivery stops as soon as the manager is returned for SIGKILL; worker-local deadlines only apply if the worker's event loop unblocks; a separate supervisor can be SIGKILLed only with arbitrary authority, which the trusted host controls.
+
+- The manager creates a leaf cgroup for every worker:
+  - `cgroup.type=domain`
+  - `memory.max`
+  - `cpu.max`
+  - `pids.max` (controls how far a fork bomb could reach)
+  - `cpuset.cpus` (optional but recommended)
+- Before it forks the worker, the manager performs a cgroup assignment handshake with the sentinel. The handshake records `worker_id`, `cgroup_path`, `parent_pid` (manager), `manager_pid`, `created_at`, and `deadline`. The sentinel retains this registry; no new path is opened for a worker that only the manager can describe.
+
+- The child is started with `PR_SET_PDEATHSIG` (Linux, direct child only; through a helper wrapper because the marker is per-thread). The signal (default SIGTERM) is delivered by the kernel if its parent goes away, without waiting for userspace to run.
+
+- The sentinel itself is a separately-rooted process, launched before the manager's first fork. The manager registers each worker and the sentinel listens for a manager-loss condition (see §2A.2). The sentinel does not schedule work, restart workers, or modify the DB. Its sole job is containment and evidence collection.
+
+- If cgroup permissions are absent, the runtime is operating in **degraded `report-only` mode**; see §2A.4 startup/failure behavior.
+
+### 2A.2 Who invokes cgroup.kill if the manager has already exited
+
+There are three distinctly accountable actors:
+
+1. **Manager (while alive):** opens and owns the cgroup scope, registers workers, can kill blocked workers.
+2. **Containment sentinel (independent):** records each worker's group at registration time; reacts when manager liveness fails, then executes `cgroup.kill` (cgroup v2 feature) against the registered scopes and records its own `{ts, scope, action, error}` log. No DB signal change.
+3. **Kernel:** executes writes; if neither the manager nor the sentinel can exercise this (for instance on a degraded platform), the processes remain alive but the system has explicit evidence of the degraded mode because the sentinel can still report cgroup occupancy, absent errno.
+
+Without the sentinel, the manager cannot kill its own children once it has exited. With only process-group (`-pgid`) semantics, a forked process that calls `setsid()` leaves the group. Cgroup kill is the final shared surface because the kernel membership is the authority before group leaders and descendants.
+
+### 2A.3 Distinguishing enforcement classes
+
+- **Cooperative deadline:** worker checks its own clock and exits. Efficient, deterministic only when the event loop is alive.
+- **Parent-death notification:** `PR_SET_PDEATHSIG`. Strength: fires even on abrupt manager death. Limitation: direct child only, and it assumes the signal is not lost, blocked, or ignored.
+- **Externally enforced process termination:** sentinel or another independent host actor invoking `cgroup.kill`, `kill -9 -pgid`, or procfs termination.
+- In a supported system all three layers may contribute, but at least **(a) worker-local deadline**, **(b) cgroup membership**, and **(c) sentinel detection** are mandatory. A timeout alone is insufficient unless the sentinel can terminate the cgroup; a pdeath signal alone is insufficient once a process leaves its original process group.
+
+### 2A.4 Supported platforms, cgroup capabilities, startup checks, and degraded behavior
+
+**Supported platform (production target)**:
+
+- Linux only. `prctl(PR_SET_PDEATHSIG)` does not exist on macOS or Windows.
+- Kernel version: Linux `>= 5.3` (earlier: `cgroup.kill` missing, systemd scope fallback only).
+- Cgroup mode: unified cgroup v2 control hierarchy mounted at `/sys/fs/cgroup`.
+- Delegation: manager must run in a sub-cgroup that exposes `{cpuset,cpu,memory,pids}` and allows nested cgroup creation. On systems without delegation (for example some systemd or outer-namespace boundaries):
+  - `cgroup.controllers` can't be written by the manager;
+  - the sentinel degrades to `report-only`, reporting the missing controllers and active members.
+- Runtime permissions: the manager process must be able to create child leaf cgroups and write `cgroup.kill`.
+- Systemd configuration (`Delegate=yes`/`MemoryAccounting=yes`/`CPUAccounting=yes`/`TasksAccounting=yes`) is recommended but not hard-coded or required; if it is available the manager's direct checks use it conservatively.
+
+**Startup checks**:
+
+1. Detect the unified hierarchy and check read access to `/sys/fs/cgroup/cgroup.controllers`. If missing or read-permission denied, cgroup containment is unavailable.
+2. Check write access in the manager's own cgroup and a trial nested leaf creation (empty + `cgroup.type`, etc). If unavailable, mark cgroup containment unsupported.
+3. Check that the controllers actually requested by deployment (`cpu,memory,pids`) are in `cgroup.subtree_control` for the manager's cgroup. If any are missing, record the exact list in the degradation report.
+4. Validate the sentinel binary/installation manifest/hash exists at startup; a hash or missing sentinel always downgrades to report-only mode.
+5. Validate `PR_SET_PDEATHSIG` availability (Linux); if unavailable, keep the other layers and mark partial mode.
+6. Validate that a dead-end kernel killing command such as `cgroup.kill` can be used on the trial leaf; if not available, mark `cgroup.kill` absent and retain manager-only enforcement plus report-only operation.
+
+**Behavior when containment cannot be established**:
+
+- The manager continues to function, with `containment` recorded as `degraded` in whatever operator-facing report exists (console/TUI/dashboard only today, no new SOR event type).
+- In `degraded` mode the implementation is not permitted to assert worker termination based on this design because the sentinel or kernel guarantee is absent. It reports, never retires.
+- Differential on restart: `pending`/`running` rows remain untouched; no scheduled sweep on age, no reprocessing classification. (Earlier agreement in S8-DESIGN holds.)
+- The manager does not use advisory-lock availability to compensate for missing containment.
+
+### 2A.5 Evidence and accounting constraints
+
+- Containment evidence (post-cleanup state) is reported through arbitrary inspector tooling / manual audit only; no new SOR event can be introduced without separate approval.
+- Accounting must not be affected by termination actions: only successful terminal `updateWorkerStatus` modifies accounting. Cgroup kill without resulting DB evidence records the orphan locally and does not mutate or automatically retry accounts.
+- This must remain transparent to tools that report active inventory (for example focused counts) and to tests that exercise quotas.
+
 ## 3. Current process-tree behavior (demonstrated)
 
 Evidence already collected:
