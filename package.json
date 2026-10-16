@@ -15,6 +15,8 @@
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
 		"test:watch": "vitest",
+		"test:db:setup": "tsx --env-file-if-exists=.env scripts/setupTestDb.ts",
+		"test:db:recreate": "tsx --env-file-if-exists=.env scripts/setupTestDb.ts --recreate",
 		"lint": "biome check",
 		"format": "biome format --write",
 		"migrate:up": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
