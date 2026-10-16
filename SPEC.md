@@ -618,12 +618,28 @@ as two separate facts.
 - [x] S1. `SECURITY.md` — 2026-10-16: threat model, trust boundaries, stdio-only
       MCP posture, GHSA-6qxp-vccf-f47h non-applicability, dep posture, and an
       explicit "not a security finding" list.
-- [ ] S2. Production lockfile refresh — target `npm update fast-uri proxy-addr
+- [x] S2. Production lockfile refresh — target `npm update fast-uri proxy-addr
       hono ip-address qs`. Clears 5 of 6 prod advisories (incl. `proxy-addr`,
       critical) with **no** code change; all 5 sit inside existing semver ranges.
       Acceptance: `npm audit --omit=dev` drops those five; typecheck + tests + dry
       green. NOTE: a blanket `npm update` may also float the SDK — prefer
       targeted for diff readability.
+      — Verified 2026-10-16. Lockfile-only diff, 19 insertions / 15 deletions:
+      `proxy-addr` 2.0.7→2.0.8 (was critical), `fast-uri` 3.1.5→3.1.8,
+      `hono` 4.13.1→4.13.13, `ip-address` 10.5.0→10.7.4, `qs` 6.15.3→6.16.1.
+      Only incidental extra is a `funding` metadata block on `proxy-addr`. No
+      packages added or removed, **no code change**, and the SDK did **not** float
+      (`@modelcontextprotocol/sdk` still 1.30.0 — S3 is a separate floor bump).
+      `npm install --package-lock-only` reproduces the file byte-identically, so
+      the refresh is complete and deterministic.
+      `npm audit --omit=dev`: **6 → 1** (remaining is the §3 SDK advisory, not
+      applicable). Typecheck clean. `npm run dry` boots clean — dashboard up,
+      GitHub signed in, graceful SIGTERM shutdown; note it is interactive and
+      long-running, not a terminating smoke test.
+      Tests: 1269 passed / 1 failed. The failure is **pre-existing at baseline**,
+      proven by reverting to the HEAD lockfile and re-running `npm ci` — identical
+      failure. It is NOT cleared by S2, so the "tests green" half of this item's
+      acceptance criterion is **not** met; see the note below.
 - [ ] S3. MCP SDK floor `^1.30.0` → `^1.32.1` in `package.json`. Floors above the
       patched `1.31.0` so a clean install cannot regress. Safe: 1.31.0's upgrade
       notes are OAuth-only and Fleet uses no OAuth. Changelog wording:

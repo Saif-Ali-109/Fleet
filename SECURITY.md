@@ -122,25 +122,41 @@ HTTP MCP transport, an `authProvider`, or `withOAuth()`, this exemption is void 
 
 ## 4. Dependency posture
 
-At the time of writing, `npm audit --omit=dev` reports **6 production advisories**, all rooted in
-`@modelcontextprotocol/sdk` (which declares `express`, `express-rate-limit`, `hono`,
-`@hono/node-server`, `ajv`, `cors`, `eventsource`, `jose`, `pkce-challenge` as runtime
-dependencies, regardless of which entry points are imported).
+As of the S2 lockfile refresh, `npm audit --omit=dev` reports **1 production advisory**: the
+`@modelcontextprotocol/sdk` OAuth advisory in §3, which does not apply to Fleet. It previously
+reported 6.
 
-- 5 of the 6 are **stale lockfile pins** resolvable within semver ranges Fleet already declares
-  (`proxy-addr` critical, `fast-uri`, `hono`, `ip-address`, `qs`).
-- All 5 are **unreachable at runtime** under the stdio-only architecture, because the HTTP/OAuth
-  modules are never imported.
-- `fast-uri` is the one partial exception: `ajv` **is** instantiated on every MCP server
-  (`server/index.js` defaults `jsonSchemaValidator` to `AjvJsonSchemaValidator`), but no Fleet tool
-  schema uses a `format: "uri"` keyword, so the affected parsing path is not exercised.
+The other 5 were **stale lockfile pins** inside semver ranges Fleet already declared, and S2
+cleared them with no code change:
+
+| Package | Before | After |
+|---|---|---|
+| `proxy-addr` (was critical) | 2.0.7 | 2.0.8 |
+| `fast-uri` | 3.1.5 | 3.1.8 |
+| `hono` | 4.13.1 | 4.13.13 |
+| `ip-address` | 10.5.0 | 10.7.4 |
+| `qs` | 6.15.3 | 6.16.1 |
+
+All 5 were reachable only as declared runtime dependencies of `@modelcontextprotocol/sdk`, which
+declares `express`, `express-rate-limit`, `hono`, `@hono/node-server`, `ajv`, `cors`,
+`eventsource`, `jose`, `pkce-challenge` regardless of which entry points are imported. Under the
+stdio-only architecture the HTTP/OAuth modules are never imported.
+
+**Residual surface, not currently flagged:** `ajv` is still instantiated on every MCP server
+(`server/index.js` defaults `jsonSchemaValidator` to `AjvJsonSchemaValidator`), so the parser
+reachable via `fast-uri` remains live in-process. No Fleet tool schema uses a `format: "uri"`
+keyword, so the affected path is not exercised. Clearing the advisory did not remove that code
+path — it only removed the known-vulnerable version from the lockfile.
 
 Development-only advisories (`vitest`, `tinypool`, `source-map-js`, `brace-expansion`, `js-yaml`,
 `argparse`, `sprintf-js`, `@vitest/*`) are **not** production dependencies. They do not ship; they
 run in CI, which commonly holds repository secrets, so they are still worth keeping current.
 
-Known issue: bumping the MCP SDK does **not** clear the transitive production advisories —
-`@modelcontextprotocol/sdk@1.32.1` declares byte-identical dependency ranges to `@1.30.0`.
+Known issue, and the reason S2 and S3 are separate commits: bumping the MCP SDK does **not** clear
+the transitive set on its own — `@modelcontextprotocol/sdk@1.32.1` declares byte-identical
+dependency ranges to `@1.30.0`. The lockfile refresh is what moved those pins; the S3 floor bump
+only raises the SDK. Conversely, S2 alone leaves the SDK advisory open, and S3 alone is dependency
+hygiene for a code path Fleet does not use.
 
 ## 5. Reporting a vulnerability
 
