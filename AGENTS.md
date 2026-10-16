@@ -24,7 +24,20 @@ Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/
 ## Commands
 
 - `npm start -- --repo <url> --issue <n>` — one issue → PR
-- `npm run dry` — keyless stubbed run (no tokens spent); ALWAYS smoke this first
+- `npm run dry` — boots the keyless stubbed stack (dashboard on `127.0.0.1:3456`).
+  **It is interactive, long-running, and does not self-terminate** — it starts the
+  dashboard, prints "Queue mode: paste a repo URL…", then waits for input
+  indefinitely. Start it, confirm the dashboard comes up and it reports
+  `GitHub: signed in as @…`, then stop it with Ctrl-C and check for
+  `[shutdown] … no active run, exiting`. Never invoke it without a timeout — a
+  bare `npm run dry` will hang forever.
+  *Network boundary (verified 2026-10-16):* **no model provider is ever reached.**
+  `runWorker` returns `stubResult` on `ctx.dryRun` before `hireWorker` and before
+  any child spawn, and `stubResult` is a pure literal (`zeroTokens()`, `costUsd:
+  0`). It is **not** offline, though: `src/index.ts` calls `ghAuthInfo()`
+  unconditionally at startup, which shells out to `gh api user` and performs a
+  real GitHub API request. So "no tokens spent" is accurate; "no network" is not.
+  Never assume `--dry-run` means no external calls.
 - `npm test` / `npm run typecheck`
 - `npm run migrate:up` / `migrate:down` — Postgres schema (DATABASE_URL required)
 - `npm run sor:verify` — replay SOR hash chain; must stay green at all times
