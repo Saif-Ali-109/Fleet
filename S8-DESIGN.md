@@ -187,13 +187,12 @@ What reconciliation may do instead, safely:
     genuinely-running live worker belonging to this host; safe only once the
     ownership + lifetime-bound prerequisites are demonstrated.
 
-What changed structurally with stages 1–3 (so the report is now useful even
-when we only report): each active row now carries its real `run_outcomes`
-UUID and a true `started_at`, and `started_at` distinguishes "hired" from
-"actually spawned". `status` now legitimately transitions
-`pending → running → success/failed`, which makes a stranded `running` row
-clearly identifiable without SOR help. `retireWorker` stays dead code until
-the above prerequisites are satisfied.
+3.2 Safe reconciliation ..." (section ending), append.
+
+### Empirical lifecycle evidence (2026-10-16, this cycle)
+
+- Ownership loss path verified by `ownershipLifecycleIntegration.test.ts` (connection loss while a long worker is active): manager prints `manager_ownership_lost` with reason `connection_error`, runs `killActiveWorkers()` (sends `SIGTERM` to the live child), and `process.exit(2)`. After exit, `pgrep longWorker.mjs` shows no more surviving workers than baseline.
+- Manager termination under active worker: an immediate `SIGKILL` to the manager process leaves the forked long-worker (`longWorker.mjs`, which traps no signals and carries no self-timeout) alive across manager death, reparented as an uncontrolled process. Without the lifetime-bound proposed above, only manual reaping clears it, and its lifetime is unbounded. Interim control must be per-worker SIGTERM/SIGKILL escalation rather than manager-side only.
 
 ### 3.3 The leak paths
 
