@@ -718,6 +718,12 @@ as two separate facts.
       behavior; `countActiveTotal()` and per-role concurrency semantics stay
       untouched throughout.
 
+      **Full design proposal: `S8-DESIGN.md`.** Owner decision required on §2
+      there (advisory-lock single-manager, recommended, vs owner_id+lease
+      multi-manager) before any code. That decision gates everything: startup
+      reconciliation is only safe once ownership is proven exclusive, and the
+      design explicitly rejects age-only cleanup heuristics.
+
 ## 18. Quality hardening (post-migration)
 
 Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
