@@ -253,16 +253,46 @@ Dependencies and gating (not to implement yet):
   - worker still present after parent death, cleaned up by test.
 - `managerOwnership.test.ts::SIGKILL crash-releases lock`: lock goes free (verified before) but *does not* (and cannot) prove worker death.
 
-### 7.2 Tests needed for containment approval (proposed, not yet implemented)
+### 7.2 Controlled tests required for containment approval (not yet implemented in production)
 
-These are explicitly drafted to emulate real process systems, not advisory evidence.
+Each test is a controlled prototype. "Blocked" or "surviving" outputs must be
+treated as expected baselines today, not as failures of the design.
 
-- `procs._terminate_premise_test`: Fork a child that itself spawns a grandchild. Verify the current direct-child SIGTERM strategy leaves `grandchild_worker` alive — report that and add the process-group remediation only after approval.
-- `cgroup_accountancy_check`: Child enters memory stress and OOMs; verify manager receives 137 and marks the DB row failed, rather than leaving it pending.
-- `pdeath_signal_check`: Manager deliberately dies, but the worker sets `PR_SET_PDEATHSIG` and terminates within a observed cap (suggest 2 s). Use a small C or Rust helper or a Node N-API module to set `prctl`; do not attempt to rely solely on fork flag.
-- `escalation_check`: Stubborn child that traps SIGTERM must still be gone after 3 × `WORKER_TIMEOUT_GRACE_MS` with process-group kill.
-- `descendant_escape_check`: Child calls `setsid()`; verify cgroup still kills everything while process-group kill fails.
-- `host_crash_evidence_check`: Simulated absence of DB heartbeat/report; manager must refuse to retire and just report.
+- `control.ignored_sigterm_survives_current_strategy`:
+  - Parent forks `stubbornWorker.mjs` which ignores SIGTERM.
+  - Parent invokes `killActiveWorkers()`. Expected baseline:
+    1. `killActiveWorkers()` returns `1`;
+    2. direct process remains alive after 2 full grace cycles;
+    3. only the direct child has a signal recorded, no escalation occurred.
+  - Marks the pre-containment limitation explicitly, and must no longer
+    survive under the proposed escalation ladder.
+- `control.descendant_escape_current_strategy`:
+  - chilled child forks a grandchild via `spawn(..., { detached: false })`
+    and refuses `SIGTERM`; direct-child kill leaves the grandchild alive.
+  - Adds a request check that the scope kill reaches both pid objects.
+- `control.manager_exit_while_worker_active` already has an executed
+  form in `ownershipLifecycleIntegration.test.ts::second_case`: manager
+  receives `SIGKILL`, worker survives independently, test cleans up. This is
+  expected independently-verified behavior and must remain documented.
+- `control.blocked_worker_wakes_at_deadline`:
+  - worker busy-loop not reading stdin; parent-side deadline kills. With
+    cgroup containment, the deadline comes from process limits, not an event
+    loop.
+- `control.process_group_escape_cgroup_fallback`:
+  - worker calls `setsid()` and moves to its own session. Process-group kill
+    no longer targets it; cgroup kill does, requiring both group and cgroup
+    evidence fields.
+- `control.cgroup_budget_exhausted`:
+  - worker exceeds `pids.max` or memory limit. Expected kernel refusal,
+    watchdog detects and reports only.
+- `control.sentinel_manager_lost`:
+  - manager process loses its heartbeat file descriptor or cgroup session.
+    sentinel runs cgroup kill; manager state is marked drained on return.
+- `control.degraded_cap_mode`:
+  - run in an environment without cgroup delegation, verifier records
+    report-only and refuses to claim termination occurred.
+
+These are evidence contracts, not implementation behavior.
 
 ### 7.3 Baseline bug hunt
 
