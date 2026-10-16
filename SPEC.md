@@ -662,10 +662,17 @@ as two separate facts.
       `tinypool` (prototype pollution → RCE) and `vitest` (path traversal /
       arbitrary file read) plus 7 more dev-only advisories. Semver-major; isolate
       in its own commit.
-- [ ] S8. **Worker lifecycle: orphan recovery + manager ownership.** Design only —
-      NOT implemented. Findings and proposal below; every part needs owner
-      approval, and parts (c)/(d) change production concurrency or retirement
-      behavior.
+- [ ] S8. **Worker lifecycle: orphan recovery + manager ownership.** Partially
+      implemented as of 2026-10-16 (commits `82122b3`, `c14ac14`,
+      `5468c84`, and this stage): (a) single-managerOwnership via
+      pg_advisory_lock (shipping); (b) failed terminal-status writes now
+      observable (`worker_status_write_failed`); (c-flow) worker-to-run
+      correlation now carries the real `run_outcomes.run_id` UUID with true
+      `started_at` on the first spawn (`workerCorrelation.test.ts`) —
+      shipped. Remaining design-only/gated pieces in `S8-DESIGN.md`:
+      startup reconciliation sweep, retirement-behavior changes, and SOR
+      event types for hire/retire require owner approval. Parts (c)/(d)
+      still change production concurrency or retirement behavior.
 
       **Finding 1 — `retireWorker` is dead code.** Defined at
       `src/workforce/hiring.ts:128`; it has zero production call sites, and the

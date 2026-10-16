@@ -306,7 +306,14 @@ export async function runOrchestrator(
 			dash,
 			emitSor: true,
 		});
-		const res = await runWorker(role, task, ctx, policy, { onText, onEvent });
+		// runId is the real run_outcomes UUID from db.createRun (undefined for
+		// dry runs). NEVER ctx.runId — that is the timestamp run label, not a
+		// UUID, and worker_roles.run_id would reject it (S8 F2/T8).
+		const res = await runWorker(role, task, ctx, policy, {
+			onText,
+			onEvent,
+			runDbId: runId,
+		});
 		agents[role] = res;
 		dash.agents[role] = {
 			role,

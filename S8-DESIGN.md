@@ -132,7 +132,15 @@ in isolation.
 
 ## 3. Recovery design
 
-### 3.1 Worker-to-run correlation
+### 3.1 Worker-to-run correlation — IMPLEMENTED (stage 3 commit)
+
+1. DB `run_id` UUID threading: ✓ `orchestrator.ts:runWorker` now passes the
+   real run_outcomes UUID into `RunWorkerOpts.runDbId`, appended to
+   `hireWorker`'s signature and bound at INSERT; ctx.runId is never used
+   there (FK rejects it). `markWorkerRunning` sets `status='running'` and
+   `started_at=now()` fire-and-forget at first successful fork, guarded on
+   `status='pending'` so a late spawn can never resurrect a terminal row.
+   Regression suite: `src/__tests__/workerCorrelation.test.ts`.
 
 1. Thread the DB `run_id` UUID from `orchestrator.ts:494` through to `runWorker`
    and into `hireWorker`, replacing the hardcoded `VALUES (NULL, …)` with a

@@ -63,7 +63,7 @@ afterEach(async () => {
 	// this suite's exact hire shape (role coder + backend ollama) so it can
 	// never touch rows owned by other tests.
 	await pool.query(
-		"DELETE FROM worker_roles WHERE status = 'pending' AND role_name = 'coder' AND backend = 'ollama'",
+		"DELETE FROM worker_roles WHERE role_name = 'coder' AND backend = 'ollama' AND status IN ('pending', 'running')",
 	);
 });
 
@@ -116,7 +116,7 @@ afterEach(async () => {
 	// this suite's exact hire shape (role coder + backend ollama) so it can
 	// never touch rows owned by other tests.
 	await pool.query(
-		"DELETE FROM worker_roles WHERE status = 'pending' AND role_name = 'coder' AND backend = 'ollama'",
+		"DELETE FROM worker_roles WHERE role_name = 'coder' AND backend = 'ollama' AND status IN ('pending', 'running')",
 	);
 });
 

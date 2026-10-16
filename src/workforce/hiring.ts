@@ -79,6 +79,7 @@ export async function hireWorker(
 	backend: string,
 	model: string,
 	policy: WorkforcePolicy,
+	run_id?: string,
 ): Promise<string> {
 	const check = await canHire(role_name, backend, policy);
 	if (!check.allowed) {
@@ -89,15 +90,36 @@ export async function hireWorker(
 
 	const result = await pool.query<WorkerIdRow>(
 		`INSERT INTO worker_roles (run_id, role_name, model, backend, permissions, status, created_at)
-     VALUES (NULL, $1, $2, $3, NULL, 'pending', now())
+     VALUES ($4, $1, $2, $3, NULL, 'pending', now())
      RETURNING role_id`,
-		[role_name, model, backend],
+		[role_name, model, backend, run_id ?? null],
 	);
 	const row = result.rows[0];
 	if (!row) {
 		throw new Error("hireWorker failed to retrieve role_id");
 	}
 	return row.role_id;
+}
+
+/**
+ * Mark the moment a worker actually starts: the child process was forked. The
+ * first spawn wins (later attempts/restarts keep the original started_at), and
+ * a worker that never successfully spawned stays `pending` with no started_at
+ * — the honest lifecycle. Active-counting is unchanged (pending and running
+ * both count).
+ *
+ * Guarded on `status = 'pending'` because the caller fires this
+ * fire-and-forget at fork time: if the worker finishes first, the terminal
+ * write has already set success/failed and this update must be a no-op rather
+ * than resurrect the row into an active state.
+ */
+export async function markWorkerRunning(workerDbId: string): Promise<void> {
+	await pool.query(
+		`UPDATE worker_roles
+     SET status = 'running', started_at = now()
+     WHERE role_id = $1 AND status = 'pending'`,
+		[workerDbId],
+	);
 }
 
 export async function updateWorkerStatus(
@@ -122,6 +144,35 @@ export async function updateWorkerStatus(
 			status,
 			permissions === null ? null : JSON.stringify(permissions),
 		],
+	);
+}
+
+/**
+ * Structured, non-fatal warning for a failed worker_roles status write. Carries
+ * correlation context only — never task text, model output, or trace contents.
+ * `walk_ok` is omitted by JSON.stringify when the caller has no walk outcome
+ * (e.g. the running-mark at spawn time); the terminal write always sets it.
+ */
+export function warnWorkerStatusWriteFailed(fields: {
+	role: string;
+	worker_id: string | undefined;
+	run_ref: string | undefined;
+	attempted_status: string;
+	walk_ok?: boolean;
+	error: unknown;
+}): void {
+	const message =
+		fields.error instanceof Error ? fields.error.message : String(fields.error);
+	console.warn(
+		JSON.stringify({
+			event: "worker_status_write_failed",
+			role: fields.role,
+			worker_id: fields.worker_id,
+			run_ref: fields.run_ref,
+			attempted_status: fields.attempted_status,
+			walk_ok: fields.walk_ok,
+			error: message.slice(0, 300),
+		}),
 	);
 }
 
