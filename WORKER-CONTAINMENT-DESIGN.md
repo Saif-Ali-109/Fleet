@@ -422,3 +422,48 @@ Before any code changes:
 This document does not authorize them.
 EOF
 echo done
+---
+
+## 10. Isolated prototype validation results
+
+### 10.1 Executed environment
+
+- OS/runtime: Linux `7.0.0-38-generic`, userspace `ain`.
+- Cgroup driver: unified cgroup v2 on `/sys/fs/cgroup`.
+- Leaf base: `.../app.slice` (delegated `memory`, `pids`, `cpu` controllers; `cgroup.kill` present and owner-writable `--w-------`).
+- Vrescia check (such as it was): running as `uid=1000`; owns child leaves; analogous to systemd-delegated app slices, not a root host IAM.
+
+### 10.2 Executed prototype results
+
+Implemented and passing in `containmentPrototype.test.ts`:
+
+- `kernel-cgroup-prerequisites`
+- `compatibility-mode-report`
+- `control-ignored-sigterm-baseline-and-cgroup-kill`
+- `control-descendant-leaves-original-process-group`
+- `control-blocked-worker-with-unreachable-handler`
+- `control-process-creation-during-cgroup-kill`
+- `control-sentinel-performs-cgroup-kill-after-manager-death`
+- `control-sentinel-missing-no-false-containment`
+
+Additional direct shell/Node scenarios executed:
+
+- **PID resource-budget enforcement:** leaf `pids.max=1`. Second `migrate` was accepted. The shell fork under a leaf with `pids.max=1` then emitted `fork: retry: Resource temporarily unavailable`, proving the **fork path** returns `EAGAIN/ ENOSPC` when the limit is crossed. Evidence was taken via Linux parent/helper processes rather than JavaScript-only workers because Node startup threads consume multiple PID budget.
+- **No-sentinel after manager `SIGKILL`:** manager forced to die; worker remained alive, no cgroup.kill occurred, then operator external cleanup was required.
+- **Sentinel independent action after manager `SIGKILL`:** independently rooted sentinel detected parent `SIGKILL`, recorded `cgroup.kill executed`, and worker is absent.
+- **Sentinel permission-loss:** sentinel attempting an unwritable/nonexistent cgroup_kill interface returned `EACCES`, wrote the error marker, and did not claim execution while leaving the worker alive for manual or supervisory cleanup.
+
+### 10.3 Not executed or unsupported
+
+- **Memory OOM-triggered process termination:** not verified empirically. `memory.max=2 MiB` triggered repeated `max` accounting/reclaim and `oom_kill 0` even after touching allocated pages (and Python may have avoided strict reclaim due to swap/zswap/overcommit behavior). This environment did **not** produce an observed OOM kill. Support requirements must make memory-enforced containment an experimental/verified option on supported bare-metal or cgroup delegation sources, not claim default enforcement.
+- **PID limit results with interpreted runtime:** Python/Node made the transaction noisier; the robust evidence is pids fork-limit enforcement and cgroup_kill, not direct runtime memory handling.
+- **Sentinel supervisor loss:** verified by independent sentinel versus manager state (it operates after manager death), but no full hierarchical systemd “supervisor disappears” scenario was launched in this container and would require fleet install-time/service management uses rather than the CLI experiment only.
+
+### 10.4 Resulting support requirement changes
+
+Because this host does not prove memory OOM enforcement:
+
+1. Enforced containment should only be declared when the expected controller behavior is validated, not simply when Linux is `5.14`.
+2. `pids.max` and `cgroup.kill` remain first-class hard guarantees.
+3. Memory and CPU must remain secondary or out-of-band report-only until the deployment makes them empirically verified.
+4. Production reclamation changes, startup reconciliation, retirement, accounting, SOR events, S3/S5, tool gating remain blocked.
