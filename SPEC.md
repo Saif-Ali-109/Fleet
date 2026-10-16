@@ -662,6 +662,61 @@ as two separate facts.
       `tinypool` (prototype pollution → RCE) and `vitest` (path traversal /
       arbitrary file read) plus 7 more dev-only advisories. Semver-major; isolate
       in its own commit.
+- [ ] S8. **Worker lifecycle: orphan recovery + manager ownership.** Design only —
+      NOT implemented. Findings and proposal below; every part needs owner
+      approval, and parts (c)/(d) change production concurrency or retirement
+      behavior.
+
+      **Finding 1 — `retireWorker` is dead code.** Defined at
+      `src/workforce/hiring.ts:128`; it has zero production call sites, and the
+      `retired` status had zero rows. The `running` status is likewise never
+      written: `updateWorkerStatus` has exactly one production call site
+      (`agentRunner.ts:526`), which writes `success`/`failed` at the *end* of a
+      walk. A worker is therefore `pending` for its entire life and only leaves
+      `ACTIVE_STATUSES` at completion.
+
+      **Finding 2 — `run_id` and `started_at` are never populated.** 100% NULL
+      across all 2048 rows. They carry zero discriminating signal and must not
+      appear in any cleanup predicate. `permissions IS NULL` *is* a reliable
+      discriminator (5/5 orphans vs 0/2043 terminal) because
+      `updateWorkerStatus` writes it atomically with the terminal status.
+
+      **Finding 3 — leak paths.** Normal completion and single-signal graceful
+      shutdown reach `agentRunner.ts:526`. Leaks occur on: second signal
+      (`forceExit` immediately), finalize exceeding the 10s `unref`ed guard at
+      `index.ts:124`, crash/SIGKILL/OOM, and any DB error at line 526 — which is
+      swallowed by `catch { /* non-fatal */ }`. Five real orphans aged 43–49 days
+      were found this way; they were retired one-time on 2026-10-16 under a
+      separately reviewed, PK-scoped transaction.
+
+      **Finding 4 — single-manager ownership is NOT enforced.** No advisory
+      lock, no lease, no leader election, no `instance_id`/`owner_id`, no
+      heartbeat; no Dockerfile/compose/k8s/systemd/pm2. The only implicit guard
+      is the dashboard TCP port, and it is partial: queue mode exits if it
+      cannot bind (`index.ts:645-648`), but single-issue mode merely degrades
+      to `web: null` (`index.ts:370-386`), `--no-web` skips the bind entirely,
+      `--port <n>` is configurable, and `127.0.0.1` is per-host — so two hosts
+      sharing a `DATABASE_URL` never contend at all. Single-manager operation
+      is an artifact of practice, not a guarantee. **Consequence: any startup
+      sweep that retires all active rows is unsafe** — a second manager's
+      startup would retire a first manager's genuinely live workers.
+
+      **Proposal, in dependency order.** (a) Populate `run_id` at
+      `agentRunner.ts:218` and add `started_at` on transition to a running
+      status, making orphans attributable. (b) Add manager ownership — a
+      `pg_advisory_lock` held for process lifetime, or an `owner_id` +
+      heartbeat column — and make startup refuse to run concurrently without
+      it. This must land *before* any sweep. (c) Startup reconciliation: once
+      ownership is exclusive, every active row at startup is provably orphaned
+      by that manager, so retire them with an explicit reason rather than an
+      age heuristic. (d) Stop swallowing the line-526 error — at minimum warn —
+      so leaks are observable. (e) Consider emitting worker lifecycle into the
+      SOR chain; it is currently absent, so hiring and retirement are not in the
+      tamper-evident audit trail.
+
+      Guards: (a)/(b)/(d) change production behavior; (c) changes retirement
+      behavior; `countActiveTotal()` and per-role concurrency semantics stay
+      untouched throughout.
 
 ## 18. Quality hardening (post-migration)
 
