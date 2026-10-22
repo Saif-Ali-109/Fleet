@@ -392,6 +392,35 @@ describe("grep/glob tools", () => {
 			expect(lines[500]).toBe("[truncated at 500 results]");
 		}
 	});
+
+	it("lists files when the model sends only a path (no pattern)", async () => {
+		mkdirSync(join(wt, "nested"), { recursive: true });
+		writeFileSync(join(wt, "root.ts"), "");
+		writeFileSync(join(wt, "nested", "deep.ts"), "");
+		const result = await run("glob", { path: "nested" }, ctx());
+		expect(result.ok).toBe(true);
+		if (result.ok)
+			expect(result.content.split("\n")).toEqual(["nested/deep.ts"]);
+	});
+
+	it("scopes an explicit pattern under path", async () => {
+		mkdirSync(join(wt, "nested"), { recursive: true });
+		writeFileSync(join(wt, "root.ts"), "");
+		writeFileSync(join(wt, "nested", "deep.ts"), "");
+		const result = await run(
+			"glob",
+			{ path: "nested", pattern: "*.ts" },
+			ctx(),
+		);
+		expect(result.ok).toBe(true);
+		if (result.ok)
+			expect(result.content.split("\n")).toEqual(["nested/deep.ts"]);
+	});
+
+	it("rejects a path that escapes the worktree", async () => {
+		const result = await run("glob", { path: "../outside" }, ctx());
+		expect(result.ok).toBe(false);
+	});
 });
 
 describe("load_skill tool", () => {
