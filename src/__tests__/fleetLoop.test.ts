@@ -1459,6 +1459,60 @@ describe("runAgent", () => {
 		expect(events.some((e) => e.t === "error")).toBe(false);
 	});
 
+	it("retries once when the model returns an empty final message", async () => {
+		const registry = buildRegistry(defWith([]));
+		const { client, create } = mockClient([]);
+		create.mockImplementationOnce(async () =>
+			resp({ role: "assistant", content: "" }),
+		);
+		create.mockImplementationOnce(async () =>
+			resp({ role: "assistant", content: "final answer" }),
+		);
+		const { events, emit } = collect();
+
+		const outcome = await runAgent({
+			client,
+			model: "m",
+			systemPrompt: "",
+			task: "",
+			registry,
+			wtCtx: ctx(),
+			emit,
+			provider: "groq",
+		});
+
+		expect(outcome.ok).toBe(true);
+		expect(outcome.text).toBe("final answer");
+		expect(create).toHaveBeenCalledTimes(2);
+		expect(events.some((e) => e.t === "error")).toBe(false);
+	});
+
+	it("fails with a clear error after repeated empty final messages", async () => {
+		const registry = buildRegistry(defWith([]));
+		const { client, create } = mockClient([]);
+		for (let i = 0; i < 3; i++) {
+			create.mockImplementationOnce(async () =>
+				resp({ role: "assistant", content: "   " }),
+			);
+		}
+		const { events, emit } = collect();
+
+		const outcome = await runAgent({
+			client,
+			model: "m",
+			systemPrompt: "",
+			task: "",
+			registry,
+			wtCtx: ctx(),
+			emit,
+			provider: "groq",
+		});
+
+		expect(outcome.ok).toBe(false);
+		expect(outcome.error).toContain("empty final message");
+		expect(create).toHaveBeenCalledTimes(3);
+	});
+
 	it("does not retry non-transient provider errors", async () => {
 		const registry = buildRegistry(defWith([]));
 		const badRequest = Object.assign(new Error("400 INVALID_ARGUMENT"), {

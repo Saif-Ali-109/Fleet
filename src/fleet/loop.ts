@@ -518,8 +518,11 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 	let costUsd = 0;
 	// Provider-side rejections of the model's own tool-call syntax are repaired
 	// with a corrective message; bounded so a model that keeps repeating the
-	// mistake still fails instead of looping.
+	// mistake still fails instead of looping. Empty final messages get their own
+	// small budget: a malformed-generation retry and an empty answer are
+	// different failure modes, and one must not exhaust the other.
 	let correctionRetries = 0;
+	let emptyRetries = 0;
 
 	const fail = (error: string): RunAgentOutcome => {
 		emit({ t: "step_finish", usage: { ...totals }, costUsd });
@@ -835,6 +838,24 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 			const toolCalls = message.tool_calls ?? [];
 			if (toolCalls.length === 0) {
 				const text = typeof message.content === "string" ? message.content : "";
+				// gpt-oss can finish in its analysis channel and return no final
+				// text at all. An empty answer is not a successful turn; nudge the
+				// model to answer instead of surfacing a bare "attempt failed".
+				if (text.trim().length === 0) {
+					if (emptyRetries < 2) {
+						emptyRetries += 1;
+						messages.push({
+							role: "user",
+							content:
+								"Your previous response was empty. Reply with the final JSON object as plain assistant text and no tool call.",
+						});
+						console.warn(
+							"[llm-retry] provider returned an empty final message; asking again",
+						);
+						continue;
+					}
+					return fail("model returned an empty final message");
+				}
 				writeCheckpoint(wtCtx.runDir, wtCtx.role, model, messages);
 				emit({ t: "result", text });
 				emit({ t: "step_finish", usage: { ...totals }, costUsd });
