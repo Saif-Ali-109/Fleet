@@ -1487,6 +1487,8 @@ describe("runAgent", () => {
 	});
 
 	it("retries ollama errors every OLLAMA_RETRY_DELAY_MS", async () => {
+		const prevMaxRetries = process.env.OLLAMA_MAX_RETRIES;
+		process.env.OLLAMA_MAX_RETRIES = "10";
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -1527,10 +1529,14 @@ describe("runAgent", () => {
 		} finally {
 			errSpy.mockRestore();
 			vi.useRealTimers();
+			if (prevMaxRetries === undefined) delete process.env.OLLAMA_MAX_RETRIES;
+			else process.env.OLLAMA_MAX_RETRIES = prevMaxRetries;
 		}
 	});
 
 	it("ollama retries exceed the standard three-strike ladder", async () => {
+		const prevMaxRetries = process.env.OLLAMA_MAX_RETRIES;
+		process.env.OLLAMA_MAX_RETRIES = "10";
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -1566,10 +1572,14 @@ describe("runAgent", () => {
 		} finally {
 			errSpy.mockRestore();
 			vi.useRealTimers();
+			if (prevMaxRetries === undefined) delete process.env.OLLAMA_MAX_RETRIES;
+			else process.env.OLLAMA_MAX_RETRIES = prevMaxRetries;
 		}
 	});
 
 	it("retry log includes the underlying transient error message", async () => {
+		const prevMaxRetries = process.env.OLLAMA_MAX_RETRIES;
+		process.env.OLLAMA_MAX_RETRIES = "10";
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -1607,6 +1617,8 @@ describe("runAgent", () => {
 		} finally {
 			errSpy.mockRestore();
 			vi.useRealTimers();
+			if (prevMaxRetries === undefined) delete process.env.OLLAMA_MAX_RETRIES;
+			else process.env.OLLAMA_MAX_RETRIES = prevMaxRetries;
 		}
 	});
 
@@ -1846,8 +1858,10 @@ describe("runAgent", () => {
 	it("streaming watchdog requeues silent ollama calls", async () => {
 		const prevStream = process.env.FLEET_LLM_STREAM;
 		const prevFirstToken = process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
+		const prevMaxRetries = process.env.OLLAMA_MAX_RETRIES;
 		process.env.FLEET_LLM_STREAM = "1";
 		process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = "30000";
+		process.env.OLLAMA_MAX_RETRIES = "10";
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -1891,12 +1905,16 @@ describe("runAgent", () => {
 			if (prevFirstToken === undefined)
 				delete process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
 			else process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = prevFirstToken;
+			if (prevMaxRetries === undefined) delete process.env.OLLAMA_MAX_RETRIES;
+			else process.env.OLLAMA_MAX_RETRIES = prevMaxRetries;
 		}
 	});
 
 	it("first chunk exempt from stall window; mid-stream stall aborts", async () => {
 		const prevStream = process.env.FLEET_LLM_STREAM;
+		const prevMaxRetries = process.env.OLLAMA_MAX_RETRIES;
 		process.env.FLEET_LLM_STREAM = "1";
+		process.env.OLLAMA_MAX_RETRIES = "10";
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -1940,14 +1958,18 @@ describe("runAgent", () => {
 			vi.useRealTimers();
 			if (prevStream === undefined) delete process.env.FLEET_LLM_STREAM;
 			else process.env.FLEET_LLM_STREAM = prevStream;
+			if (prevMaxRetries === undefined) delete process.env.OLLAMA_MAX_RETRIES;
+			else process.env.OLLAMA_MAX_RETRIES = prevMaxRetries;
 		}
 	});
 
 	it("non-numeric OLLAMA_FIRST_TOKEN_TIMEOUT_MS falls back to 600000", async () => {
 		const prevStream = process.env.FLEET_LLM_STREAM;
 		const prevFirstToken = process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
+		const prevMaxRetries = process.env.OLLAMA_MAX_RETRIES;
 		process.env.FLEET_LLM_STREAM = "1";
 		process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = "garbage";
+		process.env.OLLAMA_MAX_RETRIES = "10";
 		vi.useFakeTimers();
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -1992,6 +2014,8 @@ describe("runAgent", () => {
 			if (prevFirstToken === undefined)
 				delete process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS;
 			else process.env.OLLAMA_FIRST_TOKEN_TIMEOUT_MS = prevFirstToken;
+			if (prevMaxRetries === undefined) delete process.env.OLLAMA_MAX_RETRIES;
+			else process.env.OLLAMA_MAX_RETRIES = prevMaxRetries;
 		}
 	});
 
