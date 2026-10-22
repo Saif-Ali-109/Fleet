@@ -13,13 +13,15 @@ export interface ProviderDef {
 	baseURL: string;
 	// gemini:     https://generativelanguage.googleapis.com/v1beta/openai/
 	// openrouter: https://openrouter.ai/api/v1
+	// groq:       https://api.groq.com/openai/v1
 	// ollama:     process.env.OLLAMA_BASE_URL ?? http://localhost:11434/v1
-	apiKeyEnv: string | null; // GEMINI_API_KEY / OPENROUTER_API_KEY / null (ollama)
+	apiKeyEnv: string | null; // GEMINI_API_KEY / OPENROUTER_API_KEY / GROQ_API_KEY / null (ollama)
 }
 
 const DEFAULT_FLEET_PROVIDERS: readonly ProviderName[] = [
 	"gemini",
 	"openrouter",
+	"groq",
 	"ollama",
 ];
 
@@ -38,6 +40,11 @@ const providerDefs: Record<ProviderName, ProviderDef> = {
 		name: "openrouter",
 		baseURL: "https://openrouter.ai/api/v1",
 		apiKeyEnv: "OPENROUTER_API_KEY",
+	},
+	groq: {
+		name: "groq",
+		baseURL: "https://api.groq.com/openai/v1",
+		apiKeyEnv: "GROQ_API_KEY",
 	},
 	ollama: {
 		name: "ollama",
@@ -91,7 +98,7 @@ export function invalidateProviderClients(): void {
 /**
  * FLEET_PROVIDERS env parsing: comma-separated subset/order of provider names.
  * Invalid names are skipped with a warning; unset/empty falls back to the
- * default order "gemini,openrouter,ollama". Duplicates are dropped.
+ * default order "gemini,openrouter,groq,ollama". Duplicates are dropped.
  */
 export function getFleetProviders(): ProviderName[] {
 	const raw = process.env.FLEET_PROVIDERS?.trim();

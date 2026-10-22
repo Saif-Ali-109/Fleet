@@ -31,7 +31,7 @@ describe("defaultPolicy", () => {
 	it("returns the built-in defaults", () => {
 		expect(defaultPolicy()).toEqual({
 			max_concurrent_workers: 10,
-			max_per_backend: { gemini: 6, openrouter: 3, ollama: 2 },
+			max_per_backend: { gemini: 6, openrouter: 3, groq: 3, ollama: 2 },
 			auto_hire_roles: ["coder", "tester"],
 			gate_hire_roles: ["security-auditor"],
 			deny_hire_roles: [],

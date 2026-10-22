@@ -185,7 +185,7 @@ const usage =
   --port <n>             Web dashboard port (default 3456).
   --no-web               Disable the web dashboard.
   --provider <name>      Provider to run the fleet workers:
-                         gemini | openrouter | ollama (default gemini,
+                         gemini | openrouter | groq | ollama (default gemini,
                          or ORCHESTRATOR_PROVIDER env).
   --help                 Show this help.
 

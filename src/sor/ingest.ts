@@ -20,6 +20,7 @@ const VALID_BACKENDS: readonly string[] = [
 	"codex",
 	"gemini",
 	"openrouter",
+	"groq",
 	"ollama",
 ]; // historical event verification
 

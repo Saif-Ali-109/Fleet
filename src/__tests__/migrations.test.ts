@@ -404,6 +404,45 @@ describe("migrations", () => {
 		expect(down).toContain("DROP TABLE IF EXISTS context_sor");
 	});
 
+	it("017 widens the audit_events.backend check to include groq", () => {
+		const up = readUp("017_audit_backends_groq.sql");
+		expect(up).toContain("audit_events_backend_check");
+		for (const backend of [
+			"opencode",
+			"claude",
+			"codex",
+			"gemini",
+			"openrouter",
+			"groq",
+			"ollama",
+		]) {
+			expect(up).toContain(`'${backend}'`);
+		}
+		expect(up).toMatch(/DROP CONSTRAINT IF EXISTS audit_events_backend_check/);
+		expect(up).toMatch(/ADD CONSTRAINT audit_events_backend_check/);
+	});
+
+	it("017 down restores the 006 backend constraint (no groq)", () => {
+		const content = readFileSync(
+			path.join(MIGRATIONS_DIR, "017_audit_backends_groq.sql"),
+			"utf-8",
+		);
+		const downMatch = content.match(/--\s*DOWN:\s*\n([\s\S]*?)$/i);
+		const down = downMatch?.[1] ? downMatch[1].trim() : "";
+		expect(down).toMatch(/ADD CONSTRAINT audit_events_backend_check/);
+		for (const backend of [
+			"opencode",
+			"claude",
+			"codex",
+			"gemini",
+			"openrouter",
+			"ollama",
+		]) {
+			expect(down).toContain(`'${backend}'`);
+		}
+		expect(down).not.toContain("'groq'");
+	});
+
 	it("migration files are numbered sequentially with no gaps", () => {
 		const files = readdirSync(MIGRATIONS_DIR)
 			.filter((f) => f.endsWith(".sql"))
@@ -412,7 +451,7 @@ describe("migrations", () => {
 		files.forEach((file, i) => {
 			expect(file.startsWith(`${String(i + 1).padStart(3, "0")}_`)).toBe(true);
 		});
-		expect(files[files.length - 1]).toBe("016_context_sor.sql");
+		expect(files[files.length - 1]).toBe("017_audit_backends_groq.sql");
 	});
 
 	it("each migration file's header NNN prefix matches its filename NNN (F5.1)", () => {

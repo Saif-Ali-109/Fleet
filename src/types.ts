@@ -10,13 +10,14 @@ export type Role =
 	| "reviewer"
 	| "pr";
 
-/** Which provider is used for the worker (gemini, openrouter, ollama). */
-export type ProviderName = "gemini" | "openrouter" | "ollama";
+/** Which provider is used for the worker (gemini, openrouter, groq, ollama). */
+export type ProviderName = "gemini" | "openrouter" | "groq" | "ollama";
 
 /** List of all provider names. */
 export const PROVIDER_NAMES: readonly ProviderName[] = [
 	"gemini",
 	"openrouter",
+	"groq",
 	"ollama",
 ] as const;
 
