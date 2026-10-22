@@ -70,6 +70,20 @@ describe("manager ownership (advisory lock)", () => {
 		expect(await rawLockHeld(KEY)).toBe(true);
 	});
 
+	it("does not announce ownership loss on graceful release", async () => {
+		const own = await acquireManagerOwnership({
+			connectionString: DATABASE_URL,
+			lockKey: KEY,
+		});
+		const losses: string[] = [];
+		own.onLoss((l) => losses.push(l.reason));
+		await own.release();
+		// Closing the dedicated connection emits pg's "end"; give it a beat to
+		// prove the planned hand-off never trips the terminate latch.
+		await new Promise((r) => setTimeout(r, 100));
+		expect(losses).toEqual([]);
+	});
+
 	it("fails closed when another manager already holds the lock", async () => {
 		const first = await acquireManagerOwnership({
 			connectionString: DATABASE_URL,

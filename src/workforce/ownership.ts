@@ -79,7 +79,11 @@ export async function acquireManagerOwnership(opts: {
 	const lossCallbacks: Array<(loss: OwnershipLoss) => void> = [];
 
 	const announce = (loss: OwnershipLoss) => {
-		if (lost) return;
+		// release() closes the dedicated connection, which fires the same
+		// "end"/"error" listeners as a real disconnect. `held` is already false
+		// by then: a planned hand-off is not a loss and must not trip the
+		// terminate latch.
+		if (lost || !held) return;
 		lost = true;
 		held = false;
 		for (const cb of lossCallbacks) {
@@ -147,7 +151,6 @@ export async function acquireManagerOwnership(opts: {
 				// Session end releases the lock anyway; nothing useful to do here.
 			}
 			await client.end().catch(() => {});
-			announce({ reason: "released" });
 		},
 	};
 }

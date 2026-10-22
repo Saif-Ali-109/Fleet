@@ -1326,7 +1326,8 @@ async function main(): Promise<void> {
 	});
 
 	// Graceful shutdown releases the lock (msg 6). Wire AFTER loss-latch wiring
-	// so release() announces "released" without tripping the terminate path.
+	// so closing the ownership connection during a planned hand-off cannot trip
+	// the terminate path.
 	setOwnershipReleaser(() => ownership.release());
 
 	if (repo === undefined && issueNumber === undefined) {
