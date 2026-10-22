@@ -9,14 +9,7 @@
 //      no started_at, and a late spawn-mark must never resurrect a terminal row
 //      back into an active state (the exact leak stage 2 made observable).
 
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	describe,
-	expect,
-	it,
-} from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { pool } from "../db/client.ts";
 import {
 	hireWorker,
@@ -68,7 +61,7 @@ async function seedRun(repo: string, issueNumber: number): Promise<string> {
 	return row.run_id;
 }
 
-let seededRepos: string[] = [];
+const seededRepos: string[] = [];
 let seq = 0;
 /** Uncapped backend so this suite never fights max_per_backend for slots. */
 const BACKEND = "testcorr";
@@ -103,7 +96,8 @@ beforeAll(async () => {
 afterEach(async () => {
 	while (created.length) {
 		const id = created.pop();
-		if (id) await pool.query("DELETE FROM worker_roles WHERE role_id = $1", [id]);
+		if (id)
+			await pool.query("DELETE FROM worker_roles WHERE role_id = $1", [id]);
 	}
 });
 
