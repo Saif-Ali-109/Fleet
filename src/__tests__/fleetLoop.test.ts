@@ -1337,7 +1337,126 @@ describe("runAgent", () => {
 		expect(parseRetryDelayMs(serverSaid)).toBeGreaterThan(19000);
 		expect(parseRetryDelayMs(serverSaid)).toBeLessThan(20000);
 		expect(parseRetryDelayMs(new Error('"retryDelay":"30s"'))).toBe(30000);
+		// Groq's 429 wording differs from Google's.
+		expect(
+			parseRetryDelayMs(
+				new Error("Please try again in 22.845s. Need more tokens?"),
+			),
+		).toBe(22845);
 		expect(parseRetryDelayMs(new Error("no hint here"))).toBeNull();
+	});
+
+	it("llmMaxRetries defaults to the built-in ladder and validates overrides", async () => {
+		const { llmMaxRetries } = await import("../fleet/loop.ts");
+		const prev = process.env.FLEET_LLM_MAX_RETRIES;
+		delete process.env.FLEET_LLM_MAX_RETRIES;
+		try {
+			expect(llmMaxRetries()).toBe(3);
+			expect(llmMaxRetries("")).toBe(3);
+			expect(llmMaxRetries("8")).toBe(8);
+			expect(() => llmMaxRetries("0")).toThrow(/positive integer/);
+			expect(() => llmMaxRetries("nope")).toThrow(/positive integer/);
+		} finally {
+			if (prev === undefined) delete process.env.FLEET_LLM_MAX_RETRIES;
+			else process.env.FLEET_LLM_MAX_RETRIES = prev;
+		}
+	});
+
+	it("repairs a provider-side tool-schema rejection with one corrective retry", async () => {
+		const registry = buildRegistry(defWith([]));
+		const { client, create } = mockClient([]);
+		create.mockImplementationOnce(async () => {
+			throw new Error(
+				"Tool call validation failed: parameters for tool glob did not match schema: errors: [missing properties: 'pattern', additionalProperties 'path' not allowed]",
+			);
+		});
+		create.mockImplementationOnce(async () =>
+			resp({ role: "assistant", content: "recovered" }),
+		);
+		const { events, emit } = collect();
+
+		const outcome = await runAgent({
+			client,
+			model: "m",
+			systemPrompt: "",
+			task: "",
+			registry,
+			wtCtx: ctx(),
+			emit,
+			provider: "groq",
+		});
+
+		expect(outcome.ok).toBe(true);
+		expect(outcome.text).toBe("recovered");
+		expect(create).toHaveBeenCalledTimes(2);
+		const secondRequest = create.mock.calls[1]?.[0] as {
+			messages: Array<{ role: string; content: unknown }>;
+		};
+		const correction = secondRequest.messages.find(
+			(m) => m.role === "user" && String(m.content).includes("glob"),
+		);
+		expect(correction).toBeDefined();
+		expect(events.some((e) => e.t === "error")).toBe(false);
+	});
+
+	it("retries a provider-side 'Parsing failed' generation glitch", async () => {
+		const registry = buildRegistry(defWith([]));
+		const { client, create } = mockClient([]);
+		create.mockImplementationOnce(async () => {
+			throw new Error(
+				"Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
+			);
+		});
+		create.mockImplementationOnce(async () =>
+			resp({ role: "assistant", content: "ok" }),
+		);
+		const { events, emit } = collect();
+
+		const outcome = await runAgent({
+			client,
+			model: "m",
+			systemPrompt: "",
+			task: "",
+			registry,
+			wtCtx: ctx(),
+			emit,
+			provider: "groq",
+		});
+
+		expect(outcome.ok).toBe(true);
+		expect(outcome.text).toBe("ok");
+		expect(create).toHaveBeenCalledTimes(2);
+		expect(events.some((e) => e.t === "error")).toBe(false);
+	});
+
+	it("corrects a call to a tool the request never declared", async () => {
+		const registry = buildRegistry(defWith([]));
+		const { client, create } = mockClient([]);
+		create.mockImplementationOnce(async () => {
+			throw new Error(
+				"Tool call validation failed: tool call validation failed: attempted to call tool 'json' which was not in request.tools",
+			);
+		});
+		create.mockImplementationOnce(async () =>
+			resp({ role: "assistant", content: '{"summary":"ok"}' }),
+		);
+		const { events, emit } = collect();
+
+		const outcome = await runAgent({
+			client,
+			model: "m",
+			systemPrompt: "",
+			task: "",
+			registry,
+			wtCtx: ctx(),
+			emit,
+			provider: "groq",
+		});
+
+		expect(outcome.ok).toBe(true);
+		expect(outcome.text).toBe('{"summary":"ok"}');
+		expect(create).toHaveBeenCalledTimes(2);
+		expect(events.some((e) => e.t === "error")).toBe(false);
 	});
 
 	it("does not retry non-transient provider errors", async () => {

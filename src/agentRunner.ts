@@ -202,6 +202,30 @@ export function isTransientNetworkError(msg: string): boolean {
 	);
 }
 
+/**
+ * Output-token ceiling handed to a non-Gemini worker. Gemini keeps its own
+ * GEMINI_MAX_OUTPUT_TOKENS value (it feeds the quota reservation); the
+ * OpenAI-compatible providers need an explicit cap, otherwise they reserve the
+ * model's maximum completion size (e.g. 65536), which free tiers reject.
+ * `<ROLE>_MAX_OUTPUT_TOKENS` overrides `<PROVIDER>_MAX_OUTPUT_TOKENS`, which
+ * overrides `FLEET_MAX_OUTPUT_TOKENS` (default 4096). The role layer matters on
+ * free tiers where prompt + max_tokens must stay under a per-request cap: a
+ * reviewer needs headroom for tool output, a coder needs room for its edits.
+ */
+export function maxOutputTokensFor(
+	provider: ProviderName,
+	role?: Role,
+): number {
+	const raw =
+		(role
+			? process.env[`${role.toUpperCase()}_MAX_OUTPUT_TOKENS`]
+			: undefined) ??
+		process.env[`${provider.toUpperCase()}_MAX_OUTPUT_TOKENS`] ??
+		process.env.FLEET_MAX_OUTPUT_TOKENS;
+	const parsed = Number(raw ?? "4096");
+	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 4096;
+}
+
 /** Run one worker for `role`, honoring an explicit context provider when set. */
 export async function runWorker(
 	role: Role,
@@ -924,7 +948,10 @@ export async function spawnOnce(
 					runId: ctx.runId,
 					workerId,
 					...(extraTask !== undefined ? { extraTask } : {}),
-					maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? 8192),
+					maxOutputTokens:
+						provider === "gemini"
+							? Number(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? 8192)
+							: maxOutputTokensFor(provider, role),
 					...(modelOverride !== undefined ? { model: modelOverride } : {}),
 					...(resumeFromPath !== undefined
 						? { resumeFrom: { messagesPath: resumeFromPath } }

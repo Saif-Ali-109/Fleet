@@ -110,6 +110,38 @@ export interface RunAgentOutcome {
 const DEFAULT_MAX_STEPS = 25;
 const RETRY_DELAYS_MS = [15000, 30000, 60000];
 
+/**
+ * Providers that validate the model's tool call server-side (Groq rejects the
+ * whole request with HTTP 400) never hand us a repairable tool call, so the
+ * only recovery is to describe the problem and resample. Covers schema
+ * mismatches ("parameters for tool X did not match schema"), unparseable
+ * generations ("Parsing failed" / "failed_generation"), and calls to tools the
+ * request never declared (gpt-oss invents a `json` tool for structured output).
+ * Returns a corrective user message, or null when the error is unrelated.
+ */
+export function toolCallCorrection(err: unknown): string | null {
+	const msg = err instanceof Error ? err.message : String(err);
+	const schema =
+		/parameters for tool ["']?([\w-]+)["']? did not match schema:?\s*(.*)/i.exec(
+			msg,
+		);
+	if (schema?.[1]) {
+		const detail = (schema[2] ?? "").trim();
+		return `Your previous tool call for "${schema[1]}" was rejected because its arguments did not match the tool's JSON schema${detail ? ` (${detail})` : ""}. Re-issue the call using only the documented arguments, with every required argument present.`;
+	}
+	const phantom =
+		/attempted to call tool ["']?([\w.-]+)["']? which was not in request\.tools/i.exec(
+			msg,
+		);
+	if (phantom?.[1]) {
+		return `You attempted to call a tool named "${phantom[1]}", which does not exist. Call only the declared tools, or — to finish — reply with the final JSON object as plain assistant text and no tool call.`;
+	}
+	if (/parsing failed|failed_generation|could not be parsed/i.test(msg)) {
+		return "Your previous response could not be parsed: the tool call arguments were not valid JSON. Re-issue the call with strictly valid JSON arguments, or reply with the final JSON answer and no tool call.";
+	}
+	return null;
+}
+
 function isTransientLlmError(err: unknown): boolean {
 	const msg = err instanceof Error ? err.message : String(err);
 	if (msg.startsWith(RATE_LIMIT_SWITCH_PREFIX) || msg === RPD_EXHAUSTED)
@@ -165,9 +197,25 @@ export function classifyProviderError(err: unknown): {
 export function parseRetryDelayMs(err: unknown): number | null {
 	const msg = err instanceof Error ? err.message : String(err);
 	const m =
-		msg.match(/Please retry in (\d+(?:\.\d+)?)s/) ??
+		msg.match(/Please (?:retry|try again) in (\d+(?:\.\d+)?)\s*s/i) ??
 		msg.match(/retryDelay":"(\d+(?:\.\d+)?)s"/);
 	return m ? Math.ceil(Number(m[1]) * 1000) : null;
+}
+
+/**
+ * Retries after the first attempt for non-ollama providers (default: one per
+ * RETRY_DELAYS_MS entry). Free tiers with tight TPM windows need more patience
+ * than the built-in ladder, so the budget is configurable.
+ */
+export function llmMaxRetries(
+	raw: string | undefined = process.env.FLEET_LLM_MAX_RETRIES,
+): number {
+	if (raw === undefined || raw.trim() === "") return RETRY_DELAYS_MS.length;
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value < 1) {
+		throw new Error("FLEET_LLM_MAX_RETRIES must be a positive integer");
+	}
+	return value;
 }
 
 export function ollamaMaxRetries(
@@ -468,6 +516,10 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 		total: 0,
 	};
 	let costUsd = 0;
+	// Provider-side rejections of the model's own tool-call syntax are repaired
+	// with a corrective message; bounded so a model that keeps repeating the
+	// mistake still fails instead of looping.
+	let correctionRetries = 0;
 
 	const fail = (error: string): RunAgentOutcome => {
 		emit({ t: "step_finish", usage: { ...totals }, costUsd });
@@ -577,6 +629,13 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 						messages,
 						...(tools.length > 0
 							? { tools, tool_choice: "auto" as const }
+							: {}),
+						// Gemini's quota reservation already accounts for the output
+						// ceiling; the other OpenAI-compatible providers must be told
+						// explicitly or they assume the model's maximum completion size
+						// (a 65k-token reservation is rejected by free tiers).
+						...(provider !== "gemini" && opts.maxOutputTokens
+							? { max_tokens: opts.maxOutputTokens }
 							: {}),
 					};
 					providerCallStarted = true;
@@ -696,11 +755,20 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 							});
 						}
 					}
+					const correction = toolCallCorrection(err);
+					if (correction !== null && correctionRetries < 3) {
+						correctionRetries += 1;
+						messages.push({ role: "user", content: correction });
+						console.warn(
+							`[llm-retry] provider could not parse the model's tool call; retrying with a correction: ${err instanceof Error ? err.message : String(err)}`,
+						);
+						continue;
+					}
 					const isOllama = provider === "ollama";
 					if (!isTransientLlmError(err)) throw err;
 					firstTransient ??= err;
-					if (!isOllama && attempt >= RETRY_DELAYS_MS.length)
-						throw firstTransient ?? err;
+					const maxRetries = llmMaxRetries();
+					if (!isOllama && attempt >= maxRetries) throw firstTransient ?? err;
 					const ollamaCap = isOllama ? ollamaMaxRetries() : null;
 					if (ollamaCap !== null && attempt >= ollamaCap)
 						throw firstTransient ?? err;
@@ -717,7 +785,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 								(hint ?? 0) + 2000,
 							);
 					console.error(
-						`[llm-retry] attempt ${attempt + 1}/${isOllama ? (ollamaCap ?? "∞") : RETRY_DELAYS_MS.length + 1} failed transiently; backing off ${delay}ms: ${err instanceof Error ? err.message : String(err)}`,
+						`[llm-retry] attempt ${attempt + 1}/${isOllama ? (ollamaCap ?? "∞") : maxRetries + 1} failed transiently; backing off ${delay}ms: ${err instanceof Error ? err.message : String(err)}`,
 					);
 					if (requestIdentity) {
 						emitTelemetry({

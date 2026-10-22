@@ -13,6 +13,7 @@ import {
 	isQuotaPaused,
 	isTransientNetworkError,
 	killActiveWorkers,
+	maxOutputTokensFor,
 	parseTrace,
 	readStderrTail,
 	requestQuotaResume,
@@ -1065,6 +1066,42 @@ describe("isTransientNetworkError", () => {
 		]) {
 			expect(isTransientNetworkError(msg)).toBe(false);
 		}
+	});
+});
+
+// ---- maxOutputTokensFor tests ----
+
+describe("maxOutputTokensFor", () => {
+	const saved = { ...process.env };
+
+	afterEach(() => {
+		for (const key of Object.keys(process.env)) {
+			if (!(key in saved)) delete process.env[key];
+		}
+		Object.assign(process.env, saved);
+	});
+
+	it("defaults to 4096 when nothing is configured", () => {
+		delete process.env.FLEET_MAX_OUTPUT_TOKENS;
+		delete process.env.GROQ_MAX_OUTPUT_TOKENS;
+		delete process.env.REVIEWER_MAX_OUTPUT_TOKENS;
+		expect(maxOutputTokensFor("groq", "reviewer")).toBe(4096);
+	});
+
+	it("prefers role over provider over global", () => {
+		process.env.FLEET_MAX_OUTPUT_TOKENS = "3000";
+		process.env.GROQ_MAX_OUTPUT_TOKENS = "2048";
+		process.env.REVIEWER_MAX_OUTPUT_TOKENS = "1536";
+		expect(maxOutputTokensFor("groq", "reviewer")).toBe(1536);
+		expect(maxOutputTokensFor("groq", "coder")).toBe(2048);
+		expect(maxOutputTokensFor("openrouter", "coder")).toBe(3000);
+	});
+
+	it("ignores empty and non-positive values", () => {
+		process.env.FLEET_MAX_OUTPUT_TOKENS = "";
+		expect(maxOutputTokensFor("groq")).toBe(4096);
+		process.env.FLEET_MAX_OUTPUT_TOKENS = "-5";
+		expect(maxOutputTokensFor("groq")).toBe(4096);
 	});
 });
 
