@@ -12,12 +12,24 @@ Gemini quota/rate-limit system: per-model RPM/TPM/RPD limits via `GEMINI_QUOTA_L
 
 Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/fleet/`, `FLEET_PROVIDERS`, `FleetAgentDef`) refers to the worker-fleet concept and predates the branding — treat them as distinct.
 
+## Documentation layout
+
+Root entry points: `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `README.md`.
+Everything else lives under `specs/`, grouped by purpose:
+
+- `specs/core/` — `SPEC.md` (execution truth), `TODO.md`, `MEMORY.md`, `USER.md`, `MEMORY.example.md`
+- `specs/plans/` — `PLAN.md` (gitignored working state), `plan-logs.md`, `plan-refinement.md`, `plan-sor.md`
+- `specs/design/` — `S8-DESIGN.md`, `WORKER-CONTAINMENT-DESIGN.md`
+- `specs/security/` — `SECURITY.md`, `sor-spec.md`
+
+`src/fleet/skills/**/*.md` and `src/__tests__/fixtures/**/*.md` are runtime/test assets, not documentation; leave them in place.
+
 ## Session protocol (every session)
 
-1. Read `PLAN.md` → if touching fleet/engine/migration code, read `SPEC.md`.
-2. Doing migration work? First unchecked item in `SPEC.md §17` is your task.
+1. Read `specs/plans/PLAN.md` → if touching fleet/engine/migration code, read `specs/core/SPEC.md`.
+2. Doing migration work? First unchecked item in `specs/core/SPEC.md §17` is your task.
    Tick it + commit (`docs: check <item>`) when its acceptance criteria pass.
-3. Follow the subagent strategy in `USER.md` (sequential vs parallel by file overlap).
+3. Follow the subagent strategy in `specs/core/USER.md` (sequential vs parallel by file overlap).
 4. Every task ends green: `npm run typecheck && npm test`.
 5. Commit per logical unit — short imperative subject + explanatory body.
 
@@ -69,7 +81,7 @@ Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/
 - New agent roles or new providers beyond gemini/openrouter/ollama.
 - Changes to SOR event shapes or hash-chain logic (`sor:verify` contract).
 - Schema migrations; new runtime dependencies.
-- Any MCP transport other than stdio, or any MCP OAuth (`authProvider`, `withOAuth()`, `auth()`, `fetchToken()`). Fleet's stdio-only, no-OAuth surface is what makes MCP OAuth advisories inapplicable — see `SECURITY.md` §3. Adding either voids that exemption and requires a fresh audit.
+- Any MCP transport other than stdio, or any MCP OAuth (`authProvider`, `withOAuth()`, `auth()`, `fetchToken()`). Fleet's stdio-only, no-OAuth surface is what makes MCP OAuth advisories inapplicable — see `specs/security/SECURITY.md` §3. Adding either voids that exemption and requires a fresh audit.
 
 ### Never
 - Add model calls to manager code (`orchestrator.ts` et al).

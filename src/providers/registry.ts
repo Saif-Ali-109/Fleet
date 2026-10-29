@@ -1,4 +1,4 @@
-// Provider registry spec as per SPEC.md section 4.
+// Provider registry spec as per specs/core/SPEC.md section 4.
 // Manager-side support code: definitions, memoized OpenAI-compatible clients,
 // fleet ordering, and the fallback walk. No model calls are made here except
 // through the returned clients (worker-side usage).

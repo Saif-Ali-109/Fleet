@@ -60,7 +60,7 @@ filesystem**. Anything that would change that (tighter gating, cwd-locking chang
 
 **Prompt injection** — whether untrusted issue/PR text can steer the analyzer/coder/reviewer
 models into invoking `bash`, `create_pr`, or git operations they otherwise would not — is
-**not yet formally threat-modelled**. Tracked as an open item in `SPEC.md` §17.
+**not yet formally threat-modelled**. Tracked as an open item in `specs/core/SPEC.md` §17.
 
 ## 3. MCP posture: stdio only, no OAuth
 

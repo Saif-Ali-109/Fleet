@@ -1,4 +1,4 @@
-// C2 Grounding Directive — appended to worker systemPrompt (spec §10.7, plan-sor.md T4).
+// C2 Grounding Directive — appended to worker systemPrompt (spec §10.7, specs/plans/plan-sor.md T4).
 // Pure constant module; wiring into the worker prompt happens in T9.
 
 export const C2_GROUNDING_DIRECTIVE = `

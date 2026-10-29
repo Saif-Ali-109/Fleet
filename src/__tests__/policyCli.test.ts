@@ -1,4 +1,4 @@
-// P6.1/P6.2 sor:policy CLI tests (plan-sor.md §C9) + P7.3 (AT-5 drift).
+// P6.1/P6.2 sor:policy CLI tests (specs/plans/plan-sor.md §C9) + P7.3 (AT-5 drift).
 // Recording-pool style — NO real DB — mirroring src/db/__tests__/policyRegistry.test.ts.
 // index.ts is imported with a pre-set `--help` argv so main() returns
 // immediately; FLEET_SKIP_SHUTDOWN_HANDLERS keeps real signal handlers off.

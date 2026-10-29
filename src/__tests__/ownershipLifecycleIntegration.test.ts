@@ -1,7 +1,7 @@
 // Integration coverage for ownership-loss and termination lifecycle. Exercises a
 // real subprocess fork of lifecycleManager (which holds the advisory lock and a
 // live child worker), plus real pg_terminate_backend for connection loss. The
-// expected outcomes are pinned against §3.2 of S8-DESIGN.md.
+// expected outcomes are pinned against §3.2 of specs/design/S8-DESIGN.md.
 //
 // Run by itself under the normal suite (it is self-cleaning: any orphan child
 // it leaves behind from the termination case is killed in the test itself).

@@ -19,7 +19,7 @@
 // death, and WORKER_TIMEOUT_MS is enforced manager-side only. A crashed manager
 // therefore leaves orphaned children whose worker rows stay `pending`. Holding
 // this lock does NOT give a new manager ownership of those rows. See
-// S8-DESIGN.md §3.2 — reconciliation must not treat lock ownership as row
+// specs/design/S8-DESIGN.md §3.2 — reconciliation must not treat lock ownership as row
 // ownership.
 
 import pg from "pg";

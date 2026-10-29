@@ -448,7 +448,7 @@ describe("runWorker", () => {
 	}, 30000);
 });
 
-// ---- runWorker Gemini quota chain walk (PLAN.md rate-limit fallback system) ----
+// ---- runWorker Gemini quota chain walk (specs/plans/PLAN.md rate-limit fallback system) ----
 
 describe("runWorker Gemini quota chain walk", () => {
 	it("switches to the fallback on an rpm block and succeeds without a recovery event", async () => {

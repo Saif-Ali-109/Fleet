@@ -289,7 +289,7 @@ export async function runWorker(
 	};
 
 	/**
-	 * Gemini chain walk (PLAN.md "Rate-limit fallback system"): any rpm/tpm/rpd
+	 * Gemini chain walk (specs/plans/PLAN.md "Rate-limit fallback system"): any rpm/tpm/rpd
 	 * block switches to the next chain model immediately; once the whole chain
 	 * is finitely blocked, sleep min(needed wait, ceiling) and restart from the
 	 * top (automatic fail-back); all-RPD-dead halts the walk.
@@ -596,7 +596,7 @@ export async function runWorker(
 	);
 }
 
-// ---- Policy mode resolution (plan-sor.md §C5/C8.2; spec §9.5, §9.7) ----
+// ---- Policy mode resolution (specs/plans/plan-sor.md §C5/C8.2; spec §9.5, §9.7) ----
 // Pure + injectable: the DB read arrives as an injected `loadRolePolicy`, so
 // every branch is unit-testable without a live Postgres (P5.6).
 

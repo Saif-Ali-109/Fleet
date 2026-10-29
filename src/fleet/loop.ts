@@ -448,7 +448,7 @@ function openAiTools(
 const checkpointWarnedRoles = new Set<Role>();
 
 /**
- * Atomic mid-conversation checkpoint (SPEC.md §11.5): written after every
+ * Atomic mid-conversation checkpoint (specs/core/SPEC.md §11.5): written after every
  * completed provider turn so the manager can resume a paused role from
  * `<runDir>/checkpoints/<role>.json`. chainIndex is always 0 — the manager
  * owns the chain position. A checkpoint failure must never break the run.

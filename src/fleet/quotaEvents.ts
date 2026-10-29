@@ -1,4 +1,4 @@
-// Manager-side Gemini quota notification bus (PLAN.md "Rate-limit fallback
+// Manager-side Gemini quota notification bus (specs/plans/PLAN.md "Rate-limit fallback
 // system"). Workers emit raw model_switch telemetry into traces for diagnosis;
 // these events are the user-facing counterpart, consumed by orchestrator /
 // dashboard / TUI subscribers. Emission never throws: a bad subscriber must

@@ -80,7 +80,7 @@ DB functions (new src/db/queries/callStats.ts): `upsertAgentCallStats()`,
 
 ---
 
-## Subagent waves (USER.md parallelism rules enforced)
+## Subagent waves (specs/core/USER.md parallelism rules enforced)
 
 ### WAVE 1 — PARALLEL (disjoint files)
 

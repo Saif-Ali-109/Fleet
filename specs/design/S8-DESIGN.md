@@ -4,7 +4,7 @@ status: proposal
 date: 2026-10-16
 owner: ain
 audience: reviewers approving production changes to worker lifecycle
-implements: SPEC.md §17 S8
+implements: specs/core/SPEC.md §17 S8
 ---
 
 # S8 — Worker lifecycle design proposal

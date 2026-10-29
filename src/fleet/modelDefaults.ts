@@ -1,4 +1,4 @@
-// Tier defaults for models per role and provider as per SPEC.md section 6
+// Tier defaults for models per role and provider as per specs/core/SPEC.md section 6
 import type { ProviderName, Role } from "../types.ts";
 
 export const modelDefaults: Record<ProviderName, Record<Role, string>> = {

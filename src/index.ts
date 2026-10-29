@@ -973,7 +973,7 @@ async function runSingleIssueFromQueue(
 	return { status: s.status, prUrl: s.prUrl, failure: s.failure };
 }
 
-// ── sor:policy CLI (§9.4, plan-sor.md C9) ─────────────────────────────────
+// ── sor:policy CLI (§9.4, specs/plans/plan-sor.md C9) ─────────────────────────────────
 // Privileged manager/CLI entry points only (spec §8.1 — policy writes are a
 // manager/CLI concern; agents never call these). All policy writes flow
 // through the registry/reconcile functions in src/db/audit.ts, which append

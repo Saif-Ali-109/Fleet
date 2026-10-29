@@ -29,7 +29,7 @@ interface WireLine {
 	[k: string]: unknown;
 }
 
-// P4.6/P4.7 coverage (plan-sor.md §C10): the worker's env snapshot parsing and
+// P4.6/P4.7 coverage (specs/plans/plan-sor.md §C10): the worker's env snapshot parsing and
 // effective-registry build (spec §9.7 / §9.1 P-I1). sourceHash is computed
 // worker-side via hashAgentDef(def) and carried into the policy_state payload.
 

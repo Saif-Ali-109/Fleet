@@ -4,7 +4,7 @@ status: design
 date: 2026-10-16
 owner: ain
 audience: reviewers approving worker-lifecycle safety proposals
-related: "S8-DESIGN.md (orphan recovery strategy), src/agentRunner.ts, src/workforce/ownership.ts"
+related: "specs/design/S8-DESIGN.md (orphan recovery strategy), src/agentRunner.ts, src/workforce/ownership.ts"
 ---
 
 # Worker Containment Design

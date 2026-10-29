@@ -1,6 +1,6 @@
 // Wire protocol for Gemini quota-driven model switching between workers and
 // the Manager. Workers throw these sentinel errors; agentRunner parses them
-// to walk the configured model chain (PLAN.md "Rate-limit fallback system").
+// to walk the configured model chain (specs/plans/PLAN.md "Rate-limit fallback system").
 //
 // Semantics agreed with owner:
 // - ANY reservation block (rpm/tpm/rpd) switches models immediately.

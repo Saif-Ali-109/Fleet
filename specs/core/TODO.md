@@ -8,14 +8,14 @@ memory: ./MEMORY.md
 
 # TODO.md — build queue
 
-Source of truth for scope/acceptance is `SPEC.md` (§13 phases, §17 checklist).
+Source of truth for scope/acceptance is `specs/core/SPEC.md` (§13 phases, §17 checklist).
 This file is the ordered work list; tick items here as they complete and log
-verified completions in `MEMORY.md`. Commit per logical unit; every task ends
+verified completions in `specs/core/MEMORY.md`. Commit per logical unit; every task ends
 green (`npm run typecheck && npm test`). Sequential order — shared files.
 
 ## Current pass — finish P1 + green baseline
 
-- [x] A1. Commit docs baseline: SPEC.md, USER.md, CONTRIBUTING.md + staged
+- [x] A1. Commit docs baseline: specs/core/SPEC.md, specs/core/USER.md, CONTRIBUTING.md + staged
       README.md/directory.md deletions
 - [x] A2. Commit interim AGENTS.md rewrite + manager/MEMORY.md,
       manager/SESSION_LOG.md updates
@@ -51,7 +51,7 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
       655 events after the seq 75–641 re-sign repair; keyless smoke exit 0,
       status completed, $0.0000 — 2026-08-23)
 - [x] F4. Tick SPEC §17 P0 + both P1 items with dated commits
-      (docs: check <item>); log entries in MEMORY.md
+      (docs: check <item>); log entries in specs/core/MEMORY.md
 
 ## Later phases (order per SPEC §17)
 
@@ -59,7 +59,7 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
 
 - [x] Add a manager-owned, fail-closed coordinator with atomic per-model
       RPM/TPM/RPD reservations shared across all child workers and retries.
-- [x] Add built-in per-model Gemini limits from `PLAN.md`/the supplied quota
+- [x] Add built-in per-model Gemini limits from `specs/plans/PLAN.md`/the supplied quota
       table plus optional environment overrides for custom model IDs.
 - [x] Harden startup validation for every configured role/model; reject
       missing, invalid, or zero limits before run/worktree/audit setup.
@@ -69,7 +69,7 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
       ceiling without model fallback.
       (SUPERSEDED 2026-08-26 by owner-directed switch-on-block design —
       workers never sleep; manager walks chain with auto fail-back.
-      See PLAN.md "Rate-limit fallback system")
+      See specs/plans/PLAN.md "Rate-limit fallback system")
 - [x] Mark exact-model daily exhaustion as `quota_exhausted`, notify the
       dashboard, use only explicitly configured role-tier fallbacks, and
       re-enable the model at the fixed UTC reset.
@@ -83,7 +83,7 @@ green (`npm run typecheck && npm test`). Sequential order — shared files.
 GitHub #26 (Saif-Ali-109/demo-repo) got a fake `multi-orch/done` stamp from a
 completed-without-PR run (§1.1), then a stranded `multi-orch/in-progress`
 label from a SIGINT'd manager (§1.3); dedup now skips it forever despite no
-PR existing. Full forensics in PLAN.md. Fix = ops unblock + two code bugs +
+PR existing. Full forensics in specs/plans/PLAN.md. Fix = ops unblock + two code bugs +
 slug normalization. Owner requeues manually; no auto-retry.
 
 - [x] A1. Ops unblock (2026-08-26: labels stripped, both rows → failed): remove both labels from #26 via gh CLI; flip both
@@ -155,7 +155,7 @@ Trace JSONL already complete. Dashboard: badges + summary panel.
 
 ## Hardening pass — quality & robustness
 
-Source of truth: `SPEC.md` §18 + §17 (H1–H11), `PLAN.md` "Quality Hardening
+Source of truth: `specs/core/SPEC.md` §18 + §17 (H1–H11), `specs/plans/PLAN.md` "Quality Hardening
 Roadmap". Each task ends green. Dependency order matters — see graph below.
 
 ```
@@ -201,7 +201,7 @@ Wave 5 (after H8): H10 + H11
 - Never spend real API tokens without saying so first (`npm run dry` exists).
 - SOR writes stay NON-FATAL; sor:verify stays green always.
 - No new dependencies beyond SPEC §12 without asking.
-- Subagent strategy per USER.md (sequential unless file sets fully disjoint).
+- Subagent strategy per specs/core/USER.md (sequential unless file sets fully disjoint).
 
 ## Debt (from 8cfb9b1 verification)
 - [x] MCP `finalize_run` gate_status binds caller strings raw into jsonb — FIXED `6ee2248`: local `toJsonbParam` mirror at the server.ts chokepoint (the `:205` bind actually lives in src/db/client.ts finalizeRun; coercion applied upstream so every caller is covered)

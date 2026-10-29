@@ -4,7 +4,7 @@ status: active
 date: 2026-08-22
 owner: ain
 audience: builder-agent (fresh session — read top to bottom before any edit)
-supersedes: PLAN.md ("Working State")
+supersedes: specs/plans/PLAN.md ("Working State")
 ---
 
 # SPEC.md — CLI Fleet → Custom SDK Agents (Gemini-first)
@@ -447,7 +447,7 @@ MODIFY:
 by Node's --env-file; put comments on their own line) ·
 `package.json` (scripts; +`openai` dep; `@modelcontextprotocol/sdk` ^1.30.0 is
 ALREADY installed and stays) · `AGENTS.md` (final target-state polish) ·
-`USER.md` / `CONTRIBUTING.md` (post-migration touch-up only — both already
+`specs/core/USER.md` / `CONTRIBUTING.md` (post-migration touch-up only — both already
 written early)
 
 DELETE:
@@ -521,7 +521,7 @@ deferred indefinitely)
 
 ## 16. Companion docs — STATUS
 
-- **USER.md + CONTRIBUTING.md**: ✅ ALREADY WRITTEN (2026-08-22, ahead of the
+- **specs/core/USER.md + CONTRIBUTING.md**: ✅ ALREADY WRITTEN (2026-08-22, ahead of the
   migration per owner request). Do not re-author. Post-migration: touch up
   commands/env references during P8.
 - **AGENTS.md**: interim constitution already covers both eras; final
@@ -563,7 +563,7 @@ Find the first unchecked item; do it; mark `[x]` + append date + commit
 
 ### Hardening (H1–H11) — quality & robustness
 
-Ordered by dependency. Each task ends green. See PLAN.md §"Quality Hardening
+Ordered by dependency. Each task ends green. See specs/plans/PLAN.md §"Quality Hardening
 Roadmap" for full specs. Parallel wave 1 (H1+H2+H3) can run concurrently;
 H4+H5+H9 in parallel; H6 after H5; H7+H8 after H4; H10+H11 after H8.
 
@@ -605,7 +605,7 @@ Origin: third-party scanner (M8ven) reported GHSA-6qxp-vccf-f47h
 2026-10-16 against commit `1910e19`. **Audit verdict: not exploitable.** Fleet's
 MCP surface is stdio-only in both server and client roles and contains no OAuth
 client; the advisory's own "Not affected" list names *stdio clients* and
-*servers built with the SDK*. Rationale recorded in `SECURITY.md` §3.
+*servers built with the SDK*. Rationale recorded in `specs/security/SECURITY.md` §3.
 
 Do NOT record the SDK bump below as a security fix — it is dependency hygiene for
 an unreachable code path. Keep the "not applicable" finding and the version bump
@@ -613,9 +613,9 @@ as two separate facts.
 
 - [x] S0. Audit + triage (read-only, no repo change) — 2026-10-16: import graph,
       call sites, advisory text and installed SDK entry points all confirm the
-      OAuth path is unreachable. Full write-up in `SECURITY.md`; remediation plan
+      OAuth path is unreachable. Full write-up in `specs/security/SECURITY.md`; remediation plan
       in `~/.opencode/plan/m8ven-advisory-and-deps.md`.
-- [x] S1. `SECURITY.md` — 2026-10-16: threat model, trust boundaries, stdio-only
+- [x] S1. `specs/security/SECURITY.md` — 2026-10-16: threat model, trust boundaries, stdio-only
       MCP posture, GHSA-6qxp-vccf-f47h non-applicability, dep posture, and an
       explicit "not a security finding" list.
 - [x] S2. Production lockfile refresh — target `npm update fast-uri proxy-addr
@@ -669,7 +669,7 @@ as two separate facts.
       observable (`worker_status_write_failed`); (c-flow) worker-to-run
       correlation now carries the real `run_outcomes.run_id` UUID with true
       `started_at` on the first spawn (`workerCorrelation.test.ts`) —
-      shipped. Remaining design-only/gated pieces in `S8-DESIGN.md`:
+      shipped. Remaining design-only/gated pieces in `specs/design/S8-DESIGN.md`:
       startup reconciliation sweep, retirement-behavior changes, and SOR
       event types for hire/retire require owner approval. Parts (c)/(d)
       still change production concurrency or retirement behavior.
@@ -725,7 +725,7 @@ as two separate facts.
       behavior; `countActiveTotal()` and per-role concurrency semantics stay
       untouched throughout.
 
-      **Full design proposal: `S8-DESIGN.md`.** Owner decision required on §2
+      **Full design proposal: `specs/design/S8-DESIGN.md`.** Owner decision required on §2
       there (advisory-lock single-manager, recommended, vs owner_id+lease
       multi-manager) before any code. That decision gates everything: startup
       reconciliation is only safe once ownership is proven exclusive, and the
@@ -733,7 +733,7 @@ as two separate facts.
 
 ## 18. Quality hardening (post-migration)
 
-Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
+Items from codebase analysis rated below A/A-. Each tracked in specs/plans/PLAN.md
 "Quality Hardening Roadmap" section and §17 checklist (H1–H11).
 
 ### Owner-locked decisions (interview 2026-08-26)
@@ -780,7 +780,7 @@ Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
 
 ---
 
-## Appendix A — History (from superseded PLAN.md, 2026-08-22)
+## Appendix A — History (from superseded specs/plans/PLAN.md, 2026-08-22)
 
 ### Done (recent, committed)
 - **Typecheck repair + worker timeout** (`a4ababf`) — fixed all 82 tsc errors across
@@ -793,7 +793,7 @@ Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
   shapes, coder/tester wired into the live feed, pr step cap raised to 10.
 - **`.fleet/` consolidation** (`f20ab5a`) — every generated fleet tool config lives under
   `.fleet/` (now scheduled for deletion in this migration, §12).
-- **`manager/` consolidation** (`637d9db` + `26d28bf`) — MEMORY.md, SESSION_LOG.md,
+- **`manager/` consolidation** (`637d9db` + `26d28bf`) — specs/core/MEMORY.md, manager/SESSION_LOG.md,
   models.json moved under `manager/`; suite was 334/334 green.
 
 ### Old next steps (obsolete after this spec)

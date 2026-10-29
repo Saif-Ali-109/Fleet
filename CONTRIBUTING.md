@@ -31,14 +31,14 @@ this file governs HOW changes get made, for humans and agents alike.
 
 - Subject: short imperative, ≤72 chars, lowercase-ish ("typecheck repair + worker timeout").
 - Body: what + why; reference hashes/issues when relevant.
-- SPEC.md §17 checklist ticks are their own commits: `docs: check <item>`.
+- specs/core/SPEC.md §17 checklist ticks are their own commits: `docs: check <item>`.
 - Never mix a refactor with a behavior change.
 
 ## 4. Docs conventions
 
 - YAML frontmatter on EVERY `*.md` EXCEPT `AGENTS.md`.
-- `PLAN.md` = index · `SPEC.md` = execution truth · progress lives ONLY in
-  `SPEC.md §17` · owner preferences live ONLY in `USER.md`.
+- `specs/plans/PLAN.md` = index · `specs/core/SPEC.md` = execution truth · progress lives ONLY in
+  `specs/core/SPEC.md §17` · owner preferences live ONLY in `specs/core/USER.md`.
 
 ## 5. Testing bar
 

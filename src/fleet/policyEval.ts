@@ -1,4 +1,4 @@
-// Policy enforcement point evaluator (spec §9.6, plan-sor.md C6.2).
+// Policy enforcement point evaluator (spec §9.6, specs/plans/plan-sor.md C6.2).
 // Pure module: no env, no DB, no model calls.
 
 import type {

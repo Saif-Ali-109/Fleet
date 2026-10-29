@@ -24,13 +24,13 @@ phases_done:
 Builder agents append entries here ONLY after work is done AND verified
 (typecheck/tests green, or explicit review evidence). Update the frontmatter
 fields on every entry. Append-only — never delete or rewrite prior entries.
-Truth for WHAT to build stays in `SPEC.md` (§17 checklist); this file records
+Truth for WHAT to build stays in `specs/core/SPEC.md` (§17 checklist); this file records
 what has been completed and verified.
 
 ## Verified complete
 
 ### 2026-08-22 — companion docs authored (pre-migration)
-- `USER.md` + `CONTRIBUTING.md` written ahead of migration per owner request.
+- `specs/core/USER.md` + `CONTRIBUTING.md` written ahead of migration per owner request.
 - Verified: files present, valid YAML frontmatter, content matches SPEC §16.
 - Status at time of entry: untracked in git (commit pending).
 
@@ -140,7 +140,7 @@ what has been completed and verified.
 - `npm run sor:verify` is RED at seq 75. Break is PRE-EXISTING, dated
   2026-08-14 — untouched by this wave (zero db/sor files changed in any
   commit here). Root-cause BEFORE the FINAL live smoke (note added to
-  TODO.md Later phases). F3 left unticked for this reason.
+  specs/core/TODO.md Later phases). F3 left unticked for this reason.
 
 ### 2026-08-23 — wave 6: six fleet agent defs + byte-parity net (P2 slice)
 - `src/fleet/types.ts`: D5 def shape `{name, systemPrompt, tools,
@@ -180,7 +180,7 @@ what has been completed and verified.
   skill-name attacks rejected (traversal, encoded traversal, absolute,
   drive-letter, NUL, backslash forms).
 - Gates at commit time: typecheck 0 errors, vitest 384/384.
-- SPEC §17 both P2 items ticked (dated 2026-08-23); TODO.md P2 line
+- specs/core/SPEC.md §17 both P2 items ticked (dated 2026-08-23); specs/core/TODO.md P2 line
   ticked; MEMORY frontmatter now granular: p2_fleet_skills=true,
   p3_through_p8=false.
 - Status: committed in this docs commit.
@@ -220,7 +220,7 @@ what has been completed and verified.
 ### 2026-08-23 — independent verification verdict (P3)
 - Independent verification returned GREEN: typecheck 0 errors,
   vitest 437/437.
-- SPEC §17 all three P3 items ticked (dated 2026-08-23); TODO.md P3
+- specs/core/SPEC.md §17 all three P3 items ticked (dated 2026-08-23); specs/core/TODO.md P3
   line ticked; MEMORY frontmatter granular: p3_tools_loop_worker=true,
   p4_through_p8=false.
 - Non-blocking notes carried forward:

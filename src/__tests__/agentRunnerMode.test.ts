@@ -1,5 +1,5 @@
 // P5.6 — unit tests for the policy mode-resolution function and the env
-// snapshot injection helpers in src/agentRunner.ts (plan-sor.md §C5/C8.2/C10).
+// snapshot injection helpers in src/agentRunner.ts (specs/plans/plan-sor.md §C5/C8.2/C10).
 // Pure/injected fakes only — no real DB, no worker fork.
 
 import { describe, expect, it, vi } from "vitest";
