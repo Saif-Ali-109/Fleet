@@ -110,7 +110,9 @@ describe("assert notes (T9.6)", () => {
 		for (const [domain, principal] of deniedWrites) {
 			const note = checkAccess(domain, "write", principal).note;
 			expect(note).toBeTruthy();
-			expect(() => assertWriteAllowed(domain, principal)).toThrow(note!);
+			if (!note)
+				throw new Error(`missing denial note for ${domain}/${principal}`);
+			expect(() => assertWriteAllowed(domain, principal)).toThrow(note);
 		}
 	});
 

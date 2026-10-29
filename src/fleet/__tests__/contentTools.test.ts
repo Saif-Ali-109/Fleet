@@ -29,6 +29,14 @@ import {
 
 const pool = {} as Pool;
 
+type ToolProperties = Record<string, { type?: string }>;
+
+function findToolDef(name: string) {
+	const def = CONTENT_TOOL_DEFS.find((d) => d.name === name);
+	if (!def) throw new Error(`missing tool definition: ${name}`);
+	return def;
+}
+
 beforeEach(() => {
 	mocks.retrieveKnowledge.mockReset();
 	mocks.listSources.mockReset();
@@ -50,21 +58,20 @@ describe("tool registration shape", () => {
 	});
 
 	it("content.retrieve requires only 'query'", () => {
-		const def = CONTENT_TOOL_DEFS.find((d) => d.name === "content.retrieve")!;
+		const def = findToolDef("content.retrieve");
 		expect(def.inputSchema.required).toEqual(["query"]);
-		expect((def.inputSchema.properties as any)?.query?.type).toBe("string");
+		const props = def.inputSchema.properties as ToolProperties;
+		expect(props.query?.type).toBe("string");
 	});
 
 	it("content.get_document requires source+document and is read-only-shaped", () => {
-		const def = CONTENT_TOOL_DEFS.find(
-			(d) => d.name === "content.get_document",
-		)!;
+		const def = findToolDef("content.get_document");
 		expect(def.inputSchema.required).toEqual(["source", "document"]);
-		const props = def.inputSchema.properties as Record<string, any>;
-		expect(props.source.type).toBe("string");
-		expect(props.document.type).toBe("string");
-		expect(props.section.type).toBe("string");
-		expect(props.version.type).toBe("number");
+		const props = def.inputSchema.properties as ToolProperties;
+		expect(props.source?.type).toBe("string");
+		expect(props.document?.type).toBe("string");
+		expect(props.section?.type).toBe("string");
+		expect(props.version?.type).toBe("number");
 		// No write-related fields are exposed (read-only tools only).
 		expect(Object.keys(props).sort()).toEqual([
 			"document",
@@ -121,8 +128,9 @@ describe("content.retrieve handler", () => {
 			query: "question",
 		});
 		expect(mocks.emitContentAccessAggregate).toHaveBeenCalledTimes(1);
-		const [emittedPool, params] =
-			mocks.emitContentAccessAggregate.mock.calls[0]!;
+		const call = mocks.emitContentAccessAggregate.mock.calls[0];
+		if (!call) throw new Error("expected a content access aggregate call");
+		const [emittedPool, params] = call;
 		expect(emittedPool).toBe(pool);
 		expect(params).toMatchObject({
 			sessionId: "sess-1",

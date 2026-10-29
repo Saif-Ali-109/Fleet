@@ -67,7 +67,7 @@ function recordingPool(
 	const readRows = (text: string): Record<string, unknown>[] => {
 		if (options.rowsByQuery) {
 			for (const key of Object.keys(options.rowsByQuery)) {
-				if (text.includes(key)) return options.rowsByQuery[key]!;
+				if (text.includes(key)) return options.rowsByQuery[key] ?? [];
 			}
 		}
 		return options.rows ?? [];
@@ -209,7 +209,8 @@ describe("AT-10 — grounding discipline injected for exactly the grounded roles
 	// Assert the role set {coder, reviewer} through the exported
 	// `buildWorkerSystemPrompt` — the exact wiring that decides gating.
 	for (const role of ["coder", "reviewer"] as const) {
-		const def = ALL_DEFS.find((d) => d.name === role)!;
+		const def = ALL_DEFS.find((d) => d.name === role);
+		if (!def) throw new Error(`missing agent definition: ${role}`);
 		it(`${role}: buildWorkerSystemPrompt appends C2_GROUNDING_DIRECTIVE`, () => {
 			const prompt = buildWorkerSystemPrompt(def, role);
 			expect(prompt).toContain(C2_GROUNDING_DIRECTIVE);
@@ -218,7 +219,8 @@ describe("AT-10 — grounding discipline injected for exactly the grounded roles
 	}
 
 	for (const role of ["analyzer", "planner", "tester", "pr"] as const) {
-		const def = ALL_DEFS.find((d) => d.name === role)!;
+		const def = ALL_DEFS.find((d) => d.name === role);
+		if (!def) throw new Error(`missing agent definition: ${role}`);
 		it(`${role}: buildWorkerSystemPrompt does NOT contain C2 grounding directive`, () => {
 			const prompt = buildWorkerSystemPrompt(def, role);
 			expect(prompt).not.toContain("C2 GROUNDING DIRECTIVE (Content SoR)");
@@ -290,7 +292,8 @@ describe("AT-10 — prompt-injected non-SOR knowledge never acquires provenance"
 		});
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
-			const item = result.items[0]!;
+			const item = result.items[0];
+			if (!item) throw new Error("expected a retrieval hit");
 			// Provenance tuple must have all required fields
 			for (const field of PROVENANCE_TUPLE_FIELDS) {
 				expect(item.provenance).toHaveProperty(field);
@@ -386,7 +389,8 @@ describe("AT-10 — Content+Context+Policy thread as independent domains, not me
 		});
 		expect(knowledge.ok).toBe(true);
 		if (knowledge.ok && knowledge.kind === "hit") {
-			const item = knowledge.items[0]!;
+			const item = knowledge.items[0];
+			if (!item) throw new Error("expected a retrieval hit");
 			// Content domain: record with provenance tuple
 			expect(item.provenance).toEqual({
 				source: "fleet",

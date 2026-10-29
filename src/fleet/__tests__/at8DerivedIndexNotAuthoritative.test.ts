@@ -231,7 +231,8 @@ describe("AT-8 — derived index cannot be authoritative without a resolvable re
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
 			expect(result.items).toHaveLength(1);
-			const item = result.items[0]!;
+			const item = result.items[0];
+			if (!item) throw new Error("expected a retrieval hit");
 			expect(item.provenance).toEqual({
 				source: "fleet",
 				document: "kb",
@@ -332,7 +333,7 @@ describe("AT-8 — derived index cannot be authoritative without a resolvable re
 		// COMMIT seals the transaction.
 		const commitIdx = txStatements.indexOf("COMMIT");
 		expect(commitIdx).toBeGreaterThan(
-			chunkInsertIdxs[chunkInsertIdxs.length - 1]!,
+			chunkInsertIdxs[chunkInsertIdxs.length - 1] ?? -1,
 		);
 
 		// No orphan is produced by the write path: content_sor and content_chunks

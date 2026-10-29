@@ -68,7 +68,7 @@ function recordingPool(
 	const readRows = (text: string): Record<string, unknown>[] => {
 		if (options.rowsByQuery) {
 			for (const key of Object.keys(options.rowsByQuery)) {
-				if (text.includes(key)) return options.rowsByQuery[key]!;
+				if (text.includes(key)) return options.rowsByQuery[key] ?? [];
 			}
 		}
 		return options.rows ?? [];
@@ -192,7 +192,7 @@ describe("AT — unified surface through ONE client (§13)", () => {
 		});
 		expect(knowledge.ok).toBe(true);
 		if (knowledge.ok && knowledge.kind === "hit") {
-			expect(knowledge.items[0]!.provenance.content_hash).toBe("dochash123");
+			expect(knowledge.items[0]?.provenance.content_hash).toBe("dochash123");
 		}
 
 		const context = await client.retrieveContext(pool, { category: "run" });
@@ -518,7 +518,8 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 
 		const event = auditEvents.find((e) => e.event_type === "content_access");
 		expect(event).toBeDefined();
-		const payload = event!.payload;
+		if (!event) throw new Error("missing content_access event");
+		const payload = event.payload;
 		expect(payload.sorType).toBe("content");
 		expect(payload.sourceId).toBe("aggregate");
 		expect(payload.namespace).toBe("fleet");
@@ -548,7 +549,8 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 
 		const event = auditEvents.find((e) => e.event_type === "content_sync");
 		expect(event).toBeDefined();
-		const payload = event!.payload;
+		if (!event) throw new Error("missing content_sync event");
+		const payload = event.payload;
 		expect(payload.sorType).toBe("content");
 		expect(payload.sourceId).toBe("doc:1");
 		expect(payload.namespace).toBe("fleet");
@@ -575,7 +577,8 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 
 		const event = auditEvents.find((e) => e.event_type === "context_update");
 		expect(event).toBeDefined();
-		const payload = event!.payload;
+		if (!event) throw new Error("missing context_update event");
+		const payload = event.payload;
 		expect(payload.sorType).toBe("context");
 		expect(payload.sourceId).toBe("run:abc");
 		expect(payload.namespace).toBe("fleet");
@@ -612,7 +615,8 @@ describe("AT — provenance recording (§13 record / §12.2 contracts)", () => {
 
 		const event = auditEvents.find((e) => e.event_type === "policy_sync");
 		expect(event).toBeDefined();
-		const payload = event!.payload;
+		if (!event) throw new Error("missing policy_sync event");
+		const payload = event.payload;
 		expect(payload.sorType).toBe("policy");
 		expect(payload.sourceId).toBe("coder");
 		expect(payload.namespace).toBe("fleet");

@@ -216,7 +216,9 @@ describe("legacy 014 backfill (P5.2)", () => {
 		);
 		expect(syncs.length).toBe(5);
 		for (const sync of syncs) {
-			expect((sync.values![8] as Record<string, unknown>).kind).toBe("seeded");
+			expect((sync.values?.[8] as Record<string, unknown>)?.kind).toBe(
+				"seeded",
+			);
 		}
 		// the other five roles still seed
 		expect(

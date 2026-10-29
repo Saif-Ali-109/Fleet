@@ -94,7 +94,6 @@ const CONTENT_TOOLS = [
 	"content.list_sources",
 	"content.get_document",
 ] as const;
-type ContentToolName = (typeof CONTENT_TOOLS)[number];
 
 interface RecordedQuery {
 	text: string;

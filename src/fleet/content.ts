@@ -76,7 +76,7 @@ export function splitSections(
 				});
 			}
 			const match = h2Match ?? h3Match;
-			if (match) currentHeading = match[1]!.trim();
+			if (match) currentHeading = match[1]?.trim() ?? currentHeading;
 			currentContent = [];
 		} else {
 			currentContent.push(line);

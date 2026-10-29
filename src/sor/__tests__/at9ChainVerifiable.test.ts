@@ -380,7 +380,8 @@ describe("AT-9 — runSorVerify agrees", () => {
 		}
 
 		expect(events.length).toBe(20);
-		const target = events[10]!;
+		const target = events[10];
+		if (!target) throw new Error("expected an event at index 10");
 		target.hash = "tampered";
 
 		const code = await runSorVerify(pool);

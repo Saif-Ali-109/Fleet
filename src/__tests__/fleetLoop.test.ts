@@ -1495,7 +1495,7 @@ describe("runAgent", () => {
 				resp({ role: "assistant", content: "   " }),
 			);
 		}
-		const { events, emit } = collect();
+		const { emit } = collect();
 
 		const outcome = await runAgent({
 			client,
