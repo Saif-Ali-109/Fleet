@@ -126,8 +126,7 @@ export function toolCallCorrection(err: unknown): string | null {
 			msg,
 		);
 	if (schema?.[1]) {
-		const detail = (schema[2] ?? "").trim();
-		return `Your previous tool call for "${schema[1]}" was rejected because its arguments did not match the tool's JSON schema${detail ? ` (${detail})` : ""}. Re-issue the call using only the documented arguments, with every required argument present.`;
+		return `Your previous tool call for "${schema[1]}" was rejected because its arguments did not match the tool's JSON schema. Re-issue the call using only the documented arguments, with every required argument present.`;
 	}
 	const phantom =
 		/attempted to call tool ["']?([\w.-]+)["']? which was not in request\.tools/i.exec(
