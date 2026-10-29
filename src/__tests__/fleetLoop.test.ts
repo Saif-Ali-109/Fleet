@@ -1631,7 +1631,7 @@ describe("runAgent", () => {
 		}
 	});
 
-	it("retry log includes the underlying transient error message", async () => {
+	it("retry log redacts the underlying transient error message", async () => {
 		const prevMaxRetries = process.env.OLLAMA_MAX_RETRIES;
 		process.env.OLLAMA_MAX_RETRIES = "10";
 		vi.useFakeTimers();
@@ -1661,12 +1661,10 @@ describe("runAgent", () => {
 			const outcome = await pending;
 
 			expect(outcome.ok).toBe(true);
-			expect(errSpy).toHaveBeenCalledWith(
-				expect.stringContaining("[llm-retry]"),
-			);
-			expect(errSpy).toHaveBeenCalledWith(
-				expect.stringContaining("ECONNREFUSED 127.0.0.1:11434"),
-			);
+			const retryLogs = errSpy.mock.calls.flat().join("\n");
+			expect(retryLogs).toContain("[llm-retry]");
+			expect(retryLogs).toContain("Error");
+			expect(retryLogs).not.toContain("ECONNREFUSED 127.0.0.1:11434");
 			expect(events.some((e) => e.t === "error")).toBe(false);
 		} finally {
 			errSpy.mockRestore();

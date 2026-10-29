@@ -38,12 +38,13 @@ function formatProviderErrorForLog(err: unknown): string {
 
 	if (typeof err === "object" && err !== null) {
 		const maybeStatus =
-			("status" in err && typeof (err as { status?: unknown }).status === "number"
+			"status" in err &&
+			typeof (err as { status?: unknown }).status === "number"
 				? (err as { status: number }).status
 				: "statusCode" in err &&
-					  typeof (err as { statusCode?: unknown }).statusCode === "number"
+						typeof (err as { statusCode?: unknown }).statusCode === "number"
 					? (err as { statusCode: number }).statusCode
-					: undefined);
+					: undefined;
 		if (maybeStatus !== undefined) {
 			return `${errorName} (status=${maybeStatus})`;
 		}
@@ -782,7 +783,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 						}
 					}
 					const correction = toolCallCorrection(err);
-					const allowCorrectionPrompt = provider === "openai";
+					const allowCorrectionPrompt = provider === "groq";
 					if (
 						allowCorrectionPrompt &&
 						correction !== null &&
