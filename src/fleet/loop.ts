@@ -28,6 +28,30 @@ export interface UsageTotals {
 	total: number;
 }
 
+function formatProviderErrorForLog(err: unknown): string {
+	const errorName =
+		err instanceof Error
+			? (err.name ?? "Error")
+			: typeof err === "object" && err !== null && "name" in err
+				? String((err as { name?: unknown }).name ?? "UnknownError")
+				: "UnknownError";
+
+	if (typeof err === "object" && err !== null) {
+		const maybeStatus =
+			("status" in err && typeof (err as { status?: unknown }).status === "number"
+				? (err as { status: number }).status
+				: "statusCode" in err &&
+					  typeof (err as { statusCode?: unknown }).statusCode === "number"
+					? (err as { statusCode: number }).statusCode
+					: undefined);
+		if (maybeStatus !== undefined) {
+			return `${errorName} (status=${maybeStatus})`;
+		}
+	}
+
+	return errorName;
+}
+
 export type WireEvent =
 	| {
 			t: "init";
@@ -762,7 +786,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 						correctionRetries += 1;
 						messages.push({ role: "user", content: correction });
 						console.warn(
-							`[llm-retry] provider could not parse the model's tool call; retrying with a correction: ${err instanceof Error ? err.message : String(err)}`,
+							`[llm-retry] provider could not parse the model's tool call; retrying with a correction: ${formatProviderErrorForLog(err)}`,
 						);
 						continue;
 					}
@@ -787,7 +811,7 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 								(hint ?? 0) + 2000,
 							);
 					console.error(
-						`[llm-retry] attempt ${attempt + 1}/${isOllama ? (ollamaCap ?? "∞") : maxRetries + 1} failed transiently; backing off ${delay}ms: ${err instanceof Error ? err.message : String(err)}`,
+						`[llm-retry] attempt ${attempt + 1}/${isOllama ? (ollamaCap ?? "∞") : maxRetries + 1} failed transiently; backing off ${delay}ms: ${formatProviderErrorForLog(err)}`,
 					);
 					if (requestIdentity) {
 						emitTelemetry({
