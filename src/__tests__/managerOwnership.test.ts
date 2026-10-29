@@ -145,8 +145,11 @@ describe("manager ownership (advisory lock)", () => {
 		// process.execArgv: under vitest that carries worker-runner arguments that
 		// make the child fail to boot.
 		const { fork } = await import("node:child_process");
-		const { writeFileSync } = await import("node:fs");
-		const entry = "/tmp/opencode/own-probe.mjs";
+		const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+		const { tmpdir } = await import("node:os");
+		const { join } = await import("node:path");
+		const probeDir = mkdtempSync(join(tmpdir(), "fleet-own-probe-"));
+		const entry = join(probeDir, "own-probe.mjs");
 		const mod = new URL("../workforce/ownership.ts", import.meta.url).pathname;
 		writeFileSync(
 			entry,
@@ -187,6 +190,7 @@ setInterval(() => {}, 1000);`,
 			expect(await rawLockHeld(KEY)).toBe(true);
 		} finally {
 			if (!child.killed) child.kill("SIGKILL");
+			rmSync(probeDir, { recursive: true, force: true });
 		}
 	}, 60_000);
 });
