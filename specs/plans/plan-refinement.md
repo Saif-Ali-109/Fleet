@@ -172,7 +172,7 @@ DO:
 - Smoke `npm run dry` after orchestrator/runner changes.
 - Keep SOR writes non-fatal; keep `sor:verify` green at all times.
 - Update `.env.example` whenever env vars change.
-- YAML frontmatter on every new/edited `*.md` except AGENTS.md.
+- YAML frontmatter on every new/edited `*.md` except `AGENTS.md`, `README.md`, and `CONTRIBUTING.md`.
 
 DON'T:
 - Don't add model/API calls to manager-side modules (`orchestrator.ts`,

@@ -157,4 +157,4 @@ No writer edits a module another CONCURRENT writer imports.
 - Never touch SOR signing/verification/chain.
 - Manager-side code counts events only — zero model/API calls.
 - Do not weaken tool gating or worktree locks.
-- Every *.md edit keeps YAML frontmatter.
+- Every *.md edit keeps YAML frontmatter, except `AGENTS.md`, `README.md`, and `CONTRIBUTING.md`.

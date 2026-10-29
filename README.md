@@ -1,10 +1,3 @@
----
-title: Fleet README
-status: active
-created: 2026-08-24
-updated: 2026-10-29
----
-
 # Fleet
 
 **An autonomous GitHub issue-to-pull-request engineering manager.**

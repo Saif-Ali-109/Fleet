@@ -2,7 +2,7 @@
 
 Constitution for ANY AI agent working in this repo, in ANY session, on ANY plan.
 Read fully before your first edit. Re-read "Boundaries" before risky operations.
-No YAML frontmatter on this file by rule — every other `*.md` must have one.
+No YAML frontmatter on this file, `README.md`, or `CONTRIBUTING.md` by rule — every other `*.md` must have one.
 
 ## What this repo is
 
@@ -75,7 +75,7 @@ Everything else lives under `specs/`, grouped by purpose:
 ### Always
 - Typecheck + tests green before every commit.
 - Update `.env.example` when adding env vars.
-- YAML frontmatter on every new/edited `*.md` EXCEPT this file.
+- YAML frontmatter on every new/edited `*.md` EXCEPT this file, `README.md`, and `CONTRIBUTING.md`.
 
 ### Ask first
 - New agent roles or new providers beyond gemini/openrouter/ollama.

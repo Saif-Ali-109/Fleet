@@ -526,7 +526,7 @@ deferred indefinitely)
   commands/env references during P8.
 - **AGENTS.md**: interim constitution already covers both eras; final
   target-state polish happens at P8 (remove transitional notes).
-- Formatting rule for ALL repo markdown EXCEPT AGENTS.md: YAML frontmatter block.
+- Formatting rule for ALL repo markdown EXCEPT `AGENTS.md`, `README.md`, and `CONTRIBUTING.md`: YAML frontmatter block.
 
 ## 17. Progress checklist
 

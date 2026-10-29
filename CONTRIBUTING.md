@@ -1,10 +1,3 @@
----
-title: Contributing — Global Rules
-status: active
-date: 2026-08-22
-audience: ain + AI agents 
----
-
 # CONTRIBUTING.md
 
 Global contribution rules and constraints. `AGENTS.md` governs agent behavior;
@@ -36,7 +29,7 @@ this file governs HOW changes get made, for humans and agents alike.
 
 ## 4. Docs conventions
 
-- YAML frontmatter on EVERY `*.md` EXCEPT `AGENTS.md`.
+- YAML frontmatter on EVERY `*.md` EXCEPT `AGENTS.md`, `README.md`, and `CONTRIBUTING.md`.
 - `specs/plans/PLAN.md` = index · `specs/core/SPEC.md` = execution truth · progress lives ONLY in
   `specs/core/SPEC.md §17` · owner preferences live ONLY in `specs/core/USER.md`.
 
