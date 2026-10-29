@@ -338,3 +338,7 @@ Useful references:
 - [`specs/`](specs/) — plans, design proposals, security notes, and system-of-record specs
 - [`.env.example`](.env.example) — provider, model, quota, database, dashboard, and audit settings
 - [`demo-repo`](https://github.com/Saif-Ali-109/demo-repo) — example issue-to-PR history, including failures
+
+## License
+
+[MIT](LICENSE)
