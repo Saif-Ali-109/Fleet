@@ -9,7 +9,7 @@ audience: any AI agent working in this repo
 # USER.md — how ain wants agents to work
 
 Owner preferences and working rules. Read alongside `AGENTS.md`; where they
-overlap, the stricter rule wins. Decisions recorded in `SPEC.md §3` are FINAL —
+overlap, the stricter rule wins. Decisions recorded in `specs/core/SPEC.md §3` are FINAL —
 never re-litigate them.
 
 ## Subagent strategy (IMPORTANT)
@@ -33,7 +33,7 @@ Use subagents for each task:
 ## Product preferences
 
 - Gemini API key is the primary/test provider; ollama keeps things working
-  offline; openrouter is the fallback pool (`SPEC.md §4`).
+  offline; openrouter is the fallback pool (`specs/core/SPEC.md §4`).
 - Strong models for thinking roles, cheap models for builder roles.
 - Fully automatic flow — no human approval gates anywhere in the pipeline.
 - The SOR audit chain is non-negotiable: `sor:verify` stays green always.
@@ -42,4 +42,4 @@ Use subagents for each task:
 
 - Never push to main; never merge PRs.
 - Never spend real API tokens without saying so first (`npm run dry` exists).
-- Never add a dependency beyond what `SPEC.md §12` lists without asking.
+- Never add a dependency beyond what `specs/core/SPEC.md §12` lists without asking.

@@ -62,7 +62,7 @@ export function isSorRecordIdentity(x: unknown): x is SorRecordIdentity {
 /** Exactly one enforcement mode is resolved at spawn and immutable per session (P-I4). */
 export type PolicyMode = "sor" | "compatibility" | "fail-closed";
 
-/** Minimal v1 `ArgumentMatcher` DSL (plan-sor.md "Spec ambiguities" #3):
+/** Minimal v1 `ArgumentMatcher` DSL (specs/plans/plan-sor.md "Spec ambiguities" #3):
  *  `{ path, oneOf|notOneOf|match }` against parsed tool input. */
 export interface ArgumentMatcher {
 	path: string;

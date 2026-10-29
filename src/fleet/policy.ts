@@ -1,5 +1,5 @@
 // Policy SoR v1 — document schema validation, canonical hash, and the
-// SOR_POLICY_JSON_B64 codec (spec §9.3, plan-sor.md C6.1). Pure module.
+// SOR_POLICY_JSON_B64 codec (spec §9.3, specs/plans/plan-sor.md C6.1). Pure module.
 
 import { createHash } from "node:crypto";
 import type { PolicyDocument } from "../sor/kernel/types.ts";

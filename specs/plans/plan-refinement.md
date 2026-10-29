@@ -10,7 +10,7 @@ scope: pre-delivery hardening of the existing migration-complete codebase
 
 ## Context
 
-SPEC.md §17 is complete except `FINAL live smoke`. This plan covers everything
+specs/core/SPEC.md §17 is complete except `FINAL live smoke`. This plan covers everything
 between "migration done" and "deliverable". All findings below were verified
 against source by an independent audit pass (file:line citations included).
 Work proceeds in phases; **do not start a phase until the previous phase is
@@ -102,12 +102,12 @@ Doc/env reconciliation:
 - `.env.example`: remove dead `GEMINI_BIN`/`OPENROUTER_BIN`/`OLLAMA_BIN` and
   `MCP_SERVER_PORT`; document `FLEET_MANAGER_ID`, `GEMINI_QUOTA_OVERRIDES`,
   `SOR_PROVIDER` (repo rule: every env var documented).
-- TODO.md: re-triage the three "Gemini quota safety" items — rolling RPM/TPM
+- specs/core/TODO.md: re-triage the three "Gemini quota safety" items — rolling RPM/TPM
   waits ARE implemented (`src/fleet/loop.ts:343-377`,
   `quotaCoordinator.ts:49-56`) but untested → write the missing test, then tick.
-- Resolve PLAN.md paradox: `.gitignore:8` ignores PLAN.md while AGENTS.md
+- Resolve PLAN.md paradox: `.gitignore:8` ignores `specs/plans/PLAN.md` while AGENTS.md
   session protocol requires reading it. Un-ignore it (or repoint the
-  constitution to SPEC.md) and replace PLAN.md's finished one-off content
+  constitution to specs/core/SPEC.md) and replace specs/plans/PLAN.md's finished one-off content
   with a real index.
 
 **Don't:** hand-edit anything under `.runs/`; don't delete `repairChain.ts`
@@ -136,7 +136,7 @@ DB:
 - Migration runner: add advisory lock; consider checksums for applied files.
 
 Tests (highest-risk gaps):
-- `src/memory/sessionLog.ts` — known cross-run bleed bug (TODO.md:125): FIX
+- `src/memory/sessionLog.ts` — known cross-run bleed bug (specs/core/TODO.md:125): FIX
   the lazy-path-resolution race AND add tests.
 - CLI arg parsing in `src/index.ts` (745 lines, untested).
 - Rolling-wait quota path (see Phase 2).
@@ -153,7 +153,7 @@ Hygiene:
 ## Phase 4 — Ship
 
 1. Run **FINAL live smoke**: real issue → PR with only `GEMINI_API_KEY`.
-   Tick SPEC.md §17 last item (`docs: check FINAL live smoke`).
+   Tick specs/core/SPEC.md §17 last item (`docs: check FINAL live smoke`).
 2. Confirm `manager/models.json` overrides flow works end-to-end.
 3. Tag release; write CHANGELOG summarizing Phases 1–3.
 4. Decide distribution posture: currently `private: true`, no `bin`, no
@@ -167,12 +167,12 @@ Hygiene:
 ## Standing rules for ANY session working this plan
 
 DO:
-- Read AGENTS.md, SPEC.md §17, and this file first; work top-down by phase.
+- Read AGENTS.md, specs/core/SPEC.md §17, and this file first; work top-down by phase.
 - One logical unit per commit; short imperative subject + explanatory body.
 - Smoke `npm run dry` after orchestrator/runner changes.
 - Keep SOR writes non-fatal; keep `sor:verify` green at all times.
 - Update `.env.example` whenever env vars change.
-- YAML frontmatter on every new/edited `*.md` except AGENTS.md.
+- YAML frontmatter on every new/edited `*.md` except `AGENTS.md`, `README.md`, and `CONTRIBUTING.md`.
 
 DON'T:
 - Don't add model/API calls to manager-side modules (`orchestrator.ts`,

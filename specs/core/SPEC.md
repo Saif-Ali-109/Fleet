@@ -4,7 +4,7 @@ status: active
 date: 2026-08-22
 owner: ain
 audience: builder-agent (fresh session — read top to bottom before any edit)
-supersedes: PLAN.md ("Working State")
+supersedes: specs/plans/PLAN.md ("Working State")
 ---
 
 # SPEC.md — CLI Fleet → Custom SDK Agents (Gemini-first)
@@ -447,7 +447,7 @@ MODIFY:
 by Node's --env-file; put comments on their own line) ·
 `package.json` (scripts; +`openai` dep; `@modelcontextprotocol/sdk` ^1.30.0 is
 ALREADY installed and stays) · `AGENTS.md` (final target-state polish) ·
-`USER.md` / `CONTRIBUTING.md` (post-migration touch-up only — both already
+`specs/core/USER.md` / `CONTRIBUTING.md` (post-migration touch-up only — both already
 written early)
 
 DELETE:
@@ -521,12 +521,12 @@ deferred indefinitely)
 
 ## 16. Companion docs — STATUS
 
-- **USER.md + CONTRIBUTING.md**: ✅ ALREADY WRITTEN (2026-08-22, ahead of the
+- **specs/core/USER.md + CONTRIBUTING.md**: ✅ ALREADY WRITTEN (2026-08-22, ahead of the
   migration per owner request). Do not re-author. Post-migration: touch up
   commands/env references during P8.
 - **AGENTS.md**: interim constitution already covers both eras; final
   target-state polish happens at P8 (remove transitional notes).
-- Formatting rule for ALL repo markdown EXCEPT AGENTS.md: YAML frontmatter block.
+- Formatting rule for ALL repo markdown EXCEPT `AGENTS.md`, `README.md`, and `CONTRIBUTING.md`: YAML frontmatter block.
 
 ## 17. Progress checklist
 
@@ -563,7 +563,7 @@ Find the first unchecked item; do it; mark `[x]` + append date + commit
 
 ### Hardening (H1–H11) — quality & robustness
 
-Ordered by dependency. Each task ends green. See PLAN.md §"Quality Hardening
+Ordered by dependency. Each task ends green. See specs/plans/PLAN.md §"Quality Hardening
 Roadmap" for full specs. Parallel wave 1 (H1+H2+H3) can run concurrently;
 H4+H5+H9 in parallel; H6 after H5; H7+H8 after H4; H10+H11 after H8.
 
@@ -598,9 +598,142 @@ H4+H5+H9 in parallel; H6 after H5; H7+H8 after H4; H10+H11 after H8.
       verify RunSummary + artifacts + SOR events. 2026-08-27: passes in < 2s,
       sor:verify green.
 
+### Security & dependency hygiene (S1–S7)
+
+Origin: third-party scanner (M8ven) reported GHSA-6qxp-vccf-f47h
+(CVE-2026-104850, High) against `@modelcontextprotocol/sdk@1.30.0`, audited
+2026-10-16 against commit `1910e19`. **Audit verdict: not exploitable.** Fleet's
+MCP surface is stdio-only in both server and client roles and contains no OAuth
+client; the advisory's own "Not affected" list names *stdio clients* and
+*servers built with the SDK*. Rationale recorded in `specs/security/SECURITY.md` §3.
+
+Do NOT record the SDK bump below as a security fix — it is dependency hygiene for
+an unreachable code path. Keep the "not applicable" finding and the version bump
+as two separate facts.
+
+- [x] S0. Audit + triage (read-only, no repo change) — 2026-10-16: import graph,
+      call sites, advisory text and installed SDK entry points all confirm the
+      OAuth path is unreachable. Full write-up in `specs/security/SECURITY.md`; remediation plan
+      in `~/.opencode/plan/m8ven-advisory-and-deps.md`.
+- [x] S1. `specs/security/SECURITY.md` — 2026-10-16: threat model, trust boundaries, stdio-only
+      MCP posture, GHSA-6qxp-vccf-f47h non-applicability, dep posture, and an
+      explicit "not a security finding" list.
+- [x] S2. Production lockfile refresh — target `npm update fast-uri proxy-addr
+      hono ip-address qs`. Clears 5 of 6 prod advisories (incl. `proxy-addr`,
+      critical) with **no** code change; all 5 sit inside existing semver ranges.
+      Acceptance: `npm audit --omit=dev` drops those five; typecheck + tests + dry
+      green. NOTE: a blanket `npm update` may also float the SDK — prefer
+      targeted for diff readability.
+      — Verified 2026-10-16. Lockfile-only diff, 19 insertions / 15 deletions:
+      `proxy-addr` 2.0.7→2.0.8 (was critical), `fast-uri` 3.1.5→3.1.8,
+      `hono` 4.13.1→4.13.13, `ip-address` 10.5.0→10.7.4, `qs` 6.15.3→6.16.1.
+      Only incidental extra is a `funding` metadata block on `proxy-addr`. No
+      packages added or removed, **no code change**, and the SDK did **not** float
+      (`@modelcontextprotocol/sdk` still 1.30.0 — S3 is a separate floor bump).
+      `npm install --package-lock-only` reproduces the file byte-identically, so
+      the refresh is complete and deterministic.
+      `npm audit --omit=dev`: **6 → 1** (remaining is the §3 SDK advisory, not
+      applicable). Typecheck clean. `npm run dry` boots clean — dashboard up,
+      GitHub signed in, graceful SIGTERM shutdown; note it is interactive and
+      long-running, not a terminating smoke test.
+      Tests: 1269 passed / 1 failed. The failure is **pre-existing at baseline**,
+      proven by reverting to the HEAD lockfile and re-running `npm ci` — identical
+      failure. It is NOT cleared by S2, so the "tests green" half of this item's
+      acceptance criterion is **not** met; see the note below.
+- [ ] S3. MCP SDK floor `^1.30.0` → `^1.32.1` in `package.json`. Floors above the
+      patched `1.31.0` so a clean install cannot regress. Safe: 1.31.0's upgrade
+      notes are OAuth-only and Fleet uses no OAuth. Changelog wording:
+      "dependency updated to a patched release", NOT "security fix". This bump
+      clears **only** the SDK advisory — it does not clear the S2 transitive set
+      (1.32.1 declares identical dep ranges to 1.30.0).
+- [ ] S4. MCP tool annotations on all 12 tools; priority `create_pr` →
+      `destructiveHint: true` (only irreversible external side effect). Metadata
+      only — authorization stays code-enforced. Update the 3 MCP test files if
+      they assert tool-def shape.
+- [ ] S5. **Prompt-injection threat model** — the real high-consequence path and
+      the one item the S0 audit deliberately excluded. Scope: untrusted issue/PR
+      text → model → `bash` (`shell: true`) / `create_pr` / git. Deliverable is
+      a written threat model first. Any mitigation touching per-role tool gating
+      or bash worktree cwd-locking is an `AGENTS.md` "Never weaken" boundary →
+      owner sign-off required.
+- [ ] S6. `LICENSE` + `package.json` `"license"` field. Owner decision: MIT vs
+      Apache-2.0. Legal/metadata only, **not** security.
+- [ ] S7. Dev-toolchain refresh — `vitest` → 5.x, `gray-matter`. Clears
+      `tinypool` (prototype pollution → RCE) and `vitest` (path traversal /
+      arbitrary file read) plus 7 more dev-only advisories. Semver-major; isolate
+      in its own commit.
+- [ ] S8. **Worker lifecycle: orphan recovery + manager ownership.** Partially
+      implemented as of 2026-10-16 (commits `82122b3`, `c14ac14`,
+      `5468c84`, and this stage): (a) single-managerOwnership via
+      pg_advisory_lock (shipping); (b) failed terminal-status writes now
+      observable (`worker_status_write_failed`); (c-flow) worker-to-run
+      correlation now carries the real `run_outcomes.run_id` UUID with true
+      `started_at` on the first spawn (`workerCorrelation.test.ts`) —
+      shipped. Remaining design-only/gated pieces in `specs/design/S8-DESIGN.md`:
+      startup reconciliation sweep, retirement-behavior changes, and SOR
+      event types for hire/retire require owner approval. Parts (c)/(d)
+      still change production concurrency or retirement behavior.
+
+      **Finding 1 — `retireWorker` is dead code.** Defined at
+      `src/workforce/hiring.ts:128`; it has zero production call sites, and the
+      `retired` status had zero rows. The `running` status is likewise never
+      written: `updateWorkerStatus` has exactly one production call site
+      (`agentRunner.ts:526`), which writes `success`/`failed` at the *end* of a
+      walk. A worker is therefore `pending` for its entire life and only leaves
+      `ACTIVE_STATUSES` at completion.
+
+      **Finding 2 — `run_id` and `started_at` are never populated.** 100% NULL
+      across all 2048 rows. They carry zero discriminating signal and must not
+      appear in any cleanup predicate. `permissions IS NULL` *is* a reliable
+      discriminator (5/5 orphans vs 0/2043 terminal) because
+      `updateWorkerStatus` writes it atomically with the terminal status.
+
+      **Finding 3 — leak paths.** Normal completion and single-signal graceful
+      shutdown reach `agentRunner.ts:526`. Leaks occur on: second signal
+      (`forceExit` immediately), finalize exceeding the 10s `unref`ed guard at
+      `index.ts:124`, crash/SIGKILL/OOM, and any DB error at line 526 — which is
+      swallowed by `catch { /* non-fatal */ }`. Five real orphans aged 43–49 days
+      were found this way; they were retired one-time on 2026-10-16 under a
+      separately reviewed, PK-scoped transaction.
+
+      **Finding 4 — single-manager ownership is NOT enforced.** No advisory
+      lock, no lease, no leader election, no `instance_id`/`owner_id`, no
+      heartbeat; no Dockerfile/compose/k8s/systemd/pm2. The only implicit guard
+      is the dashboard TCP port, and it is partial: queue mode exits if it
+      cannot bind (`index.ts:645-648`), but single-issue mode merely degrades
+      to `web: null` (`index.ts:370-386`), `--no-web` skips the bind entirely,
+      `--port <n>` is configurable, and `127.0.0.1` is per-host — so two hosts
+      sharing a `DATABASE_URL` never contend at all. Single-manager operation
+      is an artifact of practice, not a guarantee. **Consequence: any startup
+      sweep that retires all active rows is unsafe** — a second manager's
+      startup would retire a first manager's genuinely live workers.
+
+      **Proposal, in dependency order.** (a) Populate `run_id` at
+      `agentRunner.ts:218` and add `started_at` on transition to a running
+      status, making orphans attributable. (b) Add manager ownership — a
+      `pg_advisory_lock` held for process lifetime, or an `owner_id` +
+      heartbeat column — and make startup refuse to run concurrently without
+      it. This must land *before* any sweep. (c) Startup reconciliation: once
+      ownership is exclusive, every active row at startup is provably orphaned
+      by that manager, so retire them with an explicit reason rather than an
+      age heuristic. (d) Stop swallowing the line-526 error — at minimum warn —
+      so leaks are observable. (e) Consider emitting worker lifecycle into the
+      SOR chain; it is currently absent, so hiring and retirement are not in the
+      tamper-evident audit trail.
+
+      Guards: (a)/(b)/(d) change production behavior; (c) changes retirement
+      behavior; `countActiveTotal()` and per-role concurrency semantics stay
+      untouched throughout.
+
+      **Full design proposal: `specs/design/S8-DESIGN.md`.** Owner decision required on §2
+      there (advisory-lock single-manager, recommended, vs owner_id+lease
+      multi-manager) before any code. That decision gates everything: startup
+      reconciliation is only safe once ownership is proven exclusive, and the
+      design explicitly rejects age-only cleanup heuristics.
+
 ## 18. Quality hardening (post-migration)
 
-Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
+Items from codebase analysis rated below A/A-. Each tracked in specs/plans/PLAN.md
 "Quality Hardening Roadmap" section and §17 checklist (H1–H11).
 
 ### Owner-locked decisions (interview 2026-08-26)
@@ -647,7 +780,7 @@ Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
 
 ---
 
-## Appendix A — History (from superseded PLAN.md, 2026-08-22)
+## Appendix A — History (from superseded specs/plans/PLAN.md, 2026-08-22)
 
 ### Done (recent, committed)
 - **Typecheck repair + worker timeout** (`a4ababf`) — fixed all 82 tsc errors across
@@ -660,7 +793,7 @@ Items from codebase analysis rated below A/A-. Each tracked in PLAN.md
   shapes, coder/tester wired into the live feed, pr step cap raised to 10.
 - **`.fleet/` consolidation** (`f20ab5a`) — every generated fleet tool config lives under
   `.fleet/` (now scheduled for deletion in this migration, §12).
-- **`manager/` consolidation** (`637d9db` + `26d28bf`) — MEMORY.md, SESSION_LOG.md,
+- **`manager/` consolidation** (`637d9db` + `26d28bf`) — specs/core/MEMORY.md, manager/SESSION_LOG.md,
   models.json moved under `manager/`; suite was 334/334 green.
 
 ### Old next steps (obsolete after this spec)

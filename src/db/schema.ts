@@ -20,7 +20,7 @@ export interface RunOutcome {
 	started_at: Date;
 	completed_at: Date | null;
 	gate_status: string; // JSON keyed by phase name, e.g. {"review": "auto_approved"} — human gates removed (SPEC D11); keys track phase status
-	backend: string; // "gemini" | "openrouter" | "ollama" (provider name for SOR/analytics)
+	backend: string; // "gemini" | "openrouter" | "groq" | "ollama" (provider name for SOR/analytics)
 }
 
 /**

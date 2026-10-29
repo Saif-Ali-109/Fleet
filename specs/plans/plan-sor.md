@@ -5,7 +5,7 @@ date: 2026-09-01
 owner: ain
 audience: implementation agents
 revision: 6
-derived-from: sor-spec.md (revision 2)
+derived-from: specs/security/sor-spec.md (revision 2)
 ---
 
 # SoR — implementation plan (Phase 1 kernel + gap fixes + Phase 2 Policy SoR v1 + Phase 3 Content SoR v1 + Phases 4-7: Context SoR, unified surface, cross-domain ATs, MCP wiring)
@@ -46,7 +46,7 @@ changes.** Pure TypeScript (no I/O), fully unit-testable without a database.
 Give the SOR domains a shared, tested contract layer so Phase 2+ can build on stable
 identity, hashing, provenance, and access primitives.
 
-### A2. Locked contract inputs (from sor-spec.md)
+### A2. Locked contract inputs (from specs/security/sor-spec.md)
 
 | Spec ref | What it forces |
 |---|---|
@@ -1055,7 +1055,7 @@ Concrete new tools (spec §10.6, names finalized here): `retrieve_knowledge(quer
 | T6 retrieval service (read path) | `src/fleet/contentRetrieval.ts` (new), test (new) | T1+T2; gates T8 |
 | T7 CLI `sor:content:sync` | `src/index.ts` (edit), `src/__tests__/contentCli.test.ts` (new) | T2+T3+T5 |
 | T8 MCP tools + role wiring | `src/mcp/fleetServer.ts` (edit), 6× `src/fleet/agents/*.ts` (edit: `mcpAllow`), policy-seed/drift test | T6 |
-| T9 worker C2 + acceptance + DoD | `src/runtime/worker/main.ts` (edit: append directive), acceptance tests, `sor-spec.md`/this file DoD ticks | all |
+| T9 worker C2 + acceptance + DoD | `src/runtime/worker/main.ts` (edit: append directive), acceptance tests, `specs/security/sor-spec.md`/this file DoD ticks | all |
 
 **Shared-file audit (parallel hazard):** the ONLY existing file two tasks both touch is
 `src/runtime/worker/main.ts` (T9 only — no other task) and `src/index.ts` (T7 only — no other
@@ -1088,7 +1088,7 @@ Wave D  (SERIAL — integration acceptance + full green gate)
          npm run sor:verify + npm run dry + DoD tick (§17.4)
 ```
 
-Rationale (honouring USER.md "when in doubt: sequential"):
+Rationale (honouring specs/core/USER.md "when in doubt: sequential"):
 - Wave A is fully parallel: T1–T4 are brand-new/isolated files, no cross-task .ts import
   until the later waves read their exports (contracts pinned in G5).
 - Wave B waits for T1 (schema exists to code against) + T2 (chunk/provenance shapes).
@@ -1264,7 +1264,7 @@ string contains the required markers. Pure. (Wiring into worker/systemPrompt hap
   - Re-run the Phase 2 AT-3..AT-6 suites (regression — retrieval tools must be P-I1 gated,
     so an ungranted role cannot call them).
 - Full gate: `npm run typecheck` (0 errors), full `npm test` (report count), `npm run
-  sor:verify` (`ok: yes`), `npm run dry` green. Tick the Phase 3 checklist in `sor-spec.md`
+  sor:verify` (`ok: yes`), `npm run dry` green. Tick the Phase 3 checklist in `specs/security/sor-spec.md`
   §17.4 and this file's DoD (G8). This is the ONLY task that runs the full suite, so it runs
   alone.
 - Commit(s): `feat(sor): C2 grounding directive in worker prompt` +
@@ -1272,7 +1272,7 @@ string contains the required markers. Pure. (Wiring into worker/systemPrompt hap
 
 ### G7. Disciplines for every subagent (copy into each prompt)
 
-- Read `sor-spec.md` §10, §15, §16, §17, §18 and `plan-sor.md` Part E/Part F BEFORE coding.
+- Read `specs/security/sor-spec.md` §10, §15, §16, §17, §18 and `specs/plans/plan-sor.md` Part E/Part F BEFORE coding.
 - **Tabs** over spaces; explicit `.ts` import extensions; `interface` over `type`; no comments
   unless warranted; mirror surrounding conventions (`src/fleet/policy.ts`, `loop.ts`,
   `audit.ts`, `agentRunner.ts`).
@@ -1322,7 +1322,7 @@ string contains the required markers. Pure. (Wiring into worker/systemPrompt hap
 - C2 prompt directive appended to worker `systemPrompt` — **T4, T9**.
 - FR-12..FR-16 held; AT-1, AT-2 green; Phase 2 AT-3..AT-6 regression green; typecheck +
   tests + `sor:verify` green — **T9, G7**.
-- Phase 3 checkbox ticked in `sor-spec.md` §17.4 (docs commit, per AGENTS.md session protocol).
+- Phase 3 checkbox ticked in `specs/security/sor-spec.md` §17.4 (docs commit, per AGENTS.md session protocol).
 
 ### G10. Risks & notes for the delegator
 

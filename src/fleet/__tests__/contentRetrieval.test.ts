@@ -137,7 +137,8 @@ describe("retrieveKnowledge — FTS primary, provenance, unavailable≠no-match"
 
 		expect(result.ok).toBe(true);
 		if (result.ok && result.kind === "hit") {
-			const item = result.items[0]!;
+			const item = result.items[0];
+			if (!item) throw new Error("expected a retrieval hit");
 			expect(item.provenance).toEqual({
 				source: "fleet",
 				document: "doc1",
@@ -333,13 +334,13 @@ describe("listSources — distinct sources from content_sor", () => {
 		const result = await listSources(pool);
 
 		expect(result).toHaveLength(3);
-		expect(result[0]!).toEqual({
+		expect(result[0]).toEqual({
 			source: "fleet",
 			document: "guide",
 			version: 2,
 			status: "active",
 		});
-		expect(result[2]!).toEqual({
+		expect(result[2]).toEqual({
 			source: "external",
 			document: "spec",
 			version: 3,

@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import {
 	asRecord,
 	asString,
+	resolveInside,
 	type ToolImpl,
 	ToolInputError,
 	type ToolResult,
@@ -134,18 +135,32 @@ export const globTool: ToolImpl = {
 		properties: {
 			pattern: {
 				type: "string",
-				description: "glob pattern relative to the worktree",
+				description: "glob pattern relative to the worktree (default **/*)",
+			},
+			path: {
+				type: "string",
+				description:
+					"optional file or directory to search under (default the worktree root)",
 			},
 		},
-		required: ["pattern"],
+		required: [],
 		additionalProperties: false,
 	},
 	async exec(input, ctx): Promise<ToolResult> {
+		// `pattern` is optional so a model that asks to "list this path" — a
+		// common tool-call shape (some providers validate arguments server-side
+		// and reject the whole request when a required key is missing) — still
+		// gets a useful listing instead of a hard failure.
 		let pattern: string;
+		let prefix: string;
 		try {
-			pattern = asString(asRecord(input), "pattern");
+			const record = asRecord(input);
+			pattern = typeof record.pattern === "string" ? record.pattern : "**/*";
+			const rawScope = typeof record.path === "string" ? record.path : ".";
+			const base = resolveInside(ctx.worktreeDir, rawScope);
+			prefix = relative(ctx.worktreeDir, base).split("\\").join("/");
 		} catch (err) {
-			if (!(err instanceof ToolInputError)) throw err;
+			if (!(err instanceof ToolInputError)) return fail(err);
 			return fail(err);
 		}
 		let regex: RegExp;
@@ -161,9 +176,18 @@ export const globTool: ToolImpl = {
 		let truncated = false;
 		for (const file of walkFiles(ctx.worktreeDir).sort()) {
 			const rel = relative(ctx.worktreeDir, file).split("\\").join("/");
+			if (prefix !== "" && rel !== prefix && !rel.startsWith(`${prefix}/`)) {
+				continue;
+			}
+			const scoped =
+				prefix === ""
+					? rel
+					: rel === prefix
+						? (rel.split("/").pop() ?? rel)
+						: rel.slice(prefix.length + 1);
 			const candidate = pattern.includes("/")
-				? rel
-				: (rel.split("/").pop() ?? rel);
+				? scoped
+				: (scoped.split("/").pop() ?? scoped);
 			if (!regex.test(candidate)) continue;
 			results.push(rel);
 			if (results.length >= SEARCH_RESULT_CAP) {

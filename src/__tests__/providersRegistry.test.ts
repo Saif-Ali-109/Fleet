@@ -41,6 +41,7 @@ let registry: typeof import("../providers/registry.ts");
 const ENV_KEYS = [
 	"GEMINI_API_KEY",
 	"OPENROUTER_API_KEY",
+	"GROQ_API_KEY",
 	"OLLAMA_BASE_URL",
 	"FLEET_PROVIDERS",
 ] as const;
@@ -75,6 +76,9 @@ describe("getProviderDef", () => {
 		expect(registry.getProviderDef("openrouter").baseURL).toBe(
 			"https://openrouter.ai/api/v1",
 		);
+		expect(registry.getProviderDef("groq").baseURL).toBe(
+			"https://api.groq.com/openai/v1",
+		);
 	});
 
 	it("defaults ollama to the local OpenAI-compatible endpoint", () => {
@@ -98,6 +102,7 @@ describe("getProviderDef", () => {
 		expect(registry.getProviderDef("openrouter").apiKeyEnv).toBe(
 			"OPENROUTER_API_KEY",
 		);
+		expect(registry.getProviderDef("groq").apiKeyEnv).toBe("GROQ_API_KEY");
 		expect(registry.getProviderDef("ollama").apiKeyEnv).toBeNull();
 	});
 });
@@ -130,6 +135,7 @@ describe("getFleetProviders", () => {
 		expect(registry.getFleetProviders()).toEqual([
 			"gemini",
 			"openrouter",
+			"groq",
 			"ollama",
 		]);
 	});
@@ -139,12 +145,14 @@ describe("getFleetProviders", () => {
 		expect(registry.getFleetProviders()).toEqual([
 			"gemini",
 			"openrouter",
+			"groq",
 			"ollama",
 		]);
 		process.env.FLEET_PROVIDERS = "   ";
 		expect(registry.getFleetProviders()).toEqual([
 			"gemini",
 			"openrouter",
+			"groq",
 			"ollama",
 		]);
 	});
@@ -184,6 +192,13 @@ describe("hasProviderKey / providersWithKeys", () => {
 		expect(registry.providersWithKeys()).toEqual([
 			"gemini",
 			"openrouter",
+			"ollama",
+		]);
+		process.env.GROQ_API_KEY = "q";
+		expect(registry.providersWithKeys()).toEqual([
+			"gemini",
+			"openrouter",
+			"groq",
 			"ollama",
 		]);
 	});

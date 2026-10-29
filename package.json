@@ -2,6 +2,7 @@
 	"name": "fleet",
 	"version": "0.1.0",
 	"private": true,
+	"license": "MIT",
 	"type": "module",
 	"description": "TypeScript Manager that forks custom OpenAI-SDK workers (Gemini → OpenRouter → Ollama) to take a GitHub issue to a real PR. No human gates; analyzer→planner→coder→tester→reviewer→(≤1 auto-fix)→pr. PostgreSQL-backed SOR audit chain. Hand-rolled web dashboard + ANSI TUI.",
 	"engines": {
@@ -15,6 +16,8 @@
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
 		"test:watch": "vitest",
+		"test:db:setup": "tsx --env-file-if-exists=.env scripts/setupTestDb.ts",
+		"test:db:recreate": "tsx --env-file-if-exists=.env scripts/setupTestDb.ts --recreate",
 		"lint": "biome check",
 		"format": "biome format --write",
 		"migrate:up": "tsx --env-file-if-exists=.env src/db/migrate.ts up",

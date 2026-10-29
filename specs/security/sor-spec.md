@@ -5,7 +5,7 @@ date: 2026-08-29
 owner: ain
 audience: implementation agents
 revision: 2
-supersedes: plan-sor.md
+supersedes: specs/plans/plan-sor.md
 ---
 
 # Agent Factory — SOR (System of Record) Specification
@@ -846,7 +846,7 @@ SPEC §17 ticked for any SPEC-affecting work (per AGENTS.md).
 
 | # | Topic | Locked decision |
 |---|---|---|
-| 1 | Spec placement | repo root `sor-spec.md`; **supersedes `plan-sor.md`** (retired on placement) |
+| 1 | Spec placement | `specs/security/sor-spec.md`; **supersedes `specs/plans/plan-sor.md`** (retired on placement) |
 | 2 | Spec level | architecture/contract spec (implementers decide types/DDL per phase) |
 | 3 | Kernel identity storage | **denormalized identity columns per domain table** |
 | 4 | Tenancy | **single-tenant**, reserved namespace `"fleet"` |

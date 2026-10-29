@@ -1,6 +1,6 @@
 -- migrations/008_sor_quota_events.sql
 -- Widen audit_events.event_type CHECK to accept the Gemini rate-limit
--- lifecycle events (PLAN.md "Rate-limit fallback system"): model_switch,
+-- lifecycle events (specs/plans/PLAN.md "Rate-limit fallback system"): model_switch,
 -- model_recovered, all_models_exhausted.
 
 -- UP:

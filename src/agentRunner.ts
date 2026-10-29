@@ -41,7 +41,12 @@ import type {
 	RolePolicy,
 	RunContext,
 } from "./types.ts";
-import { hireWorker, updateWorkerStatus } from "./workforce/hiring.ts";
+import {
+	hireWorker,
+	markWorkerRunning,
+	updateWorkerStatus,
+	warnWorkerStatusWriteFailed,
+} from "./workforce/hiring.ts";
 import { loadPolicy } from "./workforce/policy.ts";
 
 export interface RunWorkerOpts {
@@ -53,6 +58,13 @@ export interface RunWorkerOpts {
 	onEvent?: (ev: Record<string, unknown>) => void;
 	/** Reviewer-findings injection only (SPEC §6); forwarded verbatim into the job ctx. */
 	extraTask?: string;
+	/**
+	 * Real run_outcomes.run_id UUID for worker_roles correlation (S8 F2). NEVER
+	 * ctx.runId — that is the manager's timestamp run label and the FK would
+	 * reject it. Undefined for dry runs and direct-callers without a DB run,
+	 * leaving run_id NULL as before.
+	 */
+	runDbId?: string;
 }
 
 export interface ParsedStream {
@@ -190,6 +202,30 @@ export function isTransientNetworkError(msg: string): boolean {
 	);
 }
 
+/**
+ * Output-token ceiling handed to a non-Gemini worker. Gemini keeps its own
+ * GEMINI_MAX_OUTPUT_TOKENS value (it feeds the quota reservation); the
+ * OpenAI-compatible providers need an explicit cap, otherwise they reserve the
+ * model's maximum completion size (e.g. 65536), which free tiers reject.
+ * `<ROLE>_MAX_OUTPUT_TOKENS` overrides `<PROVIDER>_MAX_OUTPUT_TOKENS`, which
+ * overrides `FLEET_MAX_OUTPUT_TOKENS` (default 4096). The role layer matters on
+ * free tiers where prompt + max_tokens must stay under a per-request cap: a
+ * reviewer needs headroom for tool output, a coder needs room for its edits.
+ */
+export function maxOutputTokensFor(
+	provider: ProviderName,
+	role?: Role,
+): number {
+	const raw =
+		(role
+			? process.env[`${role.toUpperCase()}_MAX_OUTPUT_TOKENS`]
+			: undefined) ??
+		process.env[`${provider.toUpperCase()}_MAX_OUTPUT_TOKENS`] ??
+		process.env.FLEET_MAX_OUTPUT_TOKENS;
+	const parsed = Number(raw ?? "4096");
+	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 4096;
+}
+
 /** Run one worker for `role`, honoring an explicit context provider when set. */
 export async function runWorker(
 	role: Role,
@@ -220,6 +256,7 @@ export async function runWorker(
 			ctx.provider ?? "gemini",
 			policy.model,
 			workforcePolicy,
+			opts.runDbId,
 		);
 	} catch (err) {
 		if (err instanceof Error && err.message.startsWith("Cannot hire")) {
@@ -252,7 +289,7 @@ export async function runWorker(
 	};
 
 	/**
-	 * Gemini chain walk (PLAN.md "Rate-limit fallback system"): any rpm/tpm/rpd
+	 * Gemini chain walk (specs/plans/PLAN.md "Rate-limit fallback system"): any rpm/tpm/rpd
 	 * block switches to the next chain model immediately; once the whole chain
 	 * is finitely blocked, sleep min(needed wait, ceiling) and restart from the
 	 * top (automatic fail-back); all-RPD-dead halts the walk.
@@ -287,6 +324,7 @@ export async function runWorker(
 					opts,
 					model,
 					resumeMessagesPath,
+					workerDbId,
 				);
 				last = parsed;
 				lastModel = parsed.model ?? model;
@@ -466,6 +504,8 @@ export async function runWorker(
 						tracePath,
 						opts,
 						model,
+						undefined,
+						workerDbId,
 					);
 					last = parsed;
 					const ok =
@@ -522,14 +562,24 @@ export async function runWorker(
 					];
 
 	if (workerDbId) {
+		const terminalStatus = walk.ok ? "success" : "failed";
 		try {
-			await updateWorkerStatus(
-				workerDbId,
-				walk.ok ? "success" : "failed",
-				tracePath,
-			);
-		} catch {
-			/* non-fatal */
+			await updateWorkerStatus(workerDbId, terminalStatus, tracePath);
+		} catch (err) {
+			// Non-fatal to the run, but NOT silent. A failed terminal write leaves
+			// the row in `pending`, where countActiveTotal() keeps counting it
+			// against max_concurrent_workers indefinitely. Swallowing this made the
+			// leak rate unmeasurable, so surface it with enough context to correlate
+			// the orphaned row without logging task text, model output, or trace
+			// contents.
+			warnWorkerStatusWriteFailed({
+				role,
+				worker_id: workerDbId,
+				run_ref: ctx.runId,
+				attempted_status: terminalStatus,
+				walk_ok: walk.ok,
+				error: err,
+			});
 		}
 	}
 
@@ -546,7 +596,7 @@ export async function runWorker(
 	);
 }
 
-// ---- Policy mode resolution (plan-sor.md §C5/C8.2; spec §9.5, §9.7) ----
+// ---- Policy mode resolution (specs/plans/plan-sor.md §C5/C8.2; spec §9.5, §9.7) ----
 // Pure + injectable: the DB read arrives as an injected `loadRolePolicy`, so
 // every branch is unit-testable without a live Postgres (P5.6).
 
@@ -656,6 +706,8 @@ export async function spawnOnce(
 	opts: RunWorkerOpts,
 	modelOverride?: string,
 	resumeFromPath?: string,
+	/** DB worker_roles PK, when the caller hired a row (set only by runWorker). */
+	workerDbId?: string,
 ): Promise<ParsedStream> {
 	const policyEnv = policyForkEnv(
 		await resolvePolicyMode({
@@ -777,7 +829,7 @@ export async function spawnOnce(
 					SOR_PROVIDER: provider,
 					SOR_EVENT_DIR: eventsDir,
 					// Pin the fleet to this one candidate so the worker's own
-					// resolveProviderModel lands on exactly the walked provider.
+					// resolveProviderModel lands on the walked provider.
 					FLEET_PROVIDERS: provider,
 					// Policy snapshot: has no effect in `compatibility` (empty),
 					// injected as `SOR_POLICY_MODE/HASH/VERSION/JSON_B64` otherwise.
@@ -786,6 +838,20 @@ export async function spawnOnce(
 				fdOut,
 				fdErr,
 			});
+			// The child exists: first successful fork marks the row running with
+			// its true started_at (S8 F2). Non-fatal on failure (stage-2
+			// observability contract); later attempts/restarts do not clobber it.
+			if (workerDbId) {
+				markWorkerRunning(workerDbId).catch((err: unknown) => {
+					warnWorkerStatusWriteFailed({
+						role,
+						worker_id: workerDbId,
+						run_ref: ctx.runId,
+						attempted_status: "running",
+						error: err,
+					});
+				});
+			}
 			if (quota) {
 				child.on("message", (message: unknown) => {
 					if (!message || typeof message !== "object") return;
@@ -882,7 +948,10 @@ export async function spawnOnce(
 					runId: ctx.runId,
 					workerId,
 					...(extraTask !== undefined ? { extraTask } : {}),
-					maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? 8192),
+					maxOutputTokens:
+						provider === "gemini"
+							? Number(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? 8192)
+							: maxOutputTokensFor(provider, role),
 					...(modelOverride !== undefined ? { model: modelOverride } : {}),
 					...(resumeFromPath !== undefined
 						? { resumeFrom: { messagesPath: resumeFromPath } }

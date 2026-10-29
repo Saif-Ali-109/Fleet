@@ -73,6 +73,14 @@ describe("modelDefaults", () => {
 				tester: "google/gemini-3.5-flash-lite",
 				pr: "google/gemini-3.5-flash-lite",
 			},
+			groq: {
+				analyzer: "openai/gpt-oss-120b",
+				planner: "openai/gpt-oss-120b",
+				reviewer: "openai/gpt-oss-120b",
+				coder: "openai/gpt-oss-20b",
+				tester: "openai/gpt-oss-20b",
+				pr: "openai/gpt-oss-20b",
+			},
 			ollama: {
 				analyzer: "qwen2.5:14b",
 				planner: "qwen2.5:14b",

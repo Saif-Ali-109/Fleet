@@ -333,7 +333,12 @@ CI runs lint, typecheck, migrations, and `npm run test:coverage` on Node 22 with
 Useful references:
 
 - [`AGENTS.md`](AGENTS.md) — repository rules and safety boundaries for coding agents
-- [`SPEC.md`](SPEC.md) — detailed behavior and implementation specification
+- [`SPEC.md`](specs/core/SPEC.md) — detailed behavior and implementation specification
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup and contribution workflow
+- [`specs/`](specs/) — plans, design proposals, security notes, and system-of-record specs
 - [`.env.example`](.env.example) — provider, model, quota, database, dashboard, and audit settings
 - [`demo-repo`](https://github.com/Saif-Ali-109/demo-repo) — example issue-to-PR history, including failures
+
+## License
+
+[MIT](LICENSE)

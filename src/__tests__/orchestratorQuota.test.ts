@@ -1,4 +1,4 @@
-// Orchestrator-side quota notification bus tests (PLAN.md P-quota): each
+// Orchestrator-side quota notification bus tests (specs/plans/PLAN.md P-quota): each
 // QuotaEvent must hit console + SESSION_LOG + a non-fatal SOR write + the live
 // dashboard state; all-models-RPD-dead NEVER kills the run — it flips the run
 // into phase "paused" (banner + reminders) until a key-change Resume restarts

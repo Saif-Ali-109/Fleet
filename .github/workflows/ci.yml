@@ -36,4 +36,6 @@ jobs:
       - run: npm run typecheck
       - name: Migrate database
         run: npm run migrate:up
+      - name: Set up test database
+        run: npm run test:db:setup
       - run: npm run test:coverage

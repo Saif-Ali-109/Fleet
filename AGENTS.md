@@ -2,7 +2,7 @@
 
 Constitution for ANY AI agent working in this repo, in ANY session, on ANY plan.
 Read fully before your first edit. Re-read "Boundaries" before risky operations.
-No YAML frontmatter on this file by rule — every other `*.md` must have one.
+No YAML frontmatter on this file, `README.md`, or `CONTRIBUTING.md` by rule — every other `*.md` must have one.
 
 ## What this repo is
 
@@ -12,19 +12,44 @@ Gemini quota/rate-limit system: per-model RPM/TPM/RPD limits via `GEMINI_QUOTA_L
 
 Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/fleet/`, `FLEET_PROVIDERS`, `FleetAgentDef`) refers to the worker-fleet concept and predates the branding — treat them as distinct.
 
+## Documentation layout
+
+Root entry points: `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `README.md`.
+Everything else lives under `specs/`, grouped by purpose:
+
+- `specs/core/` — `SPEC.md` (execution truth), `TODO.md`, `MEMORY.md`, `USER.md`, `MEMORY.example.md`
+- `specs/plans/` — `PLAN.md` (gitignored working state), `plan-logs.md`, `plan-refinement.md`, `plan-sor.md`
+- `specs/design/` — `S8-DESIGN.md`, `WORKER-CONTAINMENT-DESIGN.md`
+- `specs/security/` — `SECURITY.md`, `sor-spec.md`
+
+`src/fleet/skills/**/*.md` and `src/__tests__/fixtures/**/*.md` are runtime/test assets, not documentation; leave them in place.
+
 ## Session protocol (every session)
 
-1. Read `PLAN.md` → if touching fleet/engine/migration code, read `SPEC.md`.
-2. Doing migration work? First unchecked item in `SPEC.md §17` is your task.
+1. Read `specs/plans/PLAN.md` → if touching fleet/engine/migration code, read `specs/core/SPEC.md`.
+2. Doing migration work? First unchecked item in `specs/core/SPEC.md §17` is your task.
    Tick it + commit (`docs: check <item>`) when its acceptance criteria pass.
-3. Follow the subagent strategy in `USER.md` (sequential vs parallel by file overlap).
+3. Follow the subagent strategy in `specs/core/USER.md` (sequential vs parallel by file overlap).
 4. Every task ends green: `npm run typecheck && npm test`.
 5. Commit per logical unit — short imperative subject + explanatory body.
 
 ## Commands
 
 - `npm start -- --repo <url> --issue <n>` — one issue → PR
-- `npm run dry` — keyless stubbed run (no tokens spent); ALWAYS smoke this first
+- `npm run dry` — boots the keyless stubbed stack (dashboard on `127.0.0.1:3456`).
+  **It is interactive, long-running, and does not self-terminate** — it starts the
+  dashboard, prints "Queue mode: paste a repo URL…", then waits for input
+  indefinitely. Start it, confirm the dashboard comes up and it reports
+  `GitHub: signed in as @…`, then stop it with Ctrl-C and check for
+  `[shutdown] … no active run, exiting`. Never invoke it without a timeout — a
+  bare `npm run dry` will hang forever.
+  *Network boundary (verified 2026-10-16):* **no model provider is ever reached.**
+  `runWorker` returns `stubResult` on `ctx.dryRun` before `hireWorker` and before
+  any child spawn, and `stubResult` is a pure literal (`zeroTokens()`, `costUsd:
+  0`). It is **not** offline, though: `src/index.ts` calls `ghAuthInfo()`
+  unconditionally at startup, which shells out to `gh api user` and performs a
+  real GitHub API request. So "no tokens spent" is accurate; "no network" is not.
+  Never assume `--dry-run` means no external calls.
 - `npm test` / `npm run typecheck`
 - `npm run migrate:up` / `migrate:down` — Postgres schema (DATABASE_URL required)
 - `npm run sor:verify` — replay SOR hash chain; must stay green at all times
@@ -50,12 +75,13 @@ Naming convention: "Fleet" is the product name; lowercase "fleet" in code (`src/
 ### Always
 - Typecheck + tests green before every commit.
 - Update `.env.example` when adding env vars.
-- YAML frontmatter on every new/edited `*.md` EXCEPT this file.
+- YAML frontmatter on every new/edited `*.md` EXCEPT this file, `README.md`, and `CONTRIBUTING.md`.
 
 ### Ask first
 - New agent roles or new providers beyond gemini/openrouter/ollama.
 - Changes to SOR event shapes or hash-chain logic (`sor:verify` contract).
 - Schema migrations; new runtime dependencies.
+- Any MCP transport other than stdio, or any MCP OAuth (`authProvider`, `withOAuth()`, `auth()`, `fetchToken()`). Fleet's stdio-only, no-OAuth surface is what makes MCP OAuth advisories inapplicable — see `specs/security/SECURITY.md` §3. Adding either voids that exemption and requires a fresh audit.
 
 ### Never
 - Add model calls to manager code (`orchestrator.ts` et al).
