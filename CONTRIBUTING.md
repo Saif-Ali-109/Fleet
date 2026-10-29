@@ -1,3 +1,10 @@
+---
+title: Contributing — Global Rules
+status: active
+date: 2026-08-22
+audience: saif-ali-109 + AI agents 
+---
+
 # CONTRIBUTING.md
 
 Global contribution rules and constraints. `AGENTS.md` governs agent behavior;
