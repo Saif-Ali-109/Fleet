@@ -782,7 +782,12 @@ export async function runAgent(opts: RunAgentOpts): Promise<RunAgentOutcome> {
 						}
 					}
 					const correction = toolCallCorrection(err);
-					if (correction !== null && correctionRetries < 3) {
+					const allowCorrectionPrompt = provider === "openai";
+					if (
+						allowCorrectionPrompt &&
+						correction !== null &&
+						correctionRetries < 3
+					) {
 						correctionRetries += 1;
 						messages.push({ role: "user", content: correction });
 						console.warn(
