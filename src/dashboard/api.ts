@@ -250,7 +250,7 @@ export class ApiHandlers {
 						this.stopRequested = false;
 					}
 				})
-				.catch((err) => {
+				.catch(() => {
 					this.runActive = false;
 					this.stopRequested = false;
 					this.sendJson(res, 200, {
@@ -623,7 +623,10 @@ export class ApiHandlers {
 				console.warn("[dashboard:login] device login failed", err);
 				// Note: pushGh and pushNotice are handled by the dashboard core
 				this.loginInProgress = false;
-				this.sendJson(res, 200, { ok: false, error: "GitHub login failed; check the server logs" });
+				this.sendJson(res, 200, {
+					ok: false,
+					error: "GitHub login failed; check the server logs",
+				});
 			}
 		})();
 	}
