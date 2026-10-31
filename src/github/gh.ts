@@ -24,13 +24,13 @@ export function toRepoSlug(repoUrlOrSlug: string): string {
 		if (parsed.hostname.toLowerCase() !== "github.com" || parsed.username || parsed.password) {
 			throw new Error("Repository URL must point to github.com");
 		}
-		path = parsed.pathname.replace(/^\\/+|\\/+$/g, "");
+		path = parsed.pathname.split("/").filter(Boolean).join("/");
 	} else if (input.startsWith("git@")) {
 		const prefix = "git@github.com:";
 		if (!input.startsWith(prefix)) throw new Error("Repository URL must point to github.com");
 		path = input.slice(prefix.length);
 	}
-	path = path.replace(/\\.git$/i, "");
+	path = path.toLowerCase().endsWith(".git") ? path.slice(0, -4) : path;
 	const parts = path.split("/");
 	if (parts.length === 2 && parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part)) &&
 		parts.every((part) => part !== "." && part !== "..")) {
