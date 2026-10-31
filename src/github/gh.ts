@@ -33,6 +33,8 @@ export function toRepoSlug(repoUrlOrSlug: string): string {
 			throw new Error("Repository URL must point to github.com");
 		}
 		path = parsed.pathname.split("/").filter(Boolean).join("/");
+	} else if (input.startsWith("github.com/")) {
+		path = input.slice("github.com/".length);
 	} else if (input.startsWith("git@")) {
 		const prefix = "git@github.com:";
 		if (!input.startsWith(prefix))
