@@ -31,6 +31,35 @@ export type WebhookHandler = (
 const WEBHOOK_MAX_BYTES = 256 * 1024;
 const MODEL_LIST_TIMEOUT_MS = 10_000;
 
+function isLocalDashboardRequest(req: IncomingMessage): boolean {
+	const host = req.headers.host;
+	if (!host) return false;
+
+	try {
+		const requestUrl = new URL(`http://${host}`);
+		if (
+			(requestUrl.hostname !== "127.0.0.1" &&
+				requestUrl.hostname !== "localhost") ||
+			requestUrl.username ||
+			requestUrl.password
+		) {
+			return false;
+		}
+
+		const origin = req.headers.origin;
+		// Non-browser local clients (for example curl) do not send Origin.
+		if (origin === undefined) return true;
+
+		const originUrl = new URL(origin);
+		return (
+			originUrl.protocol === "http:" &&
+			originUrl.origin === requestUrl.origin
+		);
+	} catch {
+		return false;
+	}
+}
+
 /** Live provider model ids, or [] when listing fails or hangs past the timeout. */
 async function listLiveModels(provider: ProviderName): Promise<string[]> {
 	return new Promise<string[]>((resolve) => {
@@ -120,46 +149,32 @@ export class ApiHandlers {
 		this.onTelemetry = onTelemetry ?? null;
 	}
 
-	/** Answer CORS preflight so a browser can still POST after the JSON-only rule below. */
+	/** Reject cross-origin preflights; the dashboard is same-origin and needs no CORS grant. */
 	handlePreflight(req: IncomingMessage, res: ServerResponse): void {
 		const origin = req.headers.origin;
+		if (!origin || !isLocalDashboardRequest(req)) {
+			this.sendJson(res, 403, {
+				ok: false,
+				error: "forbidden: cross-origin request",
+			});
+			return;
+		}
 		res.writeHead(204, {
-			"Access-Control-Allow-Origin": origin ?? "*",
-			"Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+			"Access-Control-Allow-Origin": origin,
+			"Access-Control-Allow-Methods": "POST",
 			"Access-Control-Allow-Headers": "Content-Type",
-			"Access-Control-Max-Age": "86400",
+			"Access-Control-Max-Age": "600",
+			Vary: "Origin",
 		});
 		res.end();
 	}
 
-	/** CSRF guard: mutating POSTs must be JSON and come from the local dashboard host. */
+	/** CSRF guard: mutations must target loopback and match the exact local origin. */
 	guardMutation(req: IncomingMessage, res: ServerResponse): boolean {
-		const origin = req.headers.origin;
-		if (origin !== undefined) {
-			let o: URL;
-			try {
-				o = new URL(origin);
-			} catch {
-				this.sendJson(res, 403, {
-					ok: false,
-					error: "forbidden: bad Origin header",
-				});
-				return false;
-			}
-			if (o.hostname !== "127.0.0.1" && o.hostname !== "localhost") {
-				this.sendJson(res, 403, {
-					ok: false,
-					error: "forbidden: origin not allowed",
-				});
-				return false;
-			}
-		}
-		const host = req.headers.host ?? "";
-		const hostName = host.split(":")[0];
-		if (hostName !== "127.0.0.1" && hostName !== "localhost") {
+		if (!isLocalDashboardRequest(req)) {
 			this.sendJson(res, 403, {
 				ok: false,
-				error: "forbidden: bad Host header",
+				error: "forbidden: request must be same-origin on loopback",
 			});
 			return false;
 		}
