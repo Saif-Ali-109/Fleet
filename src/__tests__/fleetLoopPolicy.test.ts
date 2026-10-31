@@ -55,6 +55,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	rmSync(wt, { recursive: true, force: true });
 });
 
