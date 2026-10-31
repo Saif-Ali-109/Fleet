@@ -317,7 +317,9 @@ export interface GhAuthInfo {
 
 /** Public OAuth app id used by the GitHub CLI. The device flow is unauthenticated. */
 const GITHUB_CLIENT_ID = "178c6fc778ccc68e1d6a";
-const DEVICE_SCOPES = "repo workflow read:org gist";
+// Fleet only needs repository access to inspect issues and publish PRs. Avoid granting
+// workflow-edit, organization-read, or gist permissions to the local CLI token.
+const DEVICE_SCOPES = "repo";
 
 async function githubApi(
 	url: string,
