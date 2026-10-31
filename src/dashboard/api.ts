@@ -255,7 +255,7 @@ export class ApiHandlers {
 					this.stopRequested = false;
 					this.sendJson(res, 200, {
 						ok: false,
-						error: String(err instanceof Error ? err.message : err),
+						error: "invalid model override",
 					});
 				});
 		});
@@ -620,10 +620,10 @@ export class ApiHandlers {
 				});
 				this.loginInProgress = false;
 			} catch (err: unknown) {
-				const message = err instanceof Error ? err.message : String(err);
+				console.warn("[dashboard:login] device login failed", err);
 				// Note: pushGh and pushNotice are handled by the dashboard core
 				this.loginInProgress = false;
-				this.sendJson(res, 200, { ok: false, error: message });
+				this.sendJson(res, 200, { ok: false, error: "GitHub login failed; check the server logs" });
 			}
 		})();
 	}

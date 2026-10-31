@@ -220,7 +220,7 @@ export async function setupWorktree(
 	if (existingRepoDir) {
 		await refreshReusedClone(existingRepoDir, branch, worktreeDir);
 	} else {
-		await git(["clone", "--quiet", repoUrl, repoDir]);
+		await git(["clone", "--quiet", "--", repoUrl, repoDir]);
 	}
 
 	// Branch the fix worktree off the failing commit when supplied, so the

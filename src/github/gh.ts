@@ -16,11 +16,27 @@ async function gh(args: string[], cwd?: string): Promise<string> {
 
 /** Normalize a repo URL or `owner/name` into `owner/name` for `gh --repo`. */
 export function toRepoSlug(repoUrlOrSlug: string): string {
-	const s = repoUrlOrSlug.trim().replace(/\.git$/, "");
-	const m = s.match(/github\.com[/:]([^/]+\/[^/]+)$/);
-	if (m?.[1]) return m[1];
-	if (/^[^/\s]+\/[^/\s]+$/.test(s)) return s; // already owner/name
-	throw new Error(`Cannot derive owner/name from "${repoUrlOrSlug}"`);
+	const input = repoUrlOrSlug.trim();
+	let path = input;
+	if (input.startsWith("https://") || input.startsWith("http://")) {
+		let parsed: URL;
+		try { parsed = new URL(input); } catch { throw new Error("Invalid GitHub repository URL"); }
+		if (parsed.hostname.toLowerCase() !== "github.com" || parsed.username || parsed.password) {
+			throw new Error("Repository URL must point to github.com");
+		}
+		path = parsed.pathname.replace(/^\\/+|\\/+$/g, "");
+	} else if (input.startsWith("git@")) {
+		const prefix = "git@github.com:";
+		if (!input.startsWith(prefix)) throw new Error("Repository URL must point to github.com");
+		path = input.slice(prefix.length);
+	}
+	path = path.replace(/\\.git$/i, "");
+	const parts = path.split("/");
+	if (parts.length === 2 && parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part)) &&
+		parts.every((part) => part !== "." && part !== "..")) {
+		return `${parts[0]}/${parts[1]}`;
+	}
+	throw new Error("Cannot derive owner/name from the supplied repository identifier");
 }
 
 /** Offline stub issue for --dry-run (no gh, no network). */
