@@ -52,8 +52,7 @@ function isLocalDashboardRequest(req: IncomingMessage): boolean {
 
 		const originUrl = new URL(origin);
 		return (
-			originUrl.protocol === "http:" &&
-			originUrl.origin === requestUrl.origin
+			originUrl.protocol === "http:" && originUrl.origin === requestUrl.origin
 		);
 	} catch {
 		return false;
