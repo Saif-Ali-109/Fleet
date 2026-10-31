@@ -375,8 +375,8 @@ describe("orchestrator quota event handling", () => {
 			"[quota] tester: gemini-c rate limited (rpm) → switching to gemini-d",
 		);
 		const quotaWarns = consoleSpies.warn.mock.calls
-			.map((c) => c[0] as string)
-			.filter((m) => m.includes("[quota]"));
+			.map((c: unknown[]) => c[0] as string)
+			.filter((m: string) => m.includes("[quota]"));
 		expect(quotaWarns).toHaveLength(2);
 	});
 
