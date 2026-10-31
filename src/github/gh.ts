@@ -20,23 +20,37 @@ export function toRepoSlug(repoUrlOrSlug: string): string {
 	let path = input;
 	if (input.startsWith("https://") || input.startsWith("http://")) {
 		let parsed: URL;
-		try { parsed = new URL(input); } catch { throw new Error("Invalid GitHub repository URL"); }
-		if (parsed.hostname.toLowerCase() !== "github.com" || parsed.username || parsed.password) {
+		try {
+			parsed = new URL(input);
+		} catch {
+			throw new Error("Invalid GitHub repository URL");
+		}
+		if (
+			parsed.hostname.toLowerCase() !== "github.com" ||
+			parsed.username ||
+			parsed.password
+		) {
 			throw new Error("Repository URL must point to github.com");
 		}
 		path = parsed.pathname.split("/").filter(Boolean).join("/");
 	} else if (input.startsWith("git@")) {
 		const prefix = "git@github.com:";
-		if (!input.startsWith(prefix)) throw new Error("Repository URL must point to github.com");
+		if (!input.startsWith(prefix))
+			throw new Error("Repository URL must point to github.com");
 		path = input.slice(prefix.length);
 	}
 	path = path.toLowerCase().endsWith(".git") ? path.slice(0, -4) : path;
 	const parts = path.split("/");
-	if (parts.length === 2 && parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part)) &&
-		parts.every((part) => part !== "." && part !== "..")) {
+	if (
+		parts.length === 2 &&
+		parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part)) &&
+		parts.every((part) => part !== "." && part !== "..")
+	) {
 		return `${parts[0]}/${parts[1]}`;
 	}
-	throw new Error("Cannot derive owner/name from the supplied repository identifier");
+	throw new Error(
+		"Cannot derive owner/name from the supplied repository identifier",
+	);
 }
 
 /** Offline stub issue for --dry-run (no gh, no network). */
